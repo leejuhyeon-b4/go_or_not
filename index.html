@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>이 회차 갈까말까</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E">
+
+<!-- 픽셀 도트체(Galmuri) + 본문 서체(Pretendard). 상업 이용 가능(SIL OFL 1.1).
+     프로덕션에서는 design.md §10.1 권고대로 self-host 할 것. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri@2/dist/galmuri.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/static/pretendard.css">
+
+<style>
+/* ============================================================
+   토큰 — design.md §2.2 컬러 팔레트 (16색 이내)
+   ============================================================ */
+:root{
+  --bg:        #3A3A3A;
+  --bg-dark:   #2A2A2A;
+  --bg-light:  #4A4A4A;
+
+  --light:     #F5E6C8;
+  --light-dim: #8A7F6A;
+
+  --text:      #F0F0F0;
+  --text-sub:  #A0A0A0;
+  --text-dis:  #6A6A6A;
+
+  --accent:    #E5A93C;
+  --pos:       #7FB069;
+  --neg:       #C4674F;
+  --neutral:   #8A8A8A;
+
+  --placard-bg: #E8DFC8;
+  --placard-bd: #6B5842;
+
+  --dot: 'Galmuri11', 'Galmuri14', monospace;
+  --dot14: 'Galmuri14', 'Galmuri11', monospace;
+  --sans: 'Pretendard', 'Noto Sans KR', sans-serif;
+}
+
+*{ box-sizing:border-box; }
+/* 저자 스타일의 display 선언이 hidden 속성보다 우선 적용되는 것을 방지 */
+[hidden]{ display:none !important; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  background:var(--bg-dark);
+  color:var(--text);
+  font-family:var(--sans);
+  -webkit-font-smoothing:antialiased;
+}
+img, .pixel{ image-rendering:pixelated; image-rendering:-moz-crisp-edges; image-rendering:crisp-edges; }
+button, input, select, textarea{ font-family:inherit; }
+button{ cursor:pointer; }
+button:disabled{ cursor:not-allowed; }
+
+/* ============================================================
+   무대 배경
+   ============================================================ */
+.stage{
+  min-height:100vh;
+  display:flex;
+  align-items:stretch;
+  justify-content:center;
+  background:
+    radial-gradient(ellipse 60% 40% at 50% -10%, rgba(245,230,200,0.06), transparent 60%),
+    var(--bg-dark);
+  padding:clamp(12px, 3vw, 32px);
+}
+
+.landing{
+  width:100%;
+  max-width:1280px;
+  display:grid;
+  grid-template-columns: minmax(320px, 46%) 1fr;
+  background:var(--bg);
+  border:2px solid var(--bg-dark);
+  box-shadow:0 0 0 4px var(--bg-light) inset, 0 12px 0 var(--bg-dark);
+  min-height: min(760px, 92vh);
+  position:relative;
+  overflow:hidden;
+}
+
+/* ============================================================
+   왼쪽 — 로그인 + 사전질문 폼
+   ============================================================ */
+.panel-left{
+  background:var(--bg);
+  display:flex;
+  flex-direction:column;
+  padding: 18px 22px 22px;
+  border-right:2px solid var(--bg-dark);
+  min-height:0;
+}
+
+.top-bar{
+  display:flex;
+  justify-content:flex-start;
+  align-items:center;
+  gap:10px;
+  margin-bottom:14px;
+  min-height:34px;
+}
+
+.btn-dot{
+  font-family:var(--dot);
+  font-size:11px;
+  letter-spacing:0.5px;
+  background:var(--placard-bg);
+  color:#3A2E1E;
+  border:2px solid var(--placard-bd);
+  padding:7px 12px;
+  box-shadow:2px 2px 0 var(--bg-dark);
+  transition:transform .12s ease, box-shadow .12s ease, filter .2s;
+}
+.btn-dot:hover:not(:disabled){ transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bg-dark); }
+.btn-dot:active:not(:disabled){ transform:translate(1px,1px); box-shadow:0 0 0 var(--bg-dark); }
+.btn-dot:disabled{ filter:grayscale(0.6) brightness(0.6); box-shadow:none; }
+
+.user-chip{
+  font-size:12px;
+  color:var(--text-sub);
+}
+
+/* 로그인 전: 폼을 숨기지 않고 어둡게. opacity 대신 밝기/채도로 처리. */
+.consult-form{
+  filter: brightness(0.55) saturate(0.35);
+  pointer-events:none;
+  transition: filter 400ms ease-out;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  overflow-y:auto;
+  padding-right:4px;
+  flex:1;
+}
+.consult-form.is-lit{
+  filter: brightness(1) saturate(1);
+  pointer-events:auto;
+}
+.consult-form::-webkit-scrollbar{ width:8px; }
+.consult-form::-webkit-scrollbar-thumb{ background:var(--bg-light); border-radius:0; }
+.consult-form::-webkit-scrollbar-track{ background:var(--bg-dark); }
+
+.row{
+  display:flex;
+  gap:8px;
+  align-items:flex-end;
+  flex-wrap:wrap;
+}
+.row.split > .field{ flex:1 1 45%; min-width:120px; }
+
+.field{ display:flex; flex-direction:column; gap:4px; flex:1; min-width:0; }
+.field.narrow{ flex:0 0 64px; }
+.field.mid{ flex:0 0 88px; }
+
+label.field-label{
+  font-size:12px;
+  color:var(--text-sub);
+}
+label.field-label .req{ color:var(--accent); margin-left:2px; }
+
+input[type="text"], input[type="number"], input[type="date"], input[type="time"], select, textarea{
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  color:var(--text);
+  padding:7px 8px;
+  font-size:15px;
+  width:100%;
+  outline:none;
+  border-radius:2px;
+}
+input[type="number"]{ font-variant-numeric: tabular-nums; }
+input:focus, select:focus, textarea:focus{ border-color:var(--accent); }
+input::placeholder, textarea::placeholder{ color:var(--text-dis); }
+
+/* 세그먼트 토글 */
+.segment{
+  display:flex;
+  border:1px solid var(--bg-light);
+  border-radius:2px;
+  overflow:hidden;
+}
+.segment button{
+  flex:1;
+  background:var(--bg-dark);
+  color:var(--text-sub);
+  border:none;
+  padding:7px 6px;
+  font-size:13px;
+  border-right:1px solid var(--bg-light);
+  transition:background .15s, color .15s;
+}
+.segment button:last-child{ border-right:none; }
+.segment button.active{ background:var(--accent); color:#2A2100; font-weight:600; }
+.segment button:hover:not(.active){ background:var(--bg-light); color:var(--text); }
+
+/* 티켓값 */
+.ticket-extra{
+  max-height:0;
+  overflow:hidden;
+  transition:max-height .25s ease;
+}
+.ticket-extra.open{ max-height:60px; margin-top:6px; }
+
+/* 선호좌석 6칸 그리드 */
+.pref-grid{
+  display:grid;
+  grid-template-columns:repeat(3, 1fr);
+  gap:6px;
+}
+.pref-item{
+  position:relative;
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  padding:6px 4px 5px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:4px;
+  color:var(--text-sub);
+  font-size:11px;
+  text-align:center;
+  transition:border-color .15s, background .15s;
+}
+.pref-item:hover{ border-color:var(--light-dim); }
+.pref-item.rank1{ border-color:var(--accent); background:#3f341c; color:var(--text); }
+.pref-item.rank2{ border-color:var(--light-dim); background:#3a3626; color:var(--text); }
+.pref-badge{
+  position:absolute;
+  top:-6px; left:-6px;
+  width:16px; height:16px;
+  background:var(--accent);
+  color:#2A2100;
+  font-family:var(--dot);
+  font-size:9px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border:1px solid var(--bg-dark);
+}
+.pref-icon{
+  width:34px; height:34px;
+  display:grid;
+  grid-template-columns:repeat(5,1fr);
+  grid-template-rows:repeat(5,1fr);
+  gap:1px;
+  background:var(--bg);
+  padding:2px;
+}
+.pref-icon i{ background:transparent; }
+/* 노란색(accent) 한 가지만 쓰고, 역할은 불투명도로만 구분한다 */
+.pref-icon i.cS{ background:var(--accent); opacity:.35; }   /* 무대 기준선 */
+.pref-icon i.cA{ background:var(--accent); opacity:.6; }    /* 통로 라인 */
+.pref-icon i.cM{ background:var(--accent); opacity:1; }     /* 좌석 표시 */
+
+/* 처분 옵션 체크박스 */
+.checks{
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.chk{
+  display:flex;
+  align-items:center;
+  gap:5px;
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  padding:5px 8px;
+  font-size:12px;
+  color:var(--text-sub);
+  transition:border-color .15s, color .15s;
+}
+.chk input{ accent-color:var(--accent); width:13px; height:13px; margin:0; }
+.chk.checked{ border-color:var(--accent); color:var(--text); }
+
+/* 기타란 */
+.freetext-toggle{
+  background:none;
+  border:none;
+  color:var(--text-sub);
+  font-size:12px;
+  text-align:left;
+  padding:6px 0;
+  display:flex;
+  align-items:center;
+  gap:6px;
+}
+.freetext-toggle:hover{ color:var(--text); }
+.freetext-toggle .arrow{ transition:transform .2s; display:inline-block; }
+.freetext-toggle.open .arrow{ transform:rotate(90deg); }
+.freetext-wrap{
+  max-height:0;
+  overflow:hidden;
+  transition:max-height .25s ease;
+}
+.freetext-wrap.open{ max-height:120px; }
+textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
+
+.event-toggle-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  padding:8px 10px;
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+}
+.event-toggle-row .field-label{ margin:0; }
+
+/* CTA */
+.cta-row{
+  margin-top:14px;
+  display:flex;
+  justify-content:flex-end;
+}
+.btn-start{
+  font-family:var(--dot14);
+  font-size:15px;
+  letter-spacing:1px;
+  padding:12px 26px;
+  background:var(--light-dim);
+  color:var(--bg-dark);
+  border:2px solid var(--placard-bd);
+  box-shadow:3px 3px 0 var(--bg-dark);
+  transition: all .2s;
+}
+.btn-start:disabled{ opacity:.5; cursor:not-allowed; box-shadow:none; }
+.btn-start.ready{
+  background:var(--accent);
+  color:#2A2100;
+  box-shadow:0 0 0 3px rgba(229,169,60,.25), 3px 3px 0 var(--bg-dark);
+  animation: readyPulse 1.6s ease-in-out infinite;
+}
+@keyframes readyPulse{
+  0%,100%{ filter:brightness(1); }
+  50%{ filter:brightness(1.18); }
+}
+.btn-start.ready:hover{ transform:translate(-1px,-1px); }
+
+/* ============================================================
+   이벤트 2단계 화면 (조건부)
+   ============================================================ */
+.event-screen{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  flex:1;
+  overflow-y:auto;
+  padding-right:4px;
+}
+.event-screen h2{
+  font-family:var(--dot14);
+  font-size:15px;
+  color:var(--accent);
+  margin:2px 0 0;
+}
+.event-screen .hint{ font-size:12px; color:var(--text-sub); margin:0 0 4px; }
+.back-link{
+  background:none; border:none; color:var(--text-sub);
+  font-size:12px; padding:2px 0; align-self:flex-start;
+}
+.back-link:hover{ color:var(--text); }
+
+.pill-group{ display:flex; flex-wrap:wrap; gap:6px; }
+.pill{
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  color:var(--text-sub);
+  font-size:12px;
+  padding:6px 10px;
+}
+.pill.active{ border-color:var(--accent); color:var(--text); background:#3f341c; }
+
+.scale-group{ display:flex; gap:6px; flex-wrap:wrap; }
+.scale-btn{
+  flex:1 1 auto;
+  min-width:60px;
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  color:var(--text-sub);
+  font-size:12px;
+  padding:8px 4px;
+  text-align:center;
+}
+.scale-btn.active{ background:var(--accent); color:#2A2100; border-color:var(--accent); font-weight:600; }
+
+.detail-block{
+  display:none;
+  flex-direction:column;
+  gap:6px;
+  background:var(--bg-dark);
+  border:1px solid var(--bg-light);
+  padding:10px;
+}
+.detail-block.show{ display:flex; }
+
+/* ============================================================
+   오른쪽 — 타이틀 / 설명 / 좌석 스포트라이트
+   ============================================================ */
+.panel-right{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+  padding: 40px 44px;
+  background:
+    radial-gradient(ellipse 80% 60% at 70% 20%, rgba(245,230,200,0.05), transparent 70%),
+    var(--bg);
+  overflow:hidden;
+}
+
+.title{
+  font-family:var(--dot14);
+  font-size:clamp(28px, 4vw, 40px);
+  line-height:1.35;
+  color:var(--text);
+  margin:0 0 14px;
+  text-shadow:2px 2px 0 var(--bg-dark);
+}
+
+.subtitle{
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.7;
+  color:var(--text-sub);
+  margin:0 0 48px;
+}
+
+.seat-stage{
+  position:relative;
+  height:130px;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+}
+
+.spotlight{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  background: radial-gradient(ellipse var(--spot-w, 40px) 70px at 50% 30%,
+              rgba(245,230,200, var(--spot-a, .12)) 0%,
+              rgba(245,230,200, calc(var(--spot-a, .12) * .35)) 45%,
+              transparent 72%);
+  transition: background 350ms ease-out;
+}
+
+.seat-row{
+  position:relative;
+  z-index:1;
+  display:flex;
+  gap:6px;
+  filter: brightness(var(--seat-b, 0.45)) saturate(var(--seat-s, 0.5));
+  transition: filter 350ms ease-out;
+}
+
+.seat{
+  width:26px;
+  height:34px;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+}
+.seat .back{
+  width:24px; height:16px;
+  background:var(--light-dim);
+  border:1px solid var(--bg-dark);
+}
+.seat .bottom{
+  width:26px; height:9px;
+  background:var(--light-dim);
+  border:1px solid var(--bg-dark);
+  margin-top:1px;
+}
+.seat .legs{
+  width:20px; height:6px;
+  display:flex;
+  justify-content:space-between;
+}
+.seat .legs i{ width:3px; height:6px; background:var(--bg-dark); }
+
+.progress-note{
+  position:absolute;
+  bottom:6px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:11px;
+  color:var(--text-dis);
+  letter-spacing:1px;
+  z-index:2;
+}
+
+/* ============================================================
+   전환 오버레이
+   ============================================================ */
+.transition-overlay{
+  position:fixed; inset:0;
+  background:var(--light);
+  opacity:0;
+  pointer-events:none;
+  z-index:50;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  transition:opacity .5s ease;
+}
+.transition-overlay.show{ opacity:1; pointer-events:auto; }
+.transition-overlay span{
+  font-family:var(--dot14);
+  font-size:20px;
+  color:#2A2100;
+}
+
+/* ============================================================
+   모달 — 이용내역
+   ============================================================ */
+.modal-backdrop{
+  position:fixed; inset:0;
+  background:rgba(0,0,0,.55);
+  display:flex; align-items:center; justify-content:center;
+  z-index:40;
+}
+.modal{
+  width:min(420px, 90vw);
+  background:var(--bg);
+  border:2px solid var(--placard-bd);
+  box-shadow:6px 6px 0 var(--bg-dark);
+  padding:20px;
+}
+.modal h3{
+  font-family:var(--dot14);
+  font-size:16px;
+  color:var(--accent);
+  margin:0 0 12px;
+}
+.modal p{
+  font-size:14px;
+  color:var(--text-sub);
+  line-height:1.6;
+  margin:0 0 16px;
+}
+.modal .modal-close{ float:right; }
+
+/* ============================================================
+   반응형 — design.md §8
+   ============================================================ */
+@media (max-width: 1023px){
+  .landing{ grid-template-columns: 1fr; min-height:auto; }
+  .panel-right{
+    order:-1;
+    border-right:none;
+    border-bottom:2px solid var(--bg-dark);
+    padding:28px 24px 20px;
+  }
+  .subtitle{ margin-bottom:24px; }
+  .seat-stage{ height:100px; }
+  .panel-left{ border-right:none; padding:16px 18px 20px; }
+}
+
+@media (max-width: 640px){
+  .title{ font-size:26px; }
+  .row.split{ flex-direction:column; }
+  .pref-grid{ grid-template-columns:repeat(2,1fr); }
+  .stage{ padding:0; }
+  .landing{ border-width:0; box-shadow:none; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  *{ animation-duration:0.001ms !important; transition-duration:0.001ms !important; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="landing">
+
+    <!-- ===================== 왼쪽 패널 ===================== -->
+    <section class="panel-left">
+
+      <div class="top-bar">
+        <button id="loginBtn" class="btn-dot">로그인</button>
+        <button id="historyBtn" class="btn-dot" hidden>이용내역</button>
+        <span class="user-chip" id="userChip" hidden></span>
+      </div>
+
+      <!-- ---- 사전질문 폼 (필수 9항목 + 조건부 이벤트 유무 + 기타란) ---- -->
+      <form id="consultForm" class="consult-form" novalidate>
+
+        <!-- R-1 공연 제목 -->
+        <div class="row">
+          <div class="field">
+            <label class="field-label" for="workTitle">공연 제목<span class="req">*</span></label>
+            <input list="workList" id="workTitle" type="text" placeholder="작품명을 검색하세요" autocomplete="off">
+            <datalist id="workList">
+              <option value="웨스턴 스토리">
+              <option value="해몽가">
+              <option value="알라딘">
+              <option value="엘리자벳">
+              <option value="라흐마니노프">
+            </datalist>
+          </div>
+        </div>
+
+        <!-- R-2 관람 일시·회차 -->
+        <div class="row">
+          <div class="field">
+            <label class="field-label" for="sessionDate">관람 일시<span class="req">*</span></label>
+            <input id="sessionDate" type="date">
+          </div>
+          <div class="field mid">
+            <label class="field-label">회차</label>
+            <div class="segment" data-group="matinee">
+              <button type="button" data-value="MATINEE">낮공</button>
+              <button type="button" data-value="EVENING">밤공</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- R-3 좌석 위치 -->
+        <div class="row">
+          <div class="field narrow">
+            <label class="field-label" for="seatFloor">층<span class="req">*</span></label>
+            <select id="seatFloor">
+              <option value="">-</option>
+              <option value="1">1층</option>
+              <option value="2">2층</option>
+              <option value="3">3층</option>
+            </select>
+          </div>
+          <div class="field mid">
+            <label class="field-label" for="seatBlock">블럭</label>
+            <input id="seatBlock" type="text" placeholder="편하게 부르는 이름">
+          </div>
+          <div class="field mid">
+            <label class="field-label" for="seatRowInput">열<span class="req">*</span></label>
+            <input id="seatRowInput" type="text" placeholder="6">
+          </div>
+          <div class="field mid">
+            <label class="field-label" for="seatNumber">번<span class="req">*</span></label>
+            <input id="seatNumber" type="number" placeholder="7">
+          </div>
+        </div>
+
+        <!-- R-4 티켓값 -->
+        <div class="row">
+          <div class="field mid">
+            <label class="field-label">취득 경로<span class="req">*</span></label>
+            <div class="segment" data-group="acquisition">
+              <button type="button" data-value="DIRECT">직접예매</button>
+              <button type="button" data-value="TRANSFER">양도받음</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="paidAmount">실지불액(원)<span class="req">*</span></label>
+            <input id="paidAmount" type="number" min="0" step="100" placeholder="52800">
+          </div>
+        </div>
+        <div class="ticket-extra" id="ticketExtra">
+          <div class="field">
+            <label class="field-label" for="surchargeAmount">추가 결제액(원)</label>
+            <input id="surchargeAmount" type="number" min="0" step="100" placeholder="0">
+          </div>
+        </div>
+
+        <!-- R-5 오늘 캐스팅 -->
+        <div class="row">
+          <div class="field">
+            <label class="field-label">오늘 캐스팅에 본진·애배 출연?<span class="req">*</span></label>
+            <div class="segment" data-group="casting">
+              <button type="button" data-value="YES">출연함</button>
+              <button type="button" data-value="NO">출연 안 함</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- R-6 자첫 여부 / R-8 오글 의향 -->
+        <div class="row split">
+          <div class="field">
+            <label class="field-label">이 작품 처음 보시나요?<span class="req">*</span></label>
+            <div class="segment" data-group="firstWatch">
+              <button type="button" data-value="YES">자첫</button>
+              <button type="button" data-value="NO">봤음</button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label">오늘 오페라글라스 쓰실 생각인가요?<span class="req">*</span></label>
+            <div class="segment" data-group="operaGlass">
+              <button type="button" data-value="YES">쓸 예정</button>
+              <button type="button" data-value="NO">안 씀</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- R-7 선호 좌석 1·2순위 -->
+        <div class="row">
+          <div class="field">
+            <label class="field-label">선호 좌석 1·2순위 (순서대로 탭)<span class="req">*</span></label>
+            <div class="pref-grid" id="prefGrid"></div>
+          </div>
+        </div>
+        <div class="ticket-extra" id="actorPathExtra">
+          <div class="field">
+            <label class="field-label">애배 동선은 어느 쪽인가요?</label>
+            <div class="segment" data-group="actorPathSide">
+              <button type="button" data-value="LEFT">왼</button>
+              <button type="button" data-value="CENTER">중</button>
+              <button type="button" data-value="RIGHT">오</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- R-9 처분 가능 옵션 -->
+        <div class="row">
+          <div class="field">
+            <label class="field-label">안 가기로 하면 뭘 할 수 있나요? (복수 선택)<span class="req">*</span></label>
+            <div class="checks" id="disposalChecks">
+              <label class="chk"><input type="checkbox" value="NO_TRANSFER"><span>양도 안 나갈 듯</span></label>
+              <label class="chk"><input type="checkbox" value="SELF_DISCOUNT"><span>자할해야 양도</span></label>
+              <label class="chk"><input type="checkbox" value="TRANSFERABLE"><span>양도 가능</span></label>
+              <label class="chk"><input type="checkbox" value="NEEDS_PROOF"><span>증빙 도움 필요</span></label>
+              <label class="chk"><input type="checkbox" value="SHARING"><span>나눔 가능</span></label>
+            </div>
+          </div>
+        </div>
+
+        <!-- 이벤트 유무 (조건부 분기 트리거) -->
+        <div class="row">
+          <div class="field">
+            <div class="event-toggle-row">
+              <label class="field-label" style="margin:0;">오늘 이벤트가 있나요?</label>
+              <div class="segment" data-group="eventExists" style="flex:0 0 140px;">
+                <button type="button" data-value="NO" class="active">없음</button>
+                <button type="button" data-value="YES">있음</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- S-1 기타란 -->
+        <div class="row">
+          <div class="field">
+            <button type="button" class="freetext-toggle" id="freetextToggle">
+              <span class="arrow">▸</span> 그 밖에 고민되는 부분이 있나요? (선택)
+            </button>
+            <div class="freetext-wrap" id="freetextWrap">
+              <textarea id="freeText" placeholder="부대비용(KTX·숙소·촬영 장비 등), 컨디션, 전날·당일·다음날 일정, 막차 시간 등 자유롭게 적어주세요"></textarea>
+            </div>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- ---- 이벤트 2단계 화면 (조건부, "이벤트 있음"일 때만) ---- -->
+      <div class="event-screen" id="eventScreen" hidden>
+        <button type="button" class="back-link" id="eventBack">← 사전질문으로 돌아가기</button>
+        <h2>오늘 이벤트</h2>
+        <p class="hint">종류를 고르고, 얼마나 끌리는지 · 다시 만날 수 있는지 알려주세요.</p>
+
+        <div class="field">
+          <label class="field-label">종류 (복수 선택)</label>
+          <div class="pill-group" id="eventTypePills">
+            <button type="button" class="pill" data-value="PHOTO">커튼콜 촬영 허용</button>
+            <button type="button" class="pill" data-value="SPECIAL_CC">스페셜 커튼콜</button>
+            <button type="button" class="pill" data-value="GREETING">무대인사</button>
+            <button type="button" class="pill" data-value="GV">관객과의 대화(GV)</button>
+            <button type="button" class="pill" data-value="SIGN">사인회</button>
+            <button type="button" class="pill" data-value="GIFT">증정</button>
+            <button type="button" class="pill" data-value="LUCKY">럭키드로우</button>
+            <button type="button" class="pill" data-value="POINT">적립 혜택</button>
+          </div>
+          <input type="text" id="eventCustom" placeholder="직접 입력 (선택)" style="margin-top:6px;">
+        </div>
+
+        <div class="detail-block" id="giftDetail">
+          <label class="field-label" for="giftItem">증정 품목</label>
+          <input id="giftItem" type="text" placeholder="예: 폴라로이드">
+          <label class="field-label" style="margin-top:4px;">배부 방식</label>
+          <div class="segment" data-group="giftDistribution">
+            <button type="button" data-value="ALL">전원 증정</button>
+            <button type="button" data-value="PICK">전원 지정</button>
+            <button type="button" data-value="RANDOM">전원 랜덤</button>
+          </div>
+        </div>
+
+        <div class="detail-block" id="pointDetail">
+          <label class="field-label">적립 배수</label>
+          <div class="segment" data-group="pointMultiplier">
+            <button type="button" data-value="DOUBLE">더블</button>
+            <button type="button" data-value="TRIPLE">트리플</button>
+            <button type="button" data-value="QUAD">쿼드</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">얼마나 끌리세요?</label>
+          <div class="scale-group" id="appealScale">
+            <button type="button" class="scale-btn" data-value="0">쓸모없음</button>
+            <button type="button" class="scale-btn" data-value="1">별로</button>
+            <button type="button" class="scale-btn" data-value="2">보통</button>
+            <button type="button" class="scale-btn" data-value="3">끌림</button>
+            <button type="button" class="scale-btn" data-value="4">가고싶음</button>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="field-label">오늘 못 가면 다시 만날 기회가 있나요?</label>
+          <div class="scale-group" id="scarcityScale">
+            <button type="button" class="scale-btn" data-value="MANY">많다</button>
+            <button type="button" class="scale-btn" data-value="FEW">적다</button>
+            <button type="button" class="scale-btn" data-value="NONE">없다</button>
+            <button type="button" class="scale-btn" data-value="UNKNOWN">모르겠음</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="cta-row">
+        <button type="button" class="btn-start" id="startBtn" disabled>상담 시작</button>
+      </div>
+    </section>
+
+    <!-- ===================== 오른쪽 패널 ===================== -->
+    <section class="panel-right">
+      <h1 class="title">이 회차<br>갈까말까</h1>
+      <p class="subtitle">다섯 명이 각자의 관점에서<br>이 회차를 판단합니다</p>
+
+      <div class="seat-stage">
+        <div class="spotlight" id="spotlight"></div>
+        <div class="seat-row" id="seatRow"></div>
+        <span class="progress-note" id="progressNote">0%</span>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<div class="transition-overlay" id="transitionOverlay"><span>메인으로 이동합니다…</span></div>
+
+<div class="modal-backdrop" id="historyBackdrop" hidden>
+  <div class="modal">
+    <button type="button" class="btn-dot modal-close" id="historyClose">닫기</button>
+    <h3>이용 내역</h3>
+    <p>아직 완료된 상담이 없습니다.<br>상담을 마치면 이 곳에 기록이 쌓여요.</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------------------------------------------------------
+     상태
+  --------------------------------------------------------- */
+  const state = {
+    loggedIn:false,
+    matinee:null,
+    acquisition:null,
+    casting:null,
+    firstWatch:null,
+    operaGlass:null,
+    eventExists:'NO',
+    prefRank:[],           // ['FRONT','AISLE'] 순서 = 순위
+    actorPathSide:null,    // ACTOR_PATH 선택 시에만 사용 (LEFT/CENTER/RIGHT)
+    disposal:new Set(),
+    eventTypes:new Set(),
+    giftDistribution:null,
+    pointMultiplier:null,
+    appeal:null,
+    scarcity:null,
+    onEventScreen:false
+  };
+
+  // 아이콘 패턴 5x5. S=무대 기준선(흐리게) M=좌석 표시(진하게) A=통로 라인 0=빈칸
+  // 흰색 없이 노란색 하나만 쓰고, 불투명도 차이로만 구분한다.
+  const PREF_OPTIONS = [
+    { key:'FRONT',       label:'무조건 앞', pattern:'SSSSS 00M00 00000 00000 00000' },
+    { key:'CENTER',      label:'중블 사수', pattern:'SSSSS 00000 00M00 00000 00000' },
+    { key:'WHOLE',       label:'한눈에',   pattern:'SSSSS 00000 00000 00000 00M00' },
+    // 애배 동선: 한쪽으로 치우친 자리라는 느낌만 (왼/오는 선택 후 별도로 입력)
+    { key:'ACTOR_PATH',  label:'애배 동선', pattern:'SSSSS 00000 0M000 00000 00000' },
+    // 통로석: 좌우 양쪽에 통로가 있는 모양
+    { key:'AISLE',       label:'통로석',   pattern:'SSSSS A000A A0M0A A000A A000A' },
+    // 가성비: 무대 기준선 없이 붕 떠오르는 반짝임
+    { key:'VALUE',       label:'가성비',   pattern:'00M00 0MMM0 MMMMM 0M0M0 M000M' }
+  ];
+
+  /* ---------------------------------------------------------
+     유틸
+  --------------------------------------------------------- */
+  function $(id){ return document.getElementById(id); }
+  function segBind(groupSelector, onPick){
+    document.querySelectorAll('[data-group="'+groupSelector+'"] button').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('[data-group="'+groupSelector+'"] button').forEach(b=>b.classList.remove('active'));
+        btn.classList.add('active');
+        onPick(btn.dataset.value);
+      });
+    });
+  }
+
+  /* ---------------------------------------------------------
+     선호 좌석 6칸 그리드 렌더 + 랭크 로직
+  --------------------------------------------------------- */
+  const prefGrid = $('prefGrid');
+  PREF_OPTIONS.forEach(opt=>{
+    const item = document.createElement('button');
+    item.type = 'button';
+    item.className = 'pref-item';
+    item.dataset.key = opt.key;
+
+    const icon = document.createElement('div');
+    icon.className = 'pref-icon';
+    opt.pattern.split(' ').join('').split('').forEach(ch=>{
+      const cell = document.createElement('i');
+      if(ch !== '0') cell.classList.add('c'+ch);
+      icon.appendChild(cell);
+    });
+    item.appendChild(icon);
+
+    const label = document.createElement('span');
+    label.textContent = opt.label;
+    item.appendChild(label);
+
+    item.addEventListener('click', ()=>{
+      const idx = state.prefRank.indexOf(opt.key);
+      if(idx > -1){
+        state.prefRank.splice(idx,1);
+      } else {
+        if(state.prefRank.length >= 2) state.prefRank.shift();
+        state.prefRank.push(opt.key);
+      }
+      renderPrefRanks();
+      const showActorPath = state.prefRank.includes('ACTOR_PATH');
+      $('actorPathExtra').classList.toggle('open', showActorPath);
+      if(!showActorPath){
+        state.actorPathSide = null;
+        document.querySelectorAll('[data-group="actorPathSide"] button').forEach(b=>b.classList.remove('active'));
+      }
+      updateProgress();
+    });
+
+    prefGrid.appendChild(item);
+  });
+
+  function renderPrefRanks(){
+    prefGrid.querySelectorAll('.pref-item').forEach(el=>{
+      el.classList.remove('rank1','rank2');
+      const badge = el.querySelector('.pref-badge');
+      if(badge) badge.remove();
+      const rank = state.prefRank.indexOf(el.dataset.key);
+      if(rank === 0){
+        el.classList.add('rank1');
+        addBadge(el,'1');
+      } else if(rank === 1){
+        el.classList.add('rank2');
+        addBadge(el,'2');
+      }
+    });
+  }
+  function addBadge(el, num){
+    const b = document.createElement('span');
+    b.className = 'pref-badge';
+    b.textContent = num;
+    el.appendChild(b);
+  }
+
+  /* ---------------------------------------------------------
+     처분 옵션 체크박스
+  --------------------------------------------------------- */
+  document.querySelectorAll('#disposalChecks .chk input').forEach(chk=>{
+    chk.addEventListener('change', ()=>{
+      if(chk.checked) state.disposal.add(chk.value); else state.disposal.delete(chk.value);
+      chk.closest('.chk').classList.toggle('checked', chk.checked);
+      updateProgress();
+    });
+  });
+
+  /* ---------------------------------------------------------
+     세그먼트 토글 바인딩
+  --------------------------------------------------------- */
+  segBind('matinee', v=>{ state.matinee=v; updateProgress(); });
+
+  segBind('acquisition', v=>{
+    state.acquisition=v;
+    $('ticketExtra').classList.toggle('open', v==='TRANSFER');
+    updateProgress();
+  });
+
+  segBind('casting', v=>{
+    state.casting=v;
+    updateProgress();
+  });
+
+  segBind('actorPathSide', v=>{ state.actorPathSide=v; });
+
+  segBind('firstWatch', v=>{ state.firstWatch=v; updateProgress(); });
+  segBind('operaGlass', v=>{ state.operaGlass=v; updateProgress(); });
+
+  segBind('eventExists', v=>{ state.eventExists=v; updateProgress(); });
+
+  segBind('giftDistribution', v=>{ state.giftDistribution=v; });
+  segBind('pointMultiplier', v=>{ state.pointMultiplier=v; });
+
+  /* ---------------------------------------------------------
+     기타란 접기/펼치기
+  --------------------------------------------------------- */
+  $('freetextToggle').addEventListener('click', ()=>{
+    $('freetextToggle').classList.toggle('open');
+    $('freetextWrap').classList.toggle('open');
+  });
+
+  /* ---------------------------------------------------------
+     텍스트/숫자 입력 변화 감지 (progress 갱신용)
+  --------------------------------------------------------- */
+  ['workTitle','sessionDate','seatFloor','seatRowInput','seatNumber','paidAmount']
+    .forEach(id=> $(id).addEventListener('input', updateProgress));
+  $('seatFloor').addEventListener('change', updateProgress);
+
+  /* ---------------------------------------------------------
+     완성도 계산 (필수 9항목) → 스포트라이트 반영
+  --------------------------------------------------------- */
+  const REQUIRED_CHECKS = [
+    ()=> $('workTitle').value.trim().length>0,
+    ()=> $('sessionDate').value.length>0 && state.matinee!==null,
+    ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
+    ()=> state.acquisition!==null && Number($('paidAmount').value)>0,
+    ()=> state.casting!==null,
+    ()=> state.firstWatch!==null,
+    ()=> state.operaGlass!==null,
+    ()=> state.prefRank.length>=1,
+    ()=> state.disposal.size>0
+  ];
+
+  function computeProgress(){
+    const filled = REQUIRED_CHECKS.filter(fn=>fn()).length;
+    return filled / REQUIRED_CHECKS.length;
+  }
+
+  function updateProgress(){
+    const p = computeProgress();
+    const spot = $('spotlight');
+    const seatRow = $('seatRow');
+    spot.style.setProperty('--spot-w', (40 + p*260) + 'px');
+    spot.style.setProperty('--spot-a', (0.10 + p*0.55).toFixed(2));
+    seatRow.style.setProperty('--seat-b', (0.40 + p*0.65).toFixed(2));
+    seatRow.style.setProperty('--seat-s', (0.45 + p*0.6).toFixed(2));
+    $('progressNote').textContent = Math.round(p*100) + '%';
+
+    const startBtn = $('startBtn');
+    const ready = state.loggedIn && p >= 1 && !state.onEventScreen;
+    startBtn.disabled = !ready;
+    startBtn.classList.toggle('ready', ready);
+  }
+
+  /* ---------------------------------------------------------
+     좌석 열 렌더 (개수는 항목 수와 무관, 고정 10석)
+  --------------------------------------------------------- */
+  const seatRowEl = $('seatRow');
+  for(let i=0;i<10;i++){
+    const seat = document.createElement('div');
+    seat.className = 'seat';
+    seat.innerHTML = '<div class="back"></div><div class="bottom"></div><div class="legs"><i></i><i></i></div>';
+    seatRowEl.appendChild(seat);
+  }
+
+  /* ---------------------------------------------------------
+     로그인 / 이용내역 (프론트 목업 — 실제 인증 없음)
+  --------------------------------------------------------- */
+  $('loginBtn').addEventListener('click', ()=>{
+    state.loggedIn = true;
+    $('loginBtn').hidden = true;
+    $('historyBtn').hidden = false;
+    const chip = $('userChip');
+    chip.hidden = false;
+    chip.textContent = 'ljh1869@gmail.com';
+    $('consultForm').classList.add('is-lit');
+    updateProgress();
+  });
+
+  $('historyBtn').addEventListener('click', ()=>{ $('historyBackdrop').hidden = false; });
+  $('historyClose').addEventListener('click', ()=>{ $('historyBackdrop').hidden = true; });
+  $('historyBackdrop').addEventListener('click', (e)=>{
+    if(e.target === $('historyBackdrop')) $('historyBackdrop').hidden = true;
+  });
+
+  /* ---------------------------------------------------------
+     이벤트 종류 pill (복수 선택) + 세부 블록 토글
+  --------------------------------------------------------- */
+  document.querySelectorAll('#eventTypePills .pill').forEach(pill=>{
+    pill.addEventListener('click', ()=>{
+      const v = pill.dataset.value;
+      if(state.eventTypes.has(v)){ state.eventTypes.delete(v); pill.classList.remove('active'); }
+      else { state.eventTypes.add(v); pill.classList.add('active'); }
+      $('giftDetail').classList.toggle('show', state.eventTypes.has('GIFT'));
+      $('pointDetail').classList.toggle('show', state.eventTypes.has('POINT'));
+    });
+  });
+
+  document.querySelectorAll('#appealScale .scale-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#appealScale .scale-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.appeal = btn.dataset.value;
+    });
+  });
+  document.querySelectorAll('#scarcityScale .scale-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      document.querySelectorAll('#scarcityScale .scale-btn').forEach(b=>b.classList.remove('active'));
+      btn.classList.add('active');
+      state.scarcity = btn.dataset.value;
+    });
+  });
+
+  /* ---------------------------------------------------------
+     상담 시작 / 이벤트 화면 전환
+  --------------------------------------------------------- */
+  $('startBtn').addEventListener('click', ()=>{
+    if($('startBtn').disabled) return;
+
+    if(!state.onEventScreen && state.eventExists === 'YES'){
+      // 이벤트가 있으면 두 번째 화면으로 (design.md §3.3)
+      state.onEventScreen = true;
+      $('consultForm').style.display = 'none';
+      $('eventScreen').hidden = false;
+      $('startBtn').textContent = '확인하고 상담 시작';
+      updateProgress();
+      return;
+    }
+
+    // 완료 → 조명이 완전히 들어오며 메인으로 전환 (design.md §3.4)
+    const overlay = $('transitionOverlay');
+    overlay.classList.add('show');
+    setTimeout(()=>{
+      overlay.querySelector('span').textContent = '메인 페이지는 곧 만나요 🎭';
+    }, 500);
+    setTimeout(()=>{ overlay.classList.remove('show'); }, 2200);
+  });
+
+  $('eventBack').addEventListener('click', ()=>{
+    state.onEventScreen = false;
+    $('eventScreen').hidden = true;
+    $('consultForm').style.display = 'flex';
+    $('startBtn').textContent = '상담 시작';
+    updateProgress();
+  });
+
+  /* ---------------------------------------------------------
+     초기 렌더
+  --------------------------------------------------------- */
+  renderPrefRanks();
+  updateProgress();
+})();
+</script>
+</body>
+</html>
