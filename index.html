@@ -11,51 +11,10 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri@2/dist/galmuri.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/static/pretendard.css">
 
+<!-- 컬러 토큰·리셋은 상담실(consult.html)과 공유한다 -->
+<link rel="stylesheet" href="tokens.css">
+
 <style>
-/* ============================================================
-   토큰 — design.md §2.2 컬러 팔레트 (16색 이내)
-   ============================================================ */
-:root{
-  --bg:        #3A3A3A;
-  --bg-dark:   #2A2A2A;
-  --bg-light:  #4A4A4A;
-
-  --light:     #F5E6C8;
-  --light-dim: #8A7F6A;
-
-  --text:      #F0F0F0;
-  --text-sub:  #A0A0A0;
-  --text-dis:  #6A6A6A;
-
-  --accent:    #E5A93C;
-  --pos:       #7FB069;
-  --neg:       #C4674F;
-  --neutral:   #8A8A8A;
-
-  --placard-bg: #E8DFC8;
-  --placard-bd: #6B5842;
-
-  --dot: 'Galmuri11', 'Galmuri14', monospace;
-  --dot14: 'Galmuri14', 'Galmuri11', monospace;
-  --sans: 'Pretendard', 'Noto Sans KR', sans-serif;
-}
-
-*{ box-sizing:border-box; }
-/* 저자 스타일의 display 선언이 hidden 속성보다 우선 적용되는 것을 방지 */
-[hidden]{ display:none !important; }
-html,body{ height:100%; }
-body{
-  margin:0;
-  background:var(--bg-dark);
-  color:var(--text);
-  font-family:var(--sans);
-  -webkit-font-smoothing:antialiased;
-}
-img, .pixel{ image-rendering:pixelated; image-rendering:-moz-crisp-edges; image-rendering:crisp-edges; }
-button, input, select, textarea{ font-family:inherit; }
-button{ cursor:pointer; }
-button:disabled{ cursor:not-allowed; }
-
 /* ============================================================
    무대 배경
    ============================================================ */
@@ -203,7 +162,7 @@ input::placeholder, textarea::placeholder{ color:var(--text-dis); }
   overflow:hidden;
   transition:max-height .25s ease;
 }
-.ticket-extra.open{ max-height:60px; margin-top:6px; }
+.ticket-extra.open{ max-height:72px; margin-top:6px; }
 
 /* 선호좌석 6칸 그리드 */
 .pref-grid{
@@ -695,6 +654,19 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
           </div>
         </div>
 
+        <!-- R-6b 작품 선호도 (자첫이 아닐 때만) -->
+        <div class="ticket-extra" id="workAffinityExtra">
+          <div class="field">
+            <label class="field-label">이 작품, 나한테는 어떤가요?<span class="req">*</span></label>
+            <div class="segment" data-group="workAffinity">
+              <button type="button" data-value="LOVE">인생작</button>
+              <button type="button" data-value="LIKE">좋아함</button>
+              <button type="button" data-value="MEH">무난</button>
+              <button type="button" data-value="DISLIKE">안 맞음</button>
+            </div>
+          </div>
+        </div>
+
         <!-- R-7 선호 좌석 1·2순위 -->
         <div class="row">
           <div class="field">
@@ -747,7 +719,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
               <span class="arrow">▸</span> 그 밖에 고민되는 부분이 있나요? (선택)
             </button>
             <div class="freetext-wrap" id="freetextWrap">
-              <textarea id="freeText" placeholder="부대비용(KTX·숙소·촬영 장비 등), 컨디션, 전날·당일·다음날 일정, 막차 시간 등 자유롭게 적어주세요"></textarea>
+              <textarea id="freeText" placeholder="극이나 캐스팅에 대한 생각, 이벤트, 좌석 걱정, 부대비용(KTX·숙소·촬영 장비 등), 컨디션, 전날·당일·다음날 일정, 막차 시간 등 자유롭게 적어주세요"></textarea>
             </div>
           </div>
         </div>
@@ -763,14 +735,14 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         <div class="field">
           <label class="field-label">종류 (복수 선택)</label>
           <div class="pill-group" id="eventTypePills">
-            <button type="button" class="pill" data-value="PHOTO">커튼콜 촬영 허용</button>
-            <button type="button" class="pill" data-value="SPECIAL_CC">스페셜 커튼콜</button>
-            <button type="button" class="pill" data-value="GREETING">무대인사</button>
-            <button type="button" class="pill" data-value="GV">관객과의 대화(GV)</button>
-            <button type="button" class="pill" data-value="SIGN">사인회</button>
             <button type="button" class="pill" data-value="GIFT">증정</button>
-            <button type="button" class="pill" data-value="LUCKY">럭키드로우</button>
             <button type="button" class="pill" data-value="POINT">적립 혜택</button>
+            <button type="button" class="pill" data-value="PHOTO">커튼콜 데이</button>
+            <button type="button" class="pill" data-value="SPECIAL_CC">스페셜 커튼콜/장면 시연</button>
+            <button type="button" class="pill" data-value="LUCKY">럭키드로우</button>
+            <button type="button" class="pill" data-value="GREETING">무대인사</button>
+            <button type="button" class="pill" data-value="SIGN">사인회</button>
+            <button type="button" class="pill" data-value="GV">관객과의 대화(GV)</button>
           </div>
           <input type="text" id="eventCustom" placeholder="직접 입력 (선택)" style="margin-top:6px;">
         </div>
@@ -837,7 +809,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   </div>
 </div>
 
-<div class="transition-overlay" id="transitionOverlay"><span>메인으로 이동합니다…</span></div>
+<div class="transition-overlay" id="transitionOverlay"><span>상담실로 들어갑니다…</span></div>
 
 <div class="modal-backdrop" id="historyBackdrop" hidden>
   <div class="modal">
@@ -846,6 +818,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     <p>아직 완료된 상담이 없습니다.<br>상담을 마치면 이 곳에 기록이 쌓여요.</p>
   </div>
 </div>
+
+<!-- 1회성 수집 데이터 (PRD §9.2) — 상담 시점에는 크롤링하지 않고 조회만 한다 -->
+<script src="data/seed.js"></script>
+<script src="data.js"></script>
 
 <script>
 (function(){
@@ -860,6 +836,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     acquisition:null,
     casting:null,
     firstWatch:null,
+    workAffinity:null,     // 자첫이 아닐 때만 받는다 (LOVE/LIKE/MEH/DISLIKE)
     operaGlass:null,
     eventExists:'NO',
     prefRank:[],           // ['FRONT','AISLE'] 순서 = 순위
@@ -996,7 +973,18 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 
   segBind('actorPathSide', v=>{ state.actorPathSide=v; });
 
-  segBind('firstWatch', v=>{ state.firstWatch=v; updateProgress(); });
+  segBind('firstWatch', v=>{
+    state.firstWatch=v;
+    // 자첫이면 작품을 본 적이 없으니 선호도를 물을 수 없다
+    const askAffinity = v === 'NO';
+    $('workAffinityExtra').classList.toggle('open', askAffinity);
+    if(!askAffinity){
+      state.workAffinity = null;
+      document.querySelectorAll('[data-group="workAffinity"] button').forEach(b=>b.classList.remove('active'));
+    }
+    updateProgress();
+  });
+  segBind('workAffinity', v=>{ state.workAffinity=v; updateProgress(); });
   segBind('operaGlass', v=>{ state.operaGlass=v; updateProgress(); });
 
   segBind('eventExists', v=>{ state.eventExists=v; updateProgress(); });
@@ -1028,7 +1016,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
     ()=> state.acquisition!==null && Number($('paidAmount').value)>0,
     ()=> state.casting!==null,
-    ()=> state.firstWatch!==null,
+    ()=> state.firstWatch!==null && (state.firstWatch==='YES' || state.workAffinity!==null),
     ()=> state.operaGlass!==null,
     ()=> state.prefRank.length>=1,
     ()=> state.disposal.size>0
@@ -1049,8 +1037,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     seatRow.style.setProperty('--seat-s', (0.45 + p*0.6).toFixed(2));
     $('progressNote').textContent = Math.round(p*100) + '%';
 
+    // 이벤트 화면에서는 끌림도·희소성(PRD §3.3 4·5단계)까지 받아야 넘어간다
+    const eventReady = state.appeal !== null && state.scarcity !== null;
     const startBtn = $('startBtn');
-    const ready = state.loggedIn && p >= 1 && !state.onEventScreen;
+    const ready = state.loggedIn && p >= 1 && (!state.onEventScreen || eventReady);
     startBtn.disabled = !ready;
     startBtn.classList.toggle('ready', ready);
   }
@@ -1104,6 +1094,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       document.querySelectorAll('#appealScale .scale-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       state.appeal = btn.dataset.value;
+      updateProgress();
     });
   });
   document.querySelectorAll('#scarcityScale .scale-btn').forEach(btn=>{
@@ -1111,8 +1102,143 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       document.querySelectorAll('#scarcityScale .scale-btn').forEach(b=>b.classList.remove('active'));
       btn.classList.add('active');
       state.scarcity = btn.dataset.value;
+      updateProgress();
     });
   });
+
+  /* ---------------------------------------------------------
+     공통 입력 번들 (PRD §6.1)
+
+     DB가 아직 없어 자동 산출이 불가능한 필드(좌석 등급·통로 여부·정가·
+     할인율·남은 애배 회차·관람 이력)는 null로 둔다. 엔진이 missing_info에
+     기록하고 confidence를 낮춘다 — 모르는 것을 지어내지 않는다(PRD 원칙 6).
+  --------------------------------------------------------- */
+  const EVENT_LABELS = {
+    GIFT:'증정', POINT:'적립 혜택', PHOTO:'커튼콜 데이',
+    SPECIAL_CC:'스페셜 커튼콜/장면 시연', LUCKY:'럭키드로우',
+    GREETING:'무대인사', SIGN:'사인회', GV:'관객과의 대화(GV)'
+  };
+  // 이벤트 정보가 사전에 확정되는가 (PRD §5.4 irreplaceable 3단계)
+  const CERTAINTY = {
+    GIFT:'FIXED', POINT:'FIXED', PHOTO:'FIXED', SPECIAL_CC:'FIXED',
+    GREETING:'FIXED', GV:'FIXED',
+    LUCKY:'CHANCE', SIGN:'CHANCE'
+  };
+  // 애배가 안 나오면 가치가 급락하는 유형 (PRD §5.4 배우 매개형)
+  const ACTOR_MEDIATED = new Set(['PHOTO','SPECIAL_CC','GREETING','SIGN','GV']);
+
+  function buildEvents(){
+    if(state.eventExists !== 'YES') return [];
+    const types = Array.from(state.eventTypes);
+    const custom = $('eventCustom').value.trim();
+    if(custom) types.push('CUSTOM');
+    return types.map(t=>({
+      type: t,
+      label: t === 'CUSTOM' ? custom : EVENT_LABELS[t],
+      item: t === 'GIFT' ? ($('giftItem').value.trim() || null) : null,
+      distribution: t === 'GIFT' ? state.giftDistribution : null,
+      point_multiplier: t === 'POINT' ? state.pointMultiplier : null,
+      participating_actors: null,
+      photo_allowed: t === 'PHOTO',
+      is_actor_mediated: ACTOR_MEDIATED.has(t),
+      certainty_class: CERTAINTY[t] || 'FIXED',
+      user_appeal: state.appeal === null ? null : Number(state.appeal),
+      user_scarcity: state.scarcity
+    }));
+  }
+
+  function buildBundle(){
+    const dateStr = $('sessionDate').value;
+    // 낮공 14시 / 밤공 19시로 가정한다. 폼에 시각 입력이 없다.
+    const hour = state.matinee === 'MATINEE' ? 14 : 19;
+    const sessionDatetime = dateStr ? dateStr + 'T' + String(hour).padStart(2,'0') + ':00:00' : null;
+
+    // 수집 데이터 조회 (PRD §9.2 — 상담 시점에는 크롤링하지 않고 DB만 본다)
+    const title = $('workTitle').value.trim();
+    const season = GON_DB.findSeason(title, dateStr);
+    const venue  = season ? GON_DB.findVenue(season.venue_id) : null;
+
+    const seatIn = {
+      floor: $('seatFloor').value ? Number($('seatFloor').value) : null,
+      row: $('seatRowInput').value.trim(),
+      number: $('seatNumber').value ? Number($('seatNumber').value) : null
+    };
+    const seatInfo = GON_DB.resolveSeat(season, seatIn);
+    const paid = Number($('paidAmount').value) || 0;
+    const list = GON_DB.listPrice(season, seatInfo.grade);
+
+    return {
+      schema_version: 1,
+      season: {
+        id: season ? season.season_id : null,
+        work_title: title,
+        season_label: season ? season.season_label : null,
+        venue_id: season ? season.venue_id : null,
+        venue_name: venue ? venue.name : null,
+        running_time: season ? season.running_time : null,
+        has_intermission: season ? season.has_intermission : null,
+        close_date: season ? season.close_date : null,
+        cancellation_policy: GON_DB.cancellationPolicy(season)
+      },
+      session: {
+        date: dateStr || null,
+        datetime: sessionDatetime,
+        matinee_or_evening: state.matinee,
+        is_opening: null,
+        is_closing: null,
+        now: new Date().toISOString()
+      },
+      seat: {
+        floor: seatIn.floor,
+        block: $('seatBlock').value.trim() || null,
+        row: seatIn.row,
+        number: seatIn.number,
+        // 아래 셋은 DB에서 자동 산출한다. 모르면 null — false 가 아니다
+        grade: seatInfo.grade,
+        is_aisle: seatInfo.is_aisle,
+        is_restricted: seatInfo.is_restricted,
+        zone: seatInfo.zone,
+        row_index: GON_DB.rowIndex(seatIn.row, venue),
+        row_index_in_floor: GON_DB.rowIndexWithinFloor(seatIn.row, seatIn.floor, venue),
+        notes: seatInfo.notes,
+        sources: seatInfo.sources,
+        unknown: seatInfo.unknown
+      },
+      payment: {
+        acquisition: state.acquisition,
+        total_paid: paid,
+        surcharge: Number($('surchargeAmount').value) || 0,
+        list_price: list ? list.price : null,
+        list_price_grade: list ? list.grade : null,
+        list_price_verified: list ? list.verified : null,
+        discount_rate: GON_DB.discountRate(list, paid),
+        cancellation_fee: null   // 엔진이 계산 (PRD §5.3 ③)
+      },
+      coverage: GON_DB.coverage(season, seatInfo),
+      disposal_options: Array.from(state.disposal),
+      casting: {
+        today_cast: null,
+        has_favorite_actor: state.casting === 'YES',
+        favorite_actors_today: null,
+        remaining_favorite_sessions: null   // 캐스팅보드 필요
+      },
+      first_watch: state.firstWatch === 'YES',
+      work_affinity: state.workAffinity,   // 자첫이면 null — 덕심이 기타란으로 폴백한다
+      seat_preference: {
+        first: state.prefRank[0] || null,
+        second: state.prefRank[1] || null,
+        actor_path_side: state.actorPathSide
+      },
+      opera_glass: state.operaGlass === 'YES',
+      events: buildEvents(),
+      history: {
+        this_work_count: null,
+        this_pair_count: null,
+        recent_30d_count: null
+      },
+      free_text: $('freeText').value.trim() || null
+    };
+  }
 
   /* ---------------------------------------------------------
      상담 시작 / 이벤트 화면 전환
@@ -1130,13 +1256,18 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       return;
     }
 
-    // 완료 → 조명이 완전히 들어오며 메인으로 전환 (design.md §3.4)
+    // 완료 → 조명이 완전히 들어오며 상담실로 전환 (design.md §3.4)
+    try{
+      sessionStorage.setItem('gon:bundle', JSON.stringify(buildBundle()));
+    }catch(e){
+      // 시크릿 모드 등에서 sessionStorage가 막히면 상담실이 데모 데이터로 뜬다
+      console.warn('번들 저장 실패 — 상담실이 데모 데이터로 열립니다.', e);
+    }
+
     const overlay = $('transitionOverlay');
+    overlay.querySelector('span').textContent = '상담실로 들어갑니다…';
     overlay.classList.add('show');
-    setTimeout(()=>{
-      overlay.querySelector('span').textContent = '메인 페이지는 곧 만나요 🎭';
-    }, 500);
-    setTimeout(()=>{ overlay.classList.remove('show'); }, 2200);
+    setTimeout(()=>{ location.href = 'consult.html'; }, 600);
   });
 
   $('eventBack').addEventListener('click', ()=>{

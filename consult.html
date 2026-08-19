@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>상담실 — 이 회차 갈까말까</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E">
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri@2/dist/galmuri.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/static/pretendard.css">
+
+<!-- 컬러 토큰·리셋은 랜딩(index.html)과 공유한다 -->
+<link rel="stylesheet" href="tokens.css">
+
+<style>
+/* ============================================================
+   상담실 (design.md §4 메인 작업 페이지)
+   2×2 부스 그리드 + 컨디션 낮은 부스 + 하단 팀장 바
+   ============================================================ */
+:root{
+  --dot7:  'Galmuri7', 'Galmuri11', monospace;
+  --px: 5px;    /* 캐릭터 1도트 크기 — 정수배만 (design.md §2.3) */
+  --pp: 4px;    /* 소품 1도트 크기 → 8×8 도트 = 32×32 */
+}
+
+.stage{
+  min-height:100vh;
+  display:flex;
+  align-items:stretch;
+  justify-content:center;
+  background:
+    radial-gradient(ellipse 70% 30% at 50% 100%, rgba(245,230,200,0.07), transparent 65%),
+    var(--bg-dark);
+  padding:clamp(12px, 3vw, 32px);
+}
+
+.room{
+  position:relative;
+  width:100%;
+  max-width:1280px;
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  background:var(--bg);
+  border:2px solid var(--bg-dark);
+  box-shadow:0 0 0 4px var(--bg-light) inset, 0 12px 0 var(--bg-dark);
+  padding:14px;
+  min-height: min(820px, 94vh);
+}
+
+/* ============================================================
+   상단 — 판단 대상 한 줄
+   ============================================================ */
+.room-top{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  min-height:34px;
+}
+.btn-dot{
+  font-family:var(--dot);
+  font-size:11px;
+  letter-spacing:0.5px;
+  background:var(--placard-bg);
+  color:#3A2E1E;
+  border:2px solid var(--placard-bd);
+  padding:7px 12px;
+  box-shadow:2px 2px 0 var(--bg-dark);
+  transition:transform .12s ease, box-shadow .12s ease;
+}
+.btn-dot:hover{ transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bg-dark); }
+.btn-dot:active{ transform:translate(1px,1px); box-shadow:0 0 0 var(--bg-dark); }
+
+.ticket-info{
+  font-size:13px;
+  color:var(--text-sub);
+  font-variant-numeric: tabular-nums;
+}
+.ticket-info b{ color:var(--text); font-weight:600; }
+.demo-chip{
+  font-family:var(--dot);
+  font-size:10px;
+  color:#2A2100;
+  background:var(--accent);
+  padding:4px 7px;
+  margin-left:auto;
+}
+
+/* ============================================================
+   부스
+   ============================================================ */
+.booth-grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+  flex:1;
+  min-height:0;
+}
+
+.booth{
+  position:relative;
+  background:var(--bg-light);
+  border:2px solid var(--bg-dark);
+  padding:10px 12px 12px;
+  display:flex;
+  flex-direction:column;
+  /* 조명 은유 — 아직 말하지 않은 부스는 어둡다. opacity가 아니라 밝기로 (design.md §3.2) */
+  filter: brightness(0.72) saturate(0.7);
+  transition: filter 400ms ease-out;
+}
+.booth[data-state="done"]{ filter: brightness(1) saturate(1); }
+.booth[data-state="muted"]{ filter: brightness(0.55) saturate(0.3); }
+
+.booth-head{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-bottom:6px;
+}
+.axis-name{
+  font-family:var(--dot);
+  font-size:13px;
+  color:var(--light);
+  letter-spacing:1px;
+}
+.axis-dot{
+  width:8px; height:8px;
+  background:var(--neutral);
+  border:1px solid var(--bg-dark);
+}
+.axis-dot[data-sign="pos"]{ background:var(--pos); }
+.axis-dot[data-sign="neg"]{ background:var(--neg); }
+.axis-dot[data-sign="off"]{ background:var(--text-dis); }
+.booth-status{
+  font-size:11px;
+  color:var(--text-dis);
+  margin-left:auto;
+}
+
+.booth-body{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-end;
+  gap:8px;
+  min-height:0;
+  position:relative;
+}
+
+/* 부스 소품 — 처음 온 사용자가 소품만 보고 담당 축을 알 수 있어야 한다 (design.md §4.3) */
+.prop{
+  position:absolute;
+  top:0; right:2px;
+  display:grid;
+  grid-template-columns:repeat(8, var(--pp));
+  grid-template-rows:repeat(8, var(--pp));
+}
+.prop i{ background:transparent; }
+.prop i.cA{ background:var(--accent); }
+.prop i.cM{ background:var(--placard-bd); }
+.prop i.cL{ background:var(--placard-bg); }
+
+/* ---- 캐릭터 스프라이트 ---- */
+.sprite-stack{
+  position:relative;
+  flex:none;
+  width:calc(12 * var(--px));
+  height:calc(16 * var(--px));
+}
+.sprite{
+  grid-template-columns:repeat(12, var(--px));
+  grid-template-rows:repeat(16, var(--px));
+  position:absolute;
+  left:0; top:0;
+}
+.sprite i{ background:transparent; }
+.sprite i.cH{ background:#2E2418; }              /* 머리 */
+.sprite i.cS{ background:#E0B48C; }              /* 피부 */
+.sprite i.cE{ background:#1A1410; }              /* 눈 */
+.sprite i.cB{ background:var(--agent-color); }   /* 상의 — 축마다 다른 색 */
+.sprite i.cP{ background:#3B4252; }              /* 하의 */
+.sprite i.cK{ background:#1A1410; }              /* 신발 */
+.sprite i.cD{ background:var(--placard-bd); }    /* 책상 */
+
+/* 타이핑 루프 — 두 프레임을 steps로 갈아끼운다 (중간값 없음, 픽셀이 뭉개지지 않는다) */
+.sprite.frame-b{ opacity:0; }
+[data-state="working"] .sprite.frame-a,
+.lead-bar[data-pose="work"] .sprite.frame-a{ animation: frameSwapA 460ms steps(1) infinite; }
+[data-state="working"] .sprite.frame-b,
+.lead-bar[data-pose="work"] .sprite.frame-b{ animation: frameSwapB 460ms steps(1) infinite; }
+@keyframes frameSwapA{ 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
+@keyframes frameSwapB{ 0%,49%{opacity:0;} 50%,100%{opacity:1;} }
+
+/* 상태별로 보여줄 스프라이트만 남긴다 */
+.sprite{ display:none; }
+[data-state="working"] .sprite.pose-work,
+[data-state="waiting"] .sprite.pose-idle,
+[data-state="muted"]   .sprite.pose-idle,
+[data-state="done"]    .sprite.pose-stand{ display:grid; }
+
+/* ---- 푯말 ---- */
+.placard{
+  position:relative;
+  background:var(--placard-bg);
+  border:3px solid var(--placard-bd);
+  color:#2A2118;
+  font-family:var(--dot);
+  font-size:22px;              /* Galmuri11 ×2 */
+  line-height:1.1;
+  letter-spacing:0.5px;
+  padding:8px 12px;
+  max-width:100%;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  box-shadow:3px 3px 0 var(--bg-dark);
+  /* 축 점수 색은 테두리와 인디케이터에만. 바탕 전체를 칠하지 않는다 (design.md §2.2) */
+  --amp: 2.4px;   /* |axis_score| 0일 때의 최소 진폭 30% */
+  --rot: 0deg;
+  animation: sway var(--period, 500ms) ease-in-out infinite;
+  animation-delay: var(--phase, 0ms);
+  transform-origin: 50% 100%;
+}
+.placard.long{ font-family:var(--dot7); font-size:18px; }
+.placard[data-sign="pos"]{ border-color:var(--pos); }
+.placard[data-sign="neg"]{ border-color:var(--neg); }
+.placard:hover{ filter:brightness(1.06); }
+.placard.is-open{ box-shadow:0 0 0 3px var(--accent), 3px 3px 0 var(--bg-dark); }
+/* 푯말을 든 팔 — 캐릭터와 이어 보이게 하는 막대 */
+.placard::after{
+  content:'';
+  position:absolute;
+  left:50%; bottom:-14px;
+  width:6px; height:14px;
+  margin-left:-3px;
+  background:var(--placard-bd);
+}
+
+@keyframes sway{
+  0%,100%{ transform: translateX(calc(var(--amp) * -1)) rotate(calc(var(--rot) * -1)); }
+  50%    { transform: translateX(var(--amp)) rotate(var(--rot)); }
+}
+
+.uncertain-note{
+  font-size:11px;
+  color:var(--light-dim);
+  font-family:var(--dot);
+}
+.muted-line{
+  font-size:12px;
+  color:var(--text-dis);
+}
+
+/* ---- 컨디션 — 가로로 낮은 부스 ---- */
+.booth-low{ }
+.booth-low .booth-body{
+  flex-direction:row;
+  align-items:flex-end;
+  justify-content:center;
+  gap:18px;
+}
+.booth-low .prop{ top:auto; bottom:0; right:6px; }
+.booth-low .placard::after{ display:none; }
+
+/* ============================================================
+   팀장 바 (design.md §4.2)
+   ============================================================ */
+.lead-bar{
+  display:flex;
+  align-items:flex-end;
+  gap:18px;
+  background:var(--bg-light);
+  border:2px solid var(--bg-dark);
+  box-shadow:0 -3px 0 var(--placard-bd) inset;
+  padding:10px 16px 12px;
+  min-height:120px;
+  position:relative;
+}
+.lead-label{
+  position:absolute;
+  top:8px; left:16px;
+  font-family:var(--dot);
+  font-size:13px;
+  color:var(--light);
+  letter-spacing:1px;
+}
+.lead-char{ margin-left:2px; }
+.lead-bar[data-pose="work"]  .sprite.pose-work,
+.lead-bar[data-pose="think"] .sprite.pose-think,
+.lead-bar[data-pose="done"]  .sprite.pose-stand{ display:grid; }
+.lead-bar[data-pose="think"] .sprite.pose-think{ animation: bob 900ms steps(2) infinite; }
+@keyframes bob{ 0%{ transform:translateY(0); } 100%{ transform:translateY(-2px); } }
+
+.lead-right{
+  flex:1;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:6px;
+  padding-bottom:4px;
+}
+.lead-waiting{
+  font-size:13px;
+  color:var(--text-dis);
+}
+.verdict-word{
+  font-family:var(--dot14);
+  font-size:38px;              /* Galmuri14 × 2 이상 */
+  letter-spacing:2px;
+  background:none;
+  border:none;
+  padding:0;
+  color:var(--accent);
+  text-shadow:3px 3px 0 var(--bg-dark);
+}
+.verdict-word[data-verdict="NO_GO"]{ color:var(--light); }
+.verdict-hint{
+  font-size:12px;
+  color:var(--text-sub);
+}
+.alt-chip{
+  font-family:var(--dot);
+  font-size:11px;
+  background:var(--accent);
+  color:#2A2100;
+  padding:4px 8px;
+  border:2px solid var(--placard-bd);
+}
+
+/* 20초 초과 안내 (design.md §6.2) — 평소에는 진행 문구를 쓰지 않는다 */
+.timeout-box{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex-wrap:wrap;
+  background:var(--bg-dark);
+  border:2px solid var(--placard-bd);
+  padding:10px 12px;
+}
+.timeout-box span{ font-size:13px; color:var(--text); }
+
+/* ============================================================
+   말풍선 (design.md §5.3) — DOM에 하나만 두고 옮겨 다닌다
+   ============================================================ */
+.bubble{
+  position:absolute;
+  z-index:20;
+  width:min(360px, 78vw);
+  background:var(--placard-bg);
+  color:#2A2118;
+  border:3px solid var(--placard-bd);
+  box-shadow:5px 5px 0 var(--bg-dark);
+  padding:12px 14px;
+}
+.bubble-who{
+  font-family:var(--dot);
+  font-size:12px;
+  color:var(--placard-bd);
+  margin-bottom:6px;
+  letter-spacing:1px;
+}
+/* 본문은 일반 폰트. 100~180자를 도트체로 읽는 건 부담이다 (design.md 원칙 3) */
+.bubble-text{
+  font-family:var(--sans);
+  font-size:15px;
+  line-height:1.7;
+  margin:0;
+}
+.bubble-alt{
+  margin:10px 0 0;
+  padding-top:9px;
+  border-top:2px solid rgba(107,88,66,.35);
+  font-size:14px;
+  line-height:1.6;
+  color:#4A3B28;
+}
+.bubble-tail{
+  position:absolute;
+  width:0; height:0;
+  border:10px solid transparent;
+}
+.bubble[data-dir="down"] .bubble-tail{ top:-23px; border-bottom-color:var(--placard-bd); }
+.bubble[data-dir="up"]   .bubble-tail{ bottom:-23px; border-top-color:var(--placard-bd); }
+.bubble-close{
+  position:absolute;
+  top:6px; right:8px;
+  background:none; border:none;
+  font-family:var(--dot);
+  font-size:12px;
+  color:var(--placard-bd);
+}
+
+/* ============================================================
+   반응형 (design.md §8)
+   ============================================================ */
+@media (min-width:1440px){ :root{ --px:6px; --pp:5px; } }
+@media (max-width:1023px){
+  :root{ --px:4px; --pp:4px; }
+  .placard{ font-size:18px; }
+}
+@media (max-width:767px){
+  :root{ --px:3px; --pp:3px; }
+  .stage{ padding:0; }
+  .room{ border-width:0; box-shadow:none; min-height:100vh; }
+  /* 2×2는 유지하고 캐릭터를 작게, 푯말은 칸 하단에 가로로 (design.md §8.2) */
+  .booth{ padding:8px; }
+  .booth-body{ justify-content:flex-end; }
+  .placard{
+    font-family:var(--dot7);
+    font-size:14px;              /* Galmuri7 × 2 */
+    white-space:normal;
+    width:100%;
+    text-align:center;
+    padding:7px 6px;
+    min-height:44px;             /* 터치 타겟 */
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .placard::after{ display:none; }
+  .verdict-word{ font-size:30px; }
+  .booth-low .booth-body{ gap:10px; }
+  /* 말풍선은 하단 고정 시트로 (게임 대사창과 동일) */
+  .bubble{
+    position:fixed;
+    left:0; right:0; bottom:0;
+    top:auto;
+    width:100%;
+    border-width:3px 0 0;
+    box-shadow:none;
+    max-height:52vh;
+    overflow-y:auto;
+  }
+  .bubble-tail{ display:none; }
+}
+
+/* 흔들림을 끄고 강도는 테두리 굵기로 표현한다 (design.md §5.2) */
+@media (prefers-reduced-motion: reduce){
+  .placard{ animation:none; }
+  .placard[data-strength="2"]{ border-width:7px; }
+  .placard[data-strength="1"]{ border-width:5px; }
+  .placard[data-strength="0"]{ border-width:3px; }
+  .sprite{ animation:none !important; }
+  .booth{ transition:none; }
+}
+</style>
+</head>
+<body>
+
+<div class="stage">
+  <div class="room" id="room">
+
+    <header class="room-top">
+      <button type="button" class="btn-dot" id="backBtn">← 다시 입력</button>
+      <div class="ticket-info" id="ticketInfo"></div>
+      <span class="demo-chip" id="demoChip" hidden>데모 데이터</span>
+    </header>
+
+    <div class="booth-grid" id="boothGrid"></div>
+    <div id="lowBooth"></div>
+
+    <div class="lead-bar" id="leadBar" data-pose="work">
+      <span class="lead-label">팀장</span>
+      <div class="lead-char" id="leadChar"></div>
+      <div class="lead-right" id="leadRight">
+        <span class="lead-waiting">의견을 모으는 중…</span>
+      </div>
+    </div>
+
+    <!-- 말풍선은 .room 안에 둔다 — 좌표를 .room 기준으로 계산하기 때문 -->
+    <div class="bubble" id="bubble" hidden>
+      <div class="bubble-tail"></div>
+      <button type="button" class="bubble-close" id="bubbleClose">✕</button>
+      <div class="bubble-who" id="bubbleWho"></div>
+      <p class="bubble-text" id="bubbleText"></p>
+      <p class="bubble-alt" id="bubbleAlt" hidden></p>
+    </div>
+
+  </div>
+</div>
+
+<script src="engine.js"></script>
+<script>
+(function(){
+  "use strict";
+
+  const $ = id => document.getElementById(id);
+
+  /* ---------------------------------------------------------
+     입력 번들 — 랜딩에서 넘어온 것, 없으면 데모
+  --------------------------------------------------------- */
+  let bundle = null;
+  try{
+    const raw = sessionStorage.getItem('gon:bundle');
+    if(raw) bundle = JSON.parse(raw);
+  }catch(e){ /* 무시하고 데모로 */ }
+  if(!bundle){
+    bundle = GON.DEMO_BUNDLE;
+    $('demoChip').hidden = false;
+  }
+
+  /* ---------------------------------------------------------
+     픽셀 아트 — index.html의 .pref-icon 기법을 그대로 확장했다.
+     패턴 문자열 한 줄이 한 도트 행이고, 문자 하나가 셀 하나다.
+  --------------------------------------------------------- */
+  function drawPixels(host, rows, prefix){
+    rows.join('').split('').forEach(ch=>{
+      const cell = document.createElement('i');
+      if(ch !== '.') cell.className = prefix + ch;
+      host.appendChild(cell);
+    });
+  }
+  function sprite(rows, classes){
+    const el = document.createElement('div');
+    el.className = 'sprite ' + classes;
+    drawPixels(el, rows, 'c');
+    return el;
+  }
+
+  // 12 × 16 도트. 4인은 동일 베이스에 색만 바꾼다 (design.md §2.4)
+  const POSE = {
+    workA: [
+      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
+      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
+      '..SBBBBBBS..','.SSBBBBBBSS.','...BBBBBB...','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    workB: [
+      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
+      '...HSESEH...','...HSSSSH...','....SSSS....','.S.BBBBBB.S.',
+      '.SSBBBBBBSS.','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    idle: [
+      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
+      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
+      '...BBBBBB...','...BBBBBB...','....SSSS....','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    stand: [
+      '............','..S.HHHH.S..','..SHHHHHHS..','..SHSSSSHS..',
+      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
+      '...BBBBBB...','...BBBBBB...','...BBBBBB...','...BBBBBB...',
+      '...PP..PP...','...PP..PP...','...PP..PP...','...KK..KK...'
+    ],
+    // 팀장 — 헤드셋 착용 (K = 헤드셋 자리, 신발과 같은 어두운 색)
+    leadWorkA: [
+      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
+      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
+      '..SBBBBBBS..','.SSBBBBBBSS.','...BBBBBB...','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    leadWorkB: [
+      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
+      '...HSESEH...','...HSSSSH...','....SSSS....','.S.BBBBBB.S.',
+      '.SSBBBBBBSS.','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    leadThink: [
+      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
+      '...HSESEH...','...HSSSSS...','....SSSSS...','...BBBBBBS..',
+      '...BBBBBB...','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
+      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
+    ],
+    leadStand: [
+      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
+      '...HSESEH...','...HSSSSH...','....SSSS....','..SBBBBBBS..',
+      '...BBBBBB...','...BBBBBB...','...BBBBBB...','...BBBBBB...',
+      '...PP..PP...','...PP..PP...','...PP..PP...','...KK..KK...'
+    ]
+  };
+
+  // 8 × 8 소품 (design.md §2.4 — 소품만 보고 담당 축을 알 수 있어야 한다)
+  const PROPS = {
+    DEOKSIM:   ['MMMMMMMM','MAAAAAAM','MA....AM','MAAAA.AM','MA....AM','MAAAAAAM','MMMMMMMM','..M..M..'],
+    SIYA:      ['........','.AA..AA.','AMMAAMMA','AMLAALMA','AMMAAMMA','.AA..AA.','...AA...','........'],
+    COST:      ['.MMMMMM.','.MLLLLM.','.M....M.','.MAAAAM.','.MAAAAM.','.MAAAAM.','.MMMMMM.','........'],
+    EVENT:     ['...AA...','..AAAA..','MMMMMMMM','MMAAAAMM','MMAAAAMM','MMAAAAMM','MMAAAAMM','MMMMMMMM'],
+    CONDITION: ['..MMMM..','.MLLLLM.','MLLAALLM','MLLA.LLM','MLL..LLM','MLLLLLLM','.MLLLLM.','..MMMM..']
+  };
+
+  const AGENTS = [
+    { key:'DEOKSIM',   label:'덕심',   color:'#B5654A', prop:'캐스팅보드' },
+    { key:'SIYA',      label:'시야',   color:'#5C7FA3', prop:'오페라글라스' },
+    { key:'COST',      label:'비용',   color:'#6E8C5A', prop:'계산기' },
+    { key:'EVENT',     label:'이벤트', color:'#9A6BA5', prop:'증정품 상자' },
+    { key:'CONDITION', label:'컨디션', color:'#A8894A', prop:'시계' }
+  ];
+
+  /* ---------------------------------------------------------
+     부스 렌더
+  --------------------------------------------------------- */
+  const booths = {};
+
+  function buildBooth(a, low){
+    const sec = document.createElement('section');
+    sec.className = 'booth' + (low ? ' booth-low' : '');
+    sec.dataset.agent = a.key;
+    sec.dataset.state = 'working';
+    sec.style.setProperty('--agent-color', a.color);
+
+    const head = document.createElement('div');
+    head.className = 'booth-head';
+    head.innerHTML = '<span class="axis-name">' + a.label + '</span>' +
+                     '<span class="axis-dot" data-sign="off"></span>' +
+                     '<span class="booth-status">작업 중</span>';
+    sec.appendChild(head);
+
+    const body = document.createElement('div');
+    body.className = 'booth-body';
+
+    const prop = document.createElement('div');
+    prop.className = 'prop';
+    prop.title = a.prop;
+    drawPixels(prop, PROPS[a.key], 'c');
+    body.appendChild(prop);
+
+    const placard = document.createElement('button');
+    placard.type = 'button';
+    placard.className = 'placard';
+    placard.hidden = true;
+    body.appendChild(placard);
+
+    const note = document.createElement('span');
+    note.className = 'uncertain-note';
+    note.hidden = true;
+    note.textContent = '확실하지 않음';
+    body.appendChild(note);
+
+    const stack = document.createElement('div');
+    stack.className = 'sprite-stack';
+    stack.appendChild(sprite(POSE.workA, 'pose-work frame-a'));
+    stack.appendChild(sprite(POSE.workB, 'pose-work frame-b'));
+    stack.appendChild(sprite(POSE.idle,  'pose-idle'));
+    stack.appendChild(sprite(POSE.stand, 'pose-stand'));
+    body.appendChild(stack);
+
+    sec.appendChild(body);
+    booths[a.key] = { el:sec, placard:placard, note:note,
+                      dot:head.querySelector('.axis-dot'),
+                      status:head.querySelector('.booth-status') };
+    return sec;
+  }
+
+  const grid = $('boothGrid');
+  AGENTS.slice(0,4).forEach(a => grid.appendChild(buildBooth(a, false)));
+  $('lowBooth').appendChild(buildBooth(AGENTS[4], true));
+
+  // 팀장 — 헤드셋 착용, 하단 바 (design.md §2.4)
+  const leadChar = $('leadChar');
+  leadChar.style.setProperty('--agent-color', '#C9913F');
+  const leadStack = document.createElement('div');
+  leadStack.className = 'sprite-stack';
+  leadStack.appendChild(sprite(POSE.leadWorkA, 'pose-work frame-a'));
+  leadStack.appendChild(sprite(POSE.leadWorkB, 'pose-work frame-b'));
+  leadStack.appendChild(sprite(POSE.leadThink, 'pose-think'));
+  leadStack.appendChild(sprite(POSE.leadStand, 'pose-stand'));
+  leadChar.appendChild(leadStack);
+
+  /* ---------------------------------------------------------
+     상단 정보 한 줄
+  --------------------------------------------------------- */
+  (function renderTicketInfo(){
+    const b = bundle;
+    const bits = [];
+    if(b.season.work_title) bits.push('<b>' + b.season.work_title + '</b>');
+    if(b.session.date) bits.push(b.session.date + (b.session.matinee_or_evening === 'MATINEE' ? ' 낮공' : ' 밤공'));
+    const seat = [b.seat.floor ? b.seat.floor + '층' : '', b.seat.block || '',
+                  b.seat.row ? b.seat.row + '열' : '', b.seat.number ? b.seat.number + '번' : '']
+                 .filter(Boolean).join(' ');
+    if(seat) bits.push(seat);
+    if(b.payment.total_paid) bits.push(Number(b.payment.total_paid).toLocaleString('ko-KR') + '원');
+    $('ticketInfo').innerHTML = bits.join(' · ');
+  })();
+
+  /* ---------------------------------------------------------
+     말풍선 — 하나만 두고 옮겨 다닌다. 닫고 여는 과정이 없다.
+  --------------------------------------------------------- */
+  const bubble = $('bubble');
+  let openKey = null;
+
+  function closeBubble(){
+    bubble.hidden = true;
+    openKey = null;
+    document.querySelectorAll('.placard.is-open, .verdict-word.is-open')
+      .forEach(el => el.classList.remove('is-open'));
+  }
+
+  function openBubble(key, who, text, alt, anchor){
+    if(openKey === key){ closeBubble(); return; }
+    document.querySelectorAll('.placard.is-open, .verdict-word.is-open')
+      .forEach(el => el.classList.remove('is-open'));
+    anchor.classList.add('is-open');
+    openKey = key;
+
+    $('bubbleWho').textContent = who;
+    $('bubbleText').textContent = text;
+    const altEl = $('bubbleAlt');
+    if(alt){ altEl.textContent = alt; altEl.hidden = false; } else { altEl.hidden = true; }
+    bubble.hidden = false;
+
+    if(window.matchMedia('(max-width:767px)').matches){
+      // 하단 고정 시트 — 인라인 좌표를 지워 CSS에 자리를 넘긴다
+      bubble.style.left = '';
+      bubble.style.top = '';
+      return;
+    }
+
+    // 펼침 방향 자동 결정 (design.md §5.3)
+    const room = $('room').getBoundingClientRect();
+    const a = anchor.getBoundingClientRect();
+    const bw = bubble.offsetWidth, bh = bubble.offsetHeight;
+    const anchorMidX = a.left + a.width/2 - room.left;
+    const down = (a.top - room.top) < room.height * 0.45;   // 상단이면 아래로, 아니면 위로
+
+    bubble.dataset.dir = down ? 'down' : 'up';
+    let top = down ? (a.bottom - room.top + 16) : (a.top - room.top - bh - 16);
+    // 좌측 칸은 오른쪽으로, 우측 칸은 왼쪽으로 치우쳐 펼친다
+    let left = anchorMidX < room.width/2 ? anchorMidX - bw*0.25 : anchorMidX - bw*0.75;
+    left = Math.max(8, Math.min(room.width - bw - 8, left));
+    top  = Math.max(8, Math.min(room.height - bh - 8, top));
+
+    bubble.style.left = left + 'px';
+    bubble.style.top  = top + 'px';
+    const tail = bubble.querySelector('.bubble-tail');
+    tail.style.left = Math.max(12, Math.min(bw - 32, anchorMidX - left - 10)) + 'px';
+  }
+
+  $('bubbleClose').addEventListener('click', closeBubble);
+
+  /* ---------------------------------------------------------
+     푯말 세우기
+  --------------------------------------------------------- */
+  const PHASE = { DEOKSIM:0, SIYA:130, COST:260, EVENT:390, CONDITION:520 };
+
+  function raisePlacard(key, out){
+    const b = booths[key];
+    const label = GON.AGENT_LABEL[key];
+
+    if(out.is_muted){
+      // 회색 푯말은 아예 들지 않는다. 앉아 있는 것으로 충분하다 (design.md §5.1)
+      b.el.dataset.state = 'muted';
+      b.status.textContent = out.placard;
+      b.dot.dataset.sign = 'off';
+      return;
+    }
+
+    const s = out.axis_score;
+    const mag = Math.abs(s);
+    const sign = s > 0 ? 'pos' : (s < 0 ? 'neg' : 'neu');
+
+    // 진폭·주기·위상 (design.md §5.2). 0점도 최소 30%는 움직인다.
+    const amp    = 8 * (0.3 + 0.7 * mag / 2);
+    const period = 500 * (1.4 - 0.4 * mag / 2);
+    b.placard.style.setProperty('--amp', amp.toFixed(1) + 'px');
+    b.placard.style.setProperty('--rot', (mag * 0.7).toFixed(1) + 'deg');
+    b.placard.style.setProperty('--period', Math.round(period) + 'ms');
+    b.placard.style.setProperty('--phase', PHASE[key] + 'ms');
+
+    b.placard.textContent = out.placard;
+    b.placard.dataset.sign = sign;
+    b.placard.dataset.strength = String(mag);
+    // 16자 초과 방어 — 말줄임보다 한 단계 축소가 먼저 (design.md §7.3)
+    b.placard.classList.toggle('long', Array.from(out.placard).length > 12);
+    b.placard.hidden = false;
+
+    b.note.hidden = !out.uncertain;
+    b.dot.dataset.sign = sign;
+    b.status.textContent = out.defer ? '판단 유보' : (s > 0 ? '+' + s : String(s));
+    b.el.dataset.state = 'done';
+
+    b.placard.onclick = () => openBubble(key, label, out.detail, null, b.placard);
+  }
+
+  /* ---------------------------------------------------------
+     순차 등장 큐 — 실제 응답 순서를 쓰되 최소 1000ms 간격 (design.md §6.1)
+  --------------------------------------------------------- */
+  const queue = [];
+  let pumping = false, lastAt = 0;
+
+  function enqueue(key, out){
+    queue.push({ key:key, out:out });
+    pump();
+  }
+  function pump(){
+    if(pumping || !queue.length) return;
+    pumping = true;
+    const wait = Math.max(0, 1000 - (performance.now() - lastAt));
+    setTimeout(() => {
+      const item = queue.shift();
+      raisePlacard(item.key, item.out);
+      lastAt = performance.now();
+      pumping = false;
+      pump();
+    }, wait);
+  }
+
+  /* ---------------------------------------------------------
+     팀장 포즈 타임라인 (design.md §6.2)
+  --------------------------------------------------------- */
+  const leadBar = $('leadBar');
+  let poseTimers = [], timeoutTimer = null, session = null;
+
+  function startLeadTimeline(){
+    leadBar.dataset.pose = 'work';
+    poseTimers.push(setTimeout(() => { leadBar.dataset.pose = 'think'; }, 5000));
+    armTimeout();
+  }
+  function armTimeout(){
+    clearTimeout(timeoutTimer);
+    timeoutTimer = setTimeout(showTimeout, 20000);
+  }
+  function clearLeadTimers(){
+    poseTimers.forEach(clearTimeout); poseTimers = [];
+    clearTimeout(timeoutTimer);
+  }
+
+  function showTimeout(){
+    const right = $('leadRight');
+    right.innerHTML = '';
+    const box = document.createElement('div');
+    box.className = 'timeout-box';
+    box.innerHTML = '<span>시간이 조금 걸리고 있어요</span>';
+
+    const keep = document.createElement('button');
+    keep.type = 'button'; keep.className = 'btn-dot'; keep.textContent = '계속 기다리기';
+    keep.onclick = () => {
+      right.innerHTML = '<span class="lead-waiting">의견을 모으는 중…</span>';
+      armTimeout();
+    };
+
+    const retry = document.createElement('button');
+    retry.type = 'button'; retry.className = 'btn-dot'; retry.textContent = '다시 시도';
+    retry.onclick = () => start();
+
+    box.appendChild(keep); box.appendChild(retry);
+    right.appendChild(box);
+  }
+
+  function showVerdict(lead){
+    clearLeadTimers();
+    leadBar.dataset.pose = 'done';
+
+    const right = $('leadRight');
+    right.innerHTML = '';
+
+    const word = document.createElement('button');
+    word.type = 'button';
+    word.className = 'verdict-word';
+    word.dataset.verdict = lead.verdict;
+    word.textContent = lead.verdict_label;
+    right.appendChild(word);
+
+    const line = document.createElement('div');
+    line.style.display = 'flex';
+    line.style.alignItems = 'center';
+    line.style.gap = '8px';
+    line.style.flexWrap = 'wrap';
+    const hint = document.createElement('span');
+    hint.className = 'verdict-hint';
+    hint.textContent = '누르면 이유를 들려줘요';
+    line.appendChild(hint);
+    if(lead.alternative){
+      const chip = document.createElement('span');
+      chip.className = 'alt-chip';
+      chip.textContent = lead.alternative === 'SHARING' ? '나눔 검토' : '취소 검토';
+      line.appendChild(chip);
+    }
+    right.appendChild(line);
+
+    const altText = lead.alternative === 'SHARING'
+      ? '대안: 나눔 — 혜택은 챙기고 자리만 넘기는 쪽입니다.'
+      : (lead.alternative === 'CANCEL' ? '대안: 취소 — 수수료만 부담하고 정리하는 쪽입니다.' : null);
+
+    word.onclick = () => openBubble('LEAD', '팀장', lead.reasoning, altText, word);
+  }
+
+  /* ---------------------------------------------------------
+     시작
+  --------------------------------------------------------- */
+  function start(){
+    const my = session = {};
+    closeBubble();
+    clearLeadTimers();
+    queue.length = 0; pumping = false; lastAt = 0;
+
+    // 부스 초기화
+    AGENTS.forEach(a => {
+      const b = booths[a.key];
+      b.el.dataset.state = 'working';
+      b.placard.hidden = true;
+      b.note.hidden = true;
+      b.dot.dataset.sign = 'off';
+      b.status.textContent = '작업 중';
+    });
+    // 비용은 시야를 기다리는 동안 대기 포즈다 (design.md §6.1)
+    booths.COST.el.dataset.state = 'waiting';
+    booths.COST.status.textContent = '시야를 기다리는 중';
+
+    $('leadRight').innerHTML = '<span class="lead-waiting">의견을 모으는 중…</span>';
+    startLeadTimeline();
+
+    const run = GON.runConsult(bundle);
+
+    Object.keys(run.agents).forEach(key => {
+      run.agents[key].then(out => {
+        if(session !== my) return;
+        // 호출되지 않은 에이전트는 처음부터 앉은 상태로 둔다 (큐를 태우지 않는다)
+        if(out.is_muted) raisePlacard(key, out);
+        else enqueue(key, out);
+      });
+    });
+
+    run.agents.SIYA.then(() => {
+      if(session !== my) return;
+      if(booths.COST.el.dataset.state === 'waiting'){
+        booths.COST.el.dataset.state = 'working';
+        booths.COST.status.textContent = '작업 중';
+      }
+    });
+
+    run.lead.then(lead => { if(session === my) showVerdict(lead); });
+  }
+
+  $('backBtn').addEventListener('click', () => { location.href = 'index.html'; });
+  window.addEventListener('resize', closeBubble);
+
+  start();
+})();
+</script>
+</body>
+</html>
