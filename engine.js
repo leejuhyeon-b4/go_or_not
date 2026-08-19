@@ -203,6 +203,18 @@ window.GON = (function(){
     const affFromText = !aff && !!ft.work.sentiment;
     if(affFromText) aff = ft.work.sentiment === 'DISLIKE' ? 'MEH' : 'LIKE';
 
+    /* 시즌 위치 — changelog v2.1 §3.2
+       폐막일과 오늘 날짜만으로 계산되므로 크롤링 실패와 무관하다.
+       "남은 애배 회차"를 대체한다. 배우 이름을 받지 않으므로 특정 배우의
+       남은 회차는 애초에 매칭할 수 없다.
+
+       초반이면 오늘의 대체불가성이 실제로 낮다. 기존 덕심은 항상 가산
+       방향으로만 말했는데, 여기서 처음으로 무게를 낮추는 서술이 들어간다. */
+    const prog  = (typeof b.season_progress === 'number') ? b.season_progress : null;
+    const early = prog != null && prog < 0.30;
+    const late  = prog != null && prog >= 0.70 && prog < 0.90;
+    const last  = prog != null && prog >= 0.90;
+
     let raw = 0;
     const drivers = [];
     if(fav){   raw += 2; drivers.push('FAVORITE_ACTOR'); }
@@ -212,6 +224,9 @@ window.GON = (function(){
       drivers.push(actorEvts.some(e => e.photo_allowed) ? 'PHOTO_ALLOWED' : 'ACTOR_EVENT');
     }
     if(aff){ raw += AFF_DELTA[aff]; drivers.push('WORK_AFFINITY'); }
+    // 애배 출연은 여전히 +2를 만들고, 시즌 위치가 그 무게를 조절한다.
+    // 후반·막바지는 서술로만 다룬다 — 점수를 올리는 방향은 넣지 않는다.
+    if(early && raw > 0){ raw -= 1; drivers.push('SEASON_EARLY'); }
 
     // 게이트 — 선호도가 상한을 건다. 애배가 나와도 불호작이면 0을 넘지 못한다.
     // 덕심이 마이너스를 내는 통로는 이 축에서 작품 불호 하나뿐이다 (애배 미출연은 0이다)
@@ -249,16 +264,29 @@ window.GON = (function(){
                   : '';
 
     const verdictClause =
-      score >= 2   ? '덕심 축에서는 오늘 회차의 특별도를 가장 높은 쪽으로 봅니다. 놓치면 같은 장면을 다시 만들 방법이 없는 종류입니다.'
+      // 시즌 초반이면 "다시 만들 방법이 없다"고 말할 수 없다 (v2.1 §3.2)
+      score >= 2   ? '덕심 축에서는 오늘 회차의 특별도를 가장 높은 쪽으로 봅니다.' +
+                     (early ? '' : ' 놓치면 같은 장면을 다시 만들 방법이 없는 종류입니다.')
       : score === 1 ? '덕심 축에서는 오늘 회차를 플러스로 봅니다. 결정적이지는 않아도 다른 조건이 비슷하다면 여기서 차이가 납니다.'
       : score === 0 && fav && affNeg
                     ? '배우 쪽은 밀고 작품 쪽은 붙잡습니다. 덕심 축은 어느 쪽으로도 기울지 않았고, 오늘 결론은 나머지 축에 맡깁니다.'
       : score === 0 ? '덕심 축에서 오늘 이 회차를 특별하게 만들 요소는 잡히지 않았습니다. 마이너스라는 뜻이 아니라 할 말이 별로 없다는 뜻입니다.'
                     : '덕심 축은 오늘 회차를 붙잡는 쪽입니다. 배우로도 작품으로도 오늘을 밀어줄 이유가 잡히지 않습니다.';
 
-    // 선택 절 — 자리가 남을 때만 붙는다
+    // 선택 절 — 앞에 놓은 것이 먼저 자리를 가져간다
     const names = a => a.map(e => e.label).filter(Boolean).join('·');
     const optional = [];
+
+    /* 시즌 위치 서술 (v2.1 §3.2). 중반이면 아무 말도 하지 않는다.
+       초반 서술은 점수를 실제로 깎은 근거이므로 이벤트 절보다 먼저 놓는다. */
+    if(early){
+      optional.push('다만 폐막까지 아직 많이 남아 있어, 앞으로 더 좋은 자리나 조건으로 볼 기회가 생길 수 있습니다.');
+    } else if(last){
+      optional.push('폐막이 코앞이라 이번 시즌에 남은 기회가 많지 않습니다.');
+    } else if(late){
+      optional.push('시즌 후반이라 남은 기간이 줄어들고 있습니다.');
+    }
+
     if(fav && actorEvent){
       optional.push('오늘 ' + (names(actorEvts) || '배우 이벤트') + '까지 열려 배우 쪽 무게가 한 번 더 실립니다.');
     } else if(actorEvent){
@@ -267,9 +295,11 @@ window.GON = (function(){
     if(otherEvts.length){
       optional.push('오늘 ' + (names(otherEvts) || '이벤트') + '도 있는데 배우와 무관한 종류라 이벤트 축이 따로 봅니다.');
     }
-    // 페어는 사용자가 먼저 꺼냈을 때만 말한다. 관람 이력 데이터가 없어 점수는 못 낸다
+    /* 페어 — v2.1 §3.3. 시스템이 조합 희소성을 판단하지 않는다. 경우의 수가
+       많아 산술적으로는 모두 희소하게 나오고, 팬덤이 실제로 특별하게 치는
+       조합인지는 데이터로 판별할 수 없다. 사용자가 먼저 꺼냈을 때만 읽는다. */
     if(ft.pair.mentioned){
-      optional.push('페어 이야기를 적어주셨는데, 관람 이력이 없어 점수에는 넣지 못했습니다.');
+      optional.push('페어에 대해 적어주신 이야기는 오늘 회차의 특별도로 함께 읽었습니다.');
     }
 
     let detail = [castClause, workClause, verdictClause].filter(Boolean).join(' ');
@@ -285,7 +315,8 @@ window.GON = (function(){
       primary_drivers: drivers,
       confidence: b.work_affinity ? 0.7 : (affFromText ? 0.55 : (fav || first ? 0.6 : 0.5)),
       // 불호·무난작에서는 대체불가로 결론을 밀어붙이지 않는다 (aggregate STEP 판단층)
-      irreplaceable: fav && actorEvent && !affNeg,
+      // 시즌 초반도 마찬가지다 — 앞으로 기회가 남아 있으면 대체불가가 아니다
+      irreplaceable: fav && actorEvent && !affNeg && !early,
       placard: placard,
       detail: detail,
       missing_info: missing
@@ -481,14 +512,16 @@ window.GON = (function(){
   ];
 
   function cancellationFee(b){
-    if(b.payment.acquisition === 'TRANSFER'){
-      return { cancellable:false, fee:null, reason:'양도받은 표는 원 예매자만 취소할 수 있어요' };
+    // 취소 권한은 원 예매자 계정에만 있다. 취득 경로를 묻지 않게 됐으므로
+    // 사용자가 R-9에서 직접 알려준 것을 본다 (v2.1 §2.1)
+    if((b.disposal_options || []).includes('NO_CANCEL')){
+      return { cancellable:false, fee:null, reason:'내 계정 표가 아니라 취소할 수 없어요' };
     }
     if(!b.session.datetime) return { cancellable:false, fee:null, reason:'공연 일시 미상' };
 
     const show = new Date(b.session.datetime);
     const now = b.session.now ? new Date(b.session.now) : new Date();
-    const paid = Number(b.payment.total_paid) || 0;
+    const paid = Number(b.payment.actual_burden) || Number(b.payment.total_paid) || 0;
 
     const cutoff = new Date(show); cutoff.setDate(cutoff.getDate() - 1); cutoff.setHours(17,0,0,0);
     if(now >= cutoff) return { cancellable:false, fee:null, reason:'전날 17시가 지나 취소할 수 없어요' };
@@ -505,40 +538,56 @@ window.GON = (function(){
   }
 
   function agentCost(b, siya, ft){
-    const paid = (Number(b.payment.total_paid)||0) + (Number(b.payment.surcharge)||0);
+    // 증빙 불가 추가결제까지 반영된 값이다 (v2.1 §1.6). 손실도 이 값으로 센다.
+    const paid = Number(b.payment.actual_burden) || Number(b.payment.total_paid) || 0;
     const opts = b.disposal_options || [];
     const cancel = cancellationFee(b);
     const extra = ft.money;
     const drivers = [];
     const missing = [];
 
-    /* ① 지불 대비 좌석 가치
-       정가 테이블이 있으면 할인율로 판단하고, 없으면 판단하지 않는다.
-       CASE 5의 51,000원을 S석 정가로 오판한 것이 바로 이 자리의 실패였다. */
-    const svg = siya.seat_value_grade || {};
-    const list = b.payment.list_price;
-    const rate = b.payment.discount_rate;   // data.js 가 정가 대비로 산출
-    let valueScore = 0, priceLine;
+    /* ① 지불 대비 좌석 가치 — changelog v2.1 §1
 
-    if(list != null){
-      if(rate >= 0.35)      valueScore = 2;
-      else if(rate >= 0.15) valueScore = 1;
-      else if(rate > 0)     valueScore = 0;
-      else if(rate === 0)   valueScore = 0;
-      else                  valueScore = -1;   // 정가보다 더 냈다 (수수료·플미)
+       "정가 대비 몇 % 할인받았는가"가 아니라 "받을 수 있었던 최선 대비
+       어느 위치인가"를 본다. 사다리 길이가 극장 성격을 이미 담고 있어서
+       소극장의 30%와 대극장의 30%가 자동으로 다르게 읽힌다.
+
+       기준선·gap·band 는 data.js 가 확정해서 넘긴다. 여기서 산수하지 않는다. */
+    const svg  = siya.seat_value_grade || {};
+    const list = b.payment.list_price;
+    const rate = b.payment.discount_rate;     // %p
+    const baseline = b.payment.baseline_rate; // %p
+    let valueScore = b.payment.band;
+    let priceLine;
+
+    if(valueScore != null){
       priceLine = (b.payment.list_price_grade ? b.payment.list_price_grade + '석 ' : '') +
                   '정가 ' + won(list) +
-                  (rate > 0 ? '에서 ' + Math.round(rate*100) + '% 할인된 값입니다.'
-                            : '과 같거나 그 이상을 내셨습니다.');
-      if(b.payment.list_price_verified === false){
-        missing.push('정가 확인 (추정값)');
-        priceLine += ' 다만 이 정가는 확인된 값이 아니라 추정치입니다.';
-      }
+                  (rate > 0 ? '에서 ' + rate + '% 할인받으셨습니다.'
+                            : '을 그대로 내셨습니다.') +
+                  ' 오늘 받으실 수 있었던 최선은 ' + baseline + '%였습니다.';
+      if(b.payment.list_price_verified === false) missing.push('정가 확인 (추정값)');
+      if(b.payment.discounts_verified === false) missing.push('할인 목록 확인 (임시값)');
       drivers.push('PRICE_GAP');
     } else {
-      // 정가를 모르면 가격의 적정성은 판단하지 않는다 (원칙 6)
-      missing.push('등급별 정가 (예매처 미수집)');
-      priceLine = '이 시즌의 정가 테이블이 아직 수집되지 않아 지불액이 자리에 비해 비싼지 싼지는 판단하지 않았습니다.';
+      // 정가나 사다리를 모르면 가격의 적정성은 판단하지 않는다 (원칙 6)
+      valueScore = 0;
+      if(list == null){
+        missing.push('등급별 정가 (예매처 미수집)');
+        priceLine = '이 시즌의 정가 테이블이 아직 수집되지 않아 지불액이 자리에 비해 비싼지 싼지는 판단하지 않았습니다.';
+      } else {
+        missing.push('할인 목록 (예매처 미수집)');
+        priceLine = '이 시즌의 할인 목록이 아직 수집되지 않아 최선 대비 어느 위치인지는 판단하지 않았습니다.';
+      }
+    }
+
+    // 증빙 불가로 더 내게 된 금액은 사실만 적는다. 입장 가능 여부는 판단하지 않는다.
+    if(b.payment.surcharge > 0){
+      priceLine += ' 권종 증빙이 어려워 ' + won(b.payment.surcharge) +
+                   '을 더 내면 실제 부담은 ' + won(paid) + '이 됩니다.';
+      if(b.payment.discount_proof_policy === 'UNKNOWN'){
+        missing.push('권종 증빙 정책 (예매처 미수집)');
+      }
     }
 
     // 낸 등급 대비 체감 등급 차이 — 시야가 준 유일한 값
@@ -580,17 +629,17 @@ window.GON = (function(){
 
     let score = clamp(Math.round(valueScore + lossScore), -2, 2);
 
-    // ③ 서술
+    // ③ 서술 — 사다리 위치를 말한다. 절대 할인율이 아니라 최선 대비 위치다.
     let placard;
-    if(best.loss >= 100000)      placard = '안 가면 ' + Math.round(best.loss/10000) + '만원 손해';
-    else if(list == null)        placard = '가격은 판단 보류';
-    else if(score >= 2)          placard = '값은 충분히 했어요';
-    else if(score === 1)         placard = '지불액은 무난해요';
-    else if(score === 0)         placard = '가격은 평범해요';
-    else if(score === -1)        placard = '자리에 비해 비싸요';
-    else                         placard = '이 자리에 과지출이에요';
+    if(best.loss >= 100000)         placard = '안 가면 ' + Math.round(best.loss/10000) + '만원 손해';
+    else if(b.payment.band == null) placard = '가격은 판단 보류';
+    else if(score >= 2)             placard = '최선에 가깝게 샀어요';
+    else if(score === 1)            placard = '무난하게 받으셨어요';
+    else if(score === 0)            placard = '조금 아쉬운 값이에요';
+    else if(score === -1)           placard = '더 받을 수 있었어요';
+    else                            placard = '정가로 사신 셈이에요';
 
-    let detail = '실지불액 ' + won(paid) + '입니다. ' + priceLine +
+    let detail = '실제 부담 ' + won(paid) + '입니다. ' + priceLine +
       ' 안 가기로 하면 ' + subj(best.how) + ' 가장 손실이 작아 ' + won(best.loss) + '을 잃습니다.';
     if(cancel.cancellable){
       detail += ' 지금 취소하면 수수료는 ' + won(cancel.fee) + '입니다';
@@ -600,13 +649,15 @@ window.GON = (function(){
     }
     if(extra) detail += ' 기타란의 부대비용 ' + won(extra) + '도 함께 나갑니다.';
 
-    // 정가·등급이 모두 DB에서 왔으면 확신을 올린다
-    const solid = (list != null && b.payment.list_price_verified !== false) && svg.paid_grade != null;
+    // 정가·사다리·등급이 모두 DB에서 왔으면 확신을 올린다
+    const solid = list != null && b.payment.list_price_verified !== false &&
+                  b.payment.band != null && b.payment.discounts_verified !== false &&
+                  svg.paid_grade != null;
 
     return base('COST', {
       axis_score: score,
       primary_drivers: Array.from(new Set(drivers)),
-      confidence: solid ? 0.75 : (list != null ? 0.6 : 0.35),
+      confidence: solid ? 0.75 : (b.payment.band != null ? 0.6 : 0.35),
       placard: placard,
       detail: detail,
       missing_info: Array.from(new Set(missing)),
@@ -961,23 +1012,36 @@ window.GON = (function(){
     // season/seat/payment 의 DB 파생 필드는 data.js 가 채운 결과와 같은 값이다
     season: { id:'western-2026', work_title:'웨스턴 스토리', season_label:'2026',
               venue_id:'nol-uniplex-1', venue_name:'NOL 유니플렉스 1관',
-              running_time:null, has_intermission:null, close_date:'2026-09-27',
+              running_time:null, has_intermission:null,
+              open_date:'2026-07-01', close_date:'2026-09-27',
               cancellation_policy:null },
     session: { date:'2026-07-15', datetime:'2026-07-15T19:30:00', matinee_or_evening:'EVENING',
-               is_opening:null, is_closing:null, now:'2026-07-13T11:00:00' },
+               now:'2026-07-13T11:00:00' },
     seat: { floor:1, block:'중앙', row:'6', number:7,
             grade:null,                 // 좌석→등급 매핑 미수집
             is_aisle:true,              // 좌석배치도에서 확인됨 (CASE 1)
             is_restricted:null, zone:null, row_index:6, row_index_in_floor:6,
             notes:[], sources:['test_cases.md CASE 1'],
             unknown:['좌석 등급 (좌석배치도 미수집)', '시야제한석 명단 (미수집)'] },
-    payment: { acquisition:'DIRECT', total_paid:52800, surcharge:0,
+    // v2.1 §6.5 — band 까지 data.js 가 확정해서 넘긴 결과다.
+    // 조예할 30%를 골랐고 실부담은 40% 할인 수준인데, 차액 8,800원의 정체는
+    // 추정하지 않는다(포인트·수수료 면제 등). 자첫이라 LOYALTY 40%는 기준선에서 빠진다.
+    payment: { total_paid:52800,
                list_price:88000, list_price_grade:'R', list_price_verified:false,
-               discount_rate:0.4, cancellation_fee:null },
+               grade:'R',
+               selected_discount:{ name:'조기예매 할인', rate:30, type:'STANDING' },
+               selected_other:false,
+               proof_status:null, surcharge:0, actual_burden:52800,
+               expected_price:61600, diff:8800, mismatch_warn:false,
+               discount_rate:40, baseline_rate:30, gap:10, band:2,
+               discount_proof_policy:'UNKNOWN', discounts_verified:false,
+               cancellation_fee:null },
+    season_progress: 0.14,      // 개막 2주차 — 시즌 초반 (v2.1 §3.2)
     coverage: { has_season:true, has_venue:true, has_price:true, price_verified:false,
+                has_discounts:true, discounts_verified:false,
                 has_grade:false, has_aisle:true, seat_map_collected:false },
     disposal_options: ['NO_TRANSFER'],
-    casting: { today_cast:null, has_favorite_actor:true, favorite_actors_today:null, remaining_favorite_sessions:null },
+    casting: { has_favorite_actor:true },
     first_watch: true,
     work_affinity: null,        // 자첫이라 작품 선호도를 물을 수 없다
     seat_preference: { first:'FRONT', second:'AISLE', actor_path_side:null },

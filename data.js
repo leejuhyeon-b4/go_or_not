@@ -150,11 +150,164 @@ window.GON_DB = (function(){
     return null;
   }
 
-  function discountRate(list, paid){
-    if(!list || !list.price || !paid) return null;
-    const rate = 1 - (paid / list.price);
-    if(rate <= 0.001) return 0;
-    return Math.round(rate * 100) / 100;
+  /* ---------------------------------------------------------
+     할인 사다리 — changelog v2.1 §1
+
+     "정가 대비 몇 % 할인받았는가"가 아니라
+     "이 사람이 받을 수 있었던 최선 대비 어느 위치인가"를 본다.
+
+     소극장은 할인이 다양해 30%가 아쉬운 수준이고, 대극장은 20%가
+     최대치다. 절대 할인율로 보면 같은 30%가 정반대 의미가 된다.
+     사다리 길이가 극장 성격을 이미 담고 있어서 대/소극장 분류가
+     따로 필요 없다.
+
+     단위는 전부 퍼센트 포인트(0~100)다. 0~1 분수를 섞지 않는다.
+  --------------------------------------------------------- */
+  function discounts(season){
+    return (season && season.discounts) || null;
+  }
+
+  function findDiscount(season, name){
+    const ds = discounts(season);
+    if(!ds || !name) return null;
+    return ds.find(d => d.name === name) || null;
+  }
+
+  // §1.3 기준선 = max(STANDING 최댓값,
+  //                  선택한 ELIGIBILITY 권종의 값,
+  //                  자첫이 아니면 LOYALTY 최댓값)
+  // 같은 공연이라도 사용자마다 다르다. 자첫 여부는 R-6에 이미 있다.
+  function baselineRate(season, opts){
+    const ds = discounts(season);
+    if(!ds || !ds.length) return null;
+    const o = opts || {};
+    let base = 0;
+    ds.forEach(function(d){
+      const rate = Number(d.rate) || 0;
+      if(d.type === 'STANDING') base = Math.max(base, rate);
+      else if(d.type === 'LOYALTY' && !o.firstWatch) base = Math.max(base, rate);
+    });
+    if(o.selected && o.selected.type === 'ELIGIBILITY'){
+      base = Math.max(base, Number(o.selected.rate) || 0);
+    }
+    return base;
+  }
+
+  // 권종 적용가 — 정가에 그 권종의 할인율을 먹인 값
+  function priceForDiscount(listPriceWon, rate){
+    if(listPriceWon == null) return null;
+    return Math.round(listPriceWon * (1 - (Number(rate) || 0) / 100));
+  }
+
+  // §1.4 밴드. gap = 실제 할인율 - 기준선 (%p)
+  // 구간이 10%p 단위라 예매수수료·포인트 같은 소액 차이는 판정을 바꾸지 않는다.
+  function band(gap){
+    if(gap == null) return null;
+    if(gap >= -5)  return 2;      // 초과도 포함
+    if(gap >= -15) return 1;
+    if(gap >= -25) return 0;
+    return -1;
+  }
+
+  // 실제 부담액이 정가에서 몇 %p 깎인 값인지. 퍼센트 포인트로 돌려준다.
+  function discountRate(listPriceWon, burden){
+    if(!listPriceWon || burden == null) return null;
+    const rate = (1 - burden / listPriceWon) * 100;
+    if(Math.abs(rate) < 0.05) return 0;
+    return Math.round(rate * 10) / 10;
+  }
+
+  /* ---------------------------------------------------------
+     §1.7 결제 정보 확정 — 전 과정이 결정론적이므로 즉시 계산된다.
+
+     band 까지 여기서 확정해서 넘긴다. 엔진은 산수를 하지 않고
+     푯말 문구와 설명만 쓴다.
+
+     input = { paid, selectedName, isOther, firstWatch, proofStatus, altName }
+       selectedName : 사다리에서 고른 할인명. null = 정가
+       isOther      : "목록에 없는 할인" 선택 여부
+       proofStatus  : NOT_REQUIRED | AVAILABLE | UNAVAILABLE | null
+       altName      : GRADE_CHANGE 로 바꿀 대체 권종명
+  --------------------------------------------------------- */
+  function computePayment(season, list, input){
+    const inp   = input || {};
+    const paid  = Number(inp.paid) || 0;
+    const lp    = list ? list.price : null;
+    const sel   = inp.isOther ? null : findDiscount(season, inp.selectedName);
+    const policy = (season && season.discount_proof_policy) || null;
+
+    // 권종 적용가 — "목록에 없는 할인"이면 역산할 근거가 없으므로 결제액 그대로 본다.
+    // 역산은 이 경우에만 쓴다. 어느 할인인지 알 필요가 없어 겹침 문제가 없다.
+    const expected = sel ? priceForDiscount(lp, sel.rate) : lp;
+
+    // §1.6 증빙 불가 시 추가결제
+    // 증빙을 못 하면 그 권종은 애초에 못 쓴 것이 된다. 기준선도 실제로 쓰게 된
+    // 권종으로 다시 잡아야 한다 — 청소년 50%를 증빙 못 해 조예할 30%로 바꿨으면
+    // 기준선은 50이 아니라 30이다 (§1.6 계산 예).
+    let surcharge = 0;
+    let burden    = paid;
+    let effective = sel;
+    if(inp.proofStatus === 'UNAVAILABLE' && lp != null){
+      const alt = (policy === 'GRADE_CHANGE') ? findDiscount(season, inp.altName) : null;
+      effective = alt;                                    // null 이면 정가로 되돌아간 것
+      const target = alt ? priceForDiscount(lp, alt.rate) : lp;
+      surcharge = target - paid;
+      burden    = target;
+    }
+
+    const rate     = discountRate(lp, burden);
+    const baseline = baselineRate(season, { firstWatch: !!inp.firstWatch, selected: effective });
+
+    let bandVal = null;
+    let gap = null;
+    if(rate != null && baseline != null){
+      gap = Math.round((rate - baseline) * 10) / 10;
+      bandVal = rate === 0 ? -2 : band(gap);   // 정가는 사다리 위치와 무관하게 -2
+    }
+
+    // §1.5 차액의 정체는 추정하지 않는다. 음수여도(예매수수료) 정상이다.
+    // 다만 20% 이상 벌어지면 입력을 다시 보라고만 말한다.
+    const diff = (expected != null) ? expected - paid : null;
+    const mismatch = !!(expected && diff != null && Math.abs(diff) / expected >= 0.20);
+
+    return {
+      total_paid: paid,
+      list_price: lp,
+      list_price_grade: list ? list.grade : null,
+      list_price_verified: list ? list.verified : null,
+      grade: list ? list.grade : null,
+      selected_discount: sel ? { name: sel.name, rate: sel.rate, type: sel.type } : null,
+      selected_other: !!inp.isOther,
+      proof_status: inp.proofStatus || null,
+      surcharge: surcharge,
+      actual_burden: burden,
+      expected_price: expected,
+      diff: diff,
+      mismatch_warn: mismatch,
+      discount_rate: rate,
+      baseline_rate: baseline,
+      gap: gap,
+      band: bandVal,
+      discount_proof_policy: policy,
+      discounts_verified: season ? !!season.discounts_verified : null,
+      cancellation_fee: null   // 엔진이 계산 (PRD §5.3 ③)
+    };
+  }
+
+  /* ---------------------------------------------------------
+     시즌 위치 — changelog v2.1 §3.2
+
+     폐막일과 오늘 날짜만으로 계산된다. 크롤링 실패와 무관하다.
+     초반이면 오늘의 대체불가성이 실제로 낮다는 뜻이라 덕심이 무게를 낮춘다.
+  --------------------------------------------------------- */
+  function seasonProgress(season, today){
+    if(!season || !season.open_date || !season.close_date) return null;
+    const open  = Date.parse(season.open_date);
+    const close = Date.parse(season.close_date);
+    const now   = today ? Date.parse(new Date(today).toISOString().slice(0,10)) : Date.now();
+    if(!(close > open)) return null;
+    const p = (now - open) / (close - open);
+    return Math.round(Math.max(0, Math.min(1, p)) * 100) / 100;
   }
 
   /* ---------------------------------------------------------
@@ -175,6 +328,8 @@ window.GON_DB = (function(){
       has_venue: !!venue,
       has_price: !!(season && Object.keys(season.prices || {}).length),
       price_verified: !!(season && season.prices_verified),
+      has_discounts: !!(season && season.discounts),
+      discounts_verified: !!(season && season.discounts_verified),
       has_grade: !!(seatInfo && seatInfo.grade),
       has_aisle: !!(seatInfo && seatInfo.is_aisle !== null),
       seat_map_collected: !!(venue && venue.collected)
@@ -188,7 +343,14 @@ window.GON_DB = (function(){
     rowIndexWithinFloor: rowIndexWithinFloor,
     resolveSeat: resolveSeat,
     listPrice: listPrice,
+    discounts: discounts,
+    findDiscount: findDiscount,
+    baselineRate: baselineRate,
+    priceForDiscount: priceForDiscount,
+    band: band,
     discountRate: discountRate,
+    computePayment: computePayment,
+    seasonProgress: seasonProgress,
     cancellationPolicy: cancellationPolicy,
     coverage: coverage,
     VENUES: VENUES,

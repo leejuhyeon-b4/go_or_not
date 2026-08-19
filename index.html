@@ -164,6 +164,17 @@ input::placeholder, textarea::placeholder{ color:var(--text-dis); }
 }
 .ticket-extra.open{ max-height:72px; margin-top:6px; }
 
+/* 계산 결과 — 사실만 적고 판정하지 않는다 (changelog v2.1 §1.7).
+   "최대 할인 받으셨어요!" 같은 판정은 비용 에이전트가 푯말로 할 말이다. */
+.fact-line{
+  margin:6px 0 0;
+  font-size:12px;
+  line-height:1.5;
+  color:var(--text-sub);
+  font-variant-numeric:tabular-nums;
+}
+.fact-line .warn{ color:var(--accent); }
+
 /* 선호좌석 6칸 그리드 */
 .pref-grid{
   display:grid;
@@ -604,26 +615,39 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
           </div>
         </div>
 
-        <!-- R-4 티켓값 -->
+        <!-- R-4 티켓값 — changelog v2.1 §1.5
+             직접/양도 분기는 없앴다. 직접 예매한 표를 남에게 양도할 때도
+             권종 증빙 문제가 생기므로 "내 표"라고 답한 사용자에게 증빙
+             질문이 안 뜨는 게 오히려 틀렸다. -->
         <div class="row">
+          <div class="field">
+            <label class="field-label" for="discountSelect">어떤 할인을 받으셨나요?<span class="req">*</span></label>
+            <select id="discountSelect"></select>
+          </div>
           <div class="field mid">
-            <label class="field-label">취득 경로<span class="req">*</span></label>
-            <div class="segment" data-group="acquisition">
-              <button type="button" data-value="DIRECT">직접예매</button>
-              <button type="button" data-value="TRANSFER">양도받음</button>
+            <label class="field-label" for="paidAmount">결제한 금액(원)<span class="req">*</span></label>
+            <input id="paidAmount" type="number" min="0" step="100" placeholder="46500">
+          </div>
+        </div>
+        <!-- 증빙 3택 — ELIGIBILITY·LOYALTY 권종이나 "목록에 없는 할인"일 때만 -->
+        <div class="ticket-extra" id="proofExtra">
+          <div class="field">
+            <label class="field-label">증빙 가능하신가요?<span class="req">*</span></label>
+            <div class="segment" data-group="proofStatus">
+              <button type="button" data-value="NOT_REQUIRED">필요 없어요</button>
+              <button type="button" data-value="AVAILABLE">가능해요</button>
+              <button type="button" data-value="UNAVAILABLE">불가해요</button>
             </div>
           </div>
+        </div>
+        <!-- 대체 권종 — 증빙 불가 + GRADE_CHANGE 정책일 때만 -->
+        <div class="ticket-extra" id="altGradeExtra">
           <div class="field">
-            <label class="field-label" for="paidAmount">실지불액(원)<span class="req">*</span></label>
-            <input id="paidAmount" type="number" min="0" step="100" placeholder="52800">
+            <label class="field-label" for="altGradeSelect">어떤 권종으로 바꾸시겠어요?</label>
+            <select id="altGradeSelect"></select>
           </div>
         </div>
-        <div class="ticket-extra" id="ticketExtra">
-          <div class="field">
-            <label class="field-label" for="surchargeAmount">추가 결제액(원)</label>
-            <input id="surchargeAmount" type="number" min="0" step="100" placeholder="0">
-          </div>
-        </div>
+        <p class="fact-line" id="priceFactLine" hidden></p>
 
         <!-- R-5 오늘 캐스팅 -->
         <div class="row">
@@ -695,6 +719,9 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
               <label class="chk"><input type="checkbox" value="TRANSFERABLE"><span>양도 가능</span></label>
               <label class="chk"><input type="checkbox" value="NEEDS_PROOF"><span>증빙 도움 필요</span></label>
               <label class="chk"><input type="checkbox" value="SHARING"><span>나눔 가능</span></label>
+              <!-- 취소 권한은 원 예매자 계정에만 있다. 취득 경로를 안 묻게 됐으니
+                   사용자가 더 잘 아는 것을 직접 받는다 (PRD 원칙 5) -->
+              <label class="chk"><input type="checkbox" value="NO_CANCEL"><span>취소 불가(내 계정 아님)</span></label>
             </div>
           </div>
         </div>
@@ -712,14 +739,17 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
           </div>
         </div>
 
-        <!-- S-1 기타란 -->
+        <!-- S-1 기타란 — changelog v2.1 §2.3
+             기본을 펼침으로 두고 "(선택)"을 뺐다. 앞 항목을 다 채우면
+             "더 없다"는 심리가 생겨 넘어가는데, 케이스 스터디 6건 중
+             결론을 뒤집은 게 2건(CASE 5 거부권, CASE 6 나눔) 나온 칸이다. -->
         <div class="row">
           <div class="field">
-            <button type="button" class="freetext-toggle" id="freetextToggle">
-              <span class="arrow">▸</span> 그 밖에 고민되는 부분이 있나요? (선택)
+            <button type="button" class="freetext-toggle open" id="freetextToggle">
+              <span class="arrow">▸</span> 이 회차만의 사정이 있나요?
             </button>
-            <div class="freetext-wrap" id="freetextWrap">
-              <textarea id="freeText" placeholder="극이나 캐스팅에 대한 생각, 이벤트, 좌석 걱정, 부대비용(KTX·숙소·촬영 장비 등), 컨디션, 전날·당일·다음날 일정, 막차 시간 등 자유롭게 적어주세요"></textarea>
+            <div class="freetext-wrap open" id="freetextWrap">
+              <textarea id="freeText" placeholder="컨디션, 전날·당일·다음날 일정, 막차 시간, 부대비용(KTX·숙소·촬영 장비 등), 페어막·첫공·막공 등 앞에서 못 담은 이야기를 적어주세요"></textarea>
             </div>
           </div>
         </div>
@@ -833,7 +863,11 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   const state = {
     loggedIn:false,
     matinee:null,
-    acquisition:null,
+    // R-4 할인 사다리 (v2.1 §1.5)
+    // discountSelect 의 값을 그대로 담는다: '' 미답 | 'NONE' 정가 | 'OTHER' 목록에 없음 | 권종명
+    selectedDiscount:'',
+    proofStatus:null,      // NOT_REQUIRED | AVAILABLE | UNAVAILABLE
+    altGradeName:null,     // 증빙 불가 + GRADE_CHANGE 일 때 고른 대체 권종
     casting:null,
     firstWatch:null,
     workAffinity:null,     // 자첫이 아닐 때만 받는다 (LOVE/LIKE/MEH/DISLIKE)
@@ -956,13 +990,162 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   });
 
   /* ---------------------------------------------------------
+     R-4 할인 사다리 — changelog v2.1 §1.5 · §1.7
+
+     할인율을 역산해 권종을 추정하는 방식은 폐기했다. 5% 할인이 두 개
+     있거나 포인트·자체 쿠폰이 섞이면 추정이 깨진다. 사용자가 직접 고른다.
+
+     전 과정이 결정론적이라 입력 즉시 계산된다. LLM 호출이 없다.
+  --------------------------------------------------------- */
+  function currentSeason(){
+    return GON_DB.findSeason($('workTitle').value.trim(), $('sessionDate').value);
+  }
+
+  function currentList(){
+    const season = currentSeason();
+    if(!season) return null;
+    const seatInfo = GON_DB.resolveSeat(season, {
+      floor: $('seatFloor').value ? Number($('seatFloor').value) : null,
+      row: $('seatRowInput').value.trim(),
+      number: $('seatNumber').value ? Number($('seatNumber').value) : null
+    });
+    return GON_DB.listPrice(season, seatInfo.grade);
+  }
+
+  // 크롤링한 목록을 그대로 표시한다. 사다리가 없으면 조용히 잠근다 —
+  // 사용자는 "지금 모르는 게 있다"만 알면 되고 왜 모르는지는 알 필요가 없다.
+  function fillDiscountSelect(){
+    const sel = $('discountSelect');
+    const ds  = GON_DB.discounts(currentSeason());
+    const prev = state.selectedDiscount;
+    sel.innerHTML = '';
+
+    if(!ds || !ds.length){
+      sel.appendChild(new Option('이 시즌의 할인 정보가 아직 없어요', ''));
+      sel.disabled = true;
+      state.selectedDiscount = '';
+      return;
+    }
+
+    sel.disabled = false;
+    sel.appendChild(new Option('선택해주세요', ''));
+    sel.appendChild(new Option('없음 (정가)', 'NONE'));
+    ds.forEach(d=> sel.appendChild(new Option(d.name + ' ' + d.rate + '%', d.name)));
+    sel.appendChild(new Option('목록에 없는 할인', 'OTHER'));   // 타임세일·쿠폰팩 등
+
+    // 공연을 바꿔도 같은 이름의 권종이 있으면 선택을 유지한다
+    const keep = Array.from(sel.options).some(o=> o.value === prev) ? prev : '';
+    sel.value = keep;
+    state.selectedDiscount = keep;
+  }
+
+  function fillAltGradeSelect(){
+    const sel = $('altGradeSelect');
+    const ds  = GON_DB.discounts(currentSeason()) || [];
+    const prev = state.altGradeName;
+    sel.innerHTML = '';
+    sel.appendChild(new Option('정가로 추가결제', ''));
+    ds.filter(d=> d.name !== state.selectedDiscount)
+      .forEach(d=> sel.appendChild(new Option(d.name + ' ' + d.rate + '%', d.name)));
+    const keep = Array.from(sel.options).some(o=> o.value === prev) ? prev : '';
+    sel.value = keep;
+    state.altGradeName = keep || null;
+  }
+
+  // 증빙은 자격 권종·재관람 권종·목록 밖 할인일 때만 묻는다.
+  // "권종 증빙"은 자격 증빙뿐 아니라 재관람 할인권·쿠폰팩 실물 소지까지 포괄한다.
+  function needsProof(){
+    const v = state.selectedDiscount;
+    if(!v || v === 'NONE') return false;
+    if(v === 'OTHER') return true;
+    const d = GON_DB.findDiscount(currentSeason(), v);
+    return !!d && (d.type === 'ELIGIBILITY' || d.type === 'LOYALTY');
+  }
+
+  function buildPayment(){
+    const season = currentSeason();
+    return GON_DB.computePayment(season, currentList(), {
+      paid: Number($('paidAmount').value) || 0,
+      selectedName: (state.selectedDiscount && state.selectedDiscount !== 'NONE' &&
+                     state.selectedDiscount !== 'OTHER') ? state.selectedDiscount : null,
+      isOther: state.selectedDiscount === 'OTHER',
+      firstWatch: state.firstWatch === 'YES',
+      proofStatus: needsProof() ? state.proofStatus : null,
+      altName: state.altGradeName
+    });
+  }
+
+  // 화면에는 사실만 표시하고 판정하지 않는다 (§1.7).
+  // "최대 할인 받으셨어요!" 같은 말은 비용 에이전트가 푯말로 할 말이고,
+  // 여기서 미리 말하면 푯말의 가치가 사라진다.
+  function renderFactLine(){
+    const line = $('priceFactLine');
+    const p = buildPayment();
+    if(p.list_price == null || !p.total_paid){
+      line.hidden = true;
+      return;
+    }
+
+    const parts = [];
+    parts.push((p.grade ? p.grade + '석 ' : '') + '정가 ' + won(p.list_price));
+    if(p.discount_rate != null){
+      parts.push(p.discount_rate > 0 ? p.discount_rate + '% 할인' : '할인 없음');
+    }
+    if(p.surcharge > 0){
+      parts.push('추가결제 ' + won(p.surcharge));
+      parts.push('실제 부담 ' + won(p.actual_burden));
+    }
+
+    line.textContent = parts.join(' · ');
+    if(p.mismatch_warn){
+      const w = document.createElement('span');
+      w.className = 'warn';
+      w.textContent = '  금액이나 할인 종류를 다시 확인해보세요';
+      line.appendChild(w);
+    }
+    line.hidden = false;
+  }
+
+  function won(n){ return Number(n).toLocaleString('ko-KR') + '원'; }
+
+  // 할인 사다리에 걸린 화면 상태를 한 번에 맞춘다
+  function syncTicketFields(){
+    const ask = needsProof();
+    $('proofExtra').classList.toggle('open', ask);
+    if(!ask){
+      state.proofStatus = null;
+      document.querySelectorAll('[data-group="proofStatus"] button').forEach(b=>b.classList.remove('active'));
+    }
+
+    // 대체 권종은 증빙 불가 + GRADE_CHANGE 정책일 때만 의미가 있다
+    const season = currentSeason();
+    const policy = season ? season.discount_proof_policy : null;
+    const askAlt = ask && state.proofStatus === 'UNAVAILABLE' && policy === 'GRADE_CHANGE';
+    if(askAlt) fillAltGradeSelect();
+    $('altGradeExtra').classList.toggle('open', askAlt);
+    if(!askAlt) state.altGradeName = null;
+
+    renderFactLine();
+  }
+
+  $('discountSelect').addEventListener('change', ()=>{
+    state.selectedDiscount = $('discountSelect').value;
+    syncTicketFields();
+    updateProgress();
+  });
+  $('altGradeSelect').addEventListener('change', ()=>{
+    state.altGradeName = $('altGradeSelect').value || null;
+    renderFactLine();
+  });
+
+  /* ---------------------------------------------------------
      세그먼트 토글 바인딩
   --------------------------------------------------------- */
   segBind('matinee', v=>{ state.matinee=v; updateProgress(); });
 
-  segBind('acquisition', v=>{
-    state.acquisition=v;
-    $('ticketExtra').classList.toggle('open', v==='TRANSFER');
+  segBind('proofStatus', v=>{
+    state.proofStatus=v;
+    syncTicketFields();
     updateProgress();
   });
 
@@ -982,6 +1165,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       state.workAffinity = null;
       document.querySelectorAll('[data-group="workAffinity"] button').forEach(b=>b.classList.remove('active'));
     }
+    // 자첫이면 LOYALTY가 기준선에서 빠진다 (§1.3) — 사다리를 다시 계산한다
+    renderFactLine();
     updateProgress();
   });
   segBind('workAffinity', v=>{ state.workAffinity=v; updateProgress(); });
@@ -1007,6 +1192,15 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     .forEach(id=> $(id).addEventListener('input', updateProgress));
   $('seatFloor').addEventListener('change', updateProgress);
 
+  // 공연·날짜가 바뀌면 사다리가 통째로 바뀌고, 좌석·금액이 바뀌면 계산이 바뀐다
+  ['workTitle','sessionDate'].forEach(id=>
+    $(id).addEventListener('input', ()=>{ fillDiscountSelect(); syncTicketFields(); }));
+  ['seatFloor','seatRowInput','seatNumber','paidAmount'].forEach(id=>
+    $(id).addEventListener('input', renderFactLine));
+  $('seatFloor').addEventListener('change', renderFactLine);
+
+  fillDiscountSelect();
+
   /* ---------------------------------------------------------
      완성도 계산 (필수 9항목) → 스포트라이트 반영
   --------------------------------------------------------- */
@@ -1014,7 +1208,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     ()=> $('workTitle').value.trim().length>0,
     ()=> $('sessionDate').value.length>0 && state.matinee!==null,
     ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
-    ()=> state.acquisition!==null && Number($('paidAmount').value)>0,
+    // 사다리가 아직 없는 시즌이면 권종을 물을 수 없으므로 금액만 본다 (v2.1 §5.4)
+    ()=> Number($('paidAmount').value)>0
+         && ($('discountSelect').disabled || state.selectedDiscount !== '')
+         && (!needsProof() || state.proofStatus !== null),
     ()=> state.casting!==null,
     ()=> state.firstWatch!==null && (state.firstWatch==='YES' || state.workAffinity!==null),
     ()=> state.operaGlass!==null,
@@ -1110,8 +1307,12 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
      공통 입력 번들 (PRD §6.1)
 
      DB가 아직 없어 자동 산출이 불가능한 필드(좌석 등급·통로 여부·정가·
-     할인율·남은 애배 회차·관람 이력)는 null로 둔다. 엔진이 missing_info에
+     할인 사다리·관람 이력)는 null로 둔다. 엔진이 missing_info에
      기록하고 confidence를 낮춘다 — 모르는 것을 지어내지 않는다(PRD 원칙 6).
+
+     v2.1 §6.5: payment 는 band 까지 확정해서 넘긴다. today_cast·
+     favorite_actors_today·remaining_favorite_sessions 는 삭제됐다 —
+     배우 이름을 받지 않으므로 매칭 경로가 아예 없다(§3.1).
   --------------------------------------------------------- */
   const EVENT_LABELS = {
     GIFT:'증정', POINT:'적립 혜택', PHOTO:'커튼콜 데이',
@@ -1164,8 +1365,6 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       number: $('seatNumber').value ? Number($('seatNumber').value) : null
     };
     const seatInfo = GON_DB.resolveSeat(season, seatIn);
-    const paid = Number($('paidAmount').value) || 0;
-    const list = GON_DB.listPrice(season, seatInfo.grade);
 
     return {
       schema_version: 1,
@@ -1177,6 +1376,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         venue_name: venue ? venue.name : null,
         running_time: season ? season.running_time : null,
         has_intermission: season ? season.has_intermission : null,
+        open_date: season ? season.open_date : null,
         close_date: season ? season.close_date : null,
         cancellation_policy: GON_DB.cancellationPolicy(season)
       },
@@ -1184,8 +1384,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         date: dateStr || null,
         datetime: sessionDatetime,
         matinee_or_evening: state.matinee,
-        is_opening: null,
-        is_closing: null,
+        // 첫공·막공은 기타란에 언급이 있을 때만 덕심이 읽는다 (v2.1 §3.3)
         now: new Date().toISOString()
       },
       seat: {
@@ -1204,24 +1403,12 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         sources: seatInfo.sources,
         unknown: seatInfo.unknown
       },
-      payment: {
-        acquisition: state.acquisition,
-        total_paid: paid,
-        surcharge: Number($('surchargeAmount').value) || 0,
-        list_price: list ? list.price : null,
-        list_price_grade: list ? list.grade : null,
-        list_price_verified: list ? list.verified : null,
-        discount_rate: GON_DB.discountRate(list, paid),
-        cancellation_fee: null   // 엔진이 계산 (PRD §5.3 ③)
-      },
+      // band 까지 여기서 확정한다. 엔진은 산수를 하지 않는다 (v2.1 §1.7)
+      payment: buildPayment(),
+      season_progress: GON_DB.seasonProgress(season),   // v2.1 §3.2
       coverage: GON_DB.coverage(season, seatInfo),
       disposal_options: Array.from(state.disposal),
-      casting: {
-        today_cast: null,
-        has_favorite_actor: state.casting === 'YES',
-        favorite_actors_today: null,
-        remaining_favorite_sessions: null   // 캐스팅보드 필요
-      },
+      casting: { has_favorite_actor: state.casting === 'YES' },
       first_watch: state.firstWatch === 'YES',
       work_affinity: state.workAffinity,   // 자첫이면 null — 덕심이 기타란으로 폴백한다
       seat_preference: {
