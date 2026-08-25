@@ -6,7 +6,6 @@
 <title>상담실 — 이 회차 갈까말까</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ctext y='13' font-size='13'%3E%F0%9F%8E%AD%3C/text%3E%3C/svg%3E">
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/quiple/galmuri@2/dist/galmuri.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@1.3.9/dist/web/static/pretendard.css">
 
 <!-- 컬러 토큰·리셋은 랜딩(index.html)과 공유한다 -->
@@ -14,24 +13,70 @@
 
 <style>
 /* ============================================================
-   상담실 (design.md §4 메인 작업 페이지)
-   2×2 부스 그리드 + 컨디션 낮은 부스 + 하단 팀장 바
+   상담 마을 (design.md §4 메인 작업 페이지)
+   에이전트 건물 6채가 늘어선 노을 골목. 배경은 CSS 그라디언트만 쓴다 —
+   이미지 요청을 늘리지 않고, 건물 그림보다 튀지 않게 낮은 대비로 깐다.
+   도트 픽셀 서체는 전부 걷어내고 본문체 하나로 통일한다.
    ============================================================ */
 :root{
-  --dot7:  'Galmuri7', 'Galmuri11', monospace;
-  --px: 5px;    /* 캐릭터 1도트 크기 — 정수배만 (design.md §2.3) */
-  --pp: 4px;    /* 소품 1도트 크기 → 8×8 도트 = 32×32 */
+  --ui: var(--sans);
+  --ui-w: 600;
+  --ui-ls: 0;
+
+  /* 골목 팔레트 — 노을이 진 저녁. 어둡되 색이 살아 있어야 거리로 읽힌다 */
+  --sky-top: #4A3A57;
+  --sky-mid: #6E4E56;
+  --sky-low: #93694C;
+  --sil-far: #3A2E48;
+  --sil-near: #48394C;
+  --road:     #55483C;
+  --curb:     #7A6448;
+  --street-lamp: rgba(255,196,120,.28);
+
+  /* 회색 보도블록 — 키캡처럼 입체로 띄운다 */
+  --pave-hi:   #ABA192;
+  --pave-top:  #8D8272;
+  --pave-side: #4A4238;
+
+  /* 블록 한 칸의 기준 크기. 뷰포트 높이·너비 둘 다에 걸어서
+     세로로도 가로로도 화면을 넘치지 않게 한다 (design.md §8) */
+  --tile: clamp(84px, min(23vh, 19vw), 290px);
 }
 
 .stage{
-  min-height:100vh;
+  position:relative;
+  /* 높이를 확정해야 안쪽 그리드가 남은 공간을 나눠 가진다 —
+     그래야 어떤 화면에서도 한 화면에 들어온다. 정 안 되면 그때만 스크롤한다. */
+  height:100dvh;
+  overflow-y:auto;
   display:flex;
   align-items:stretch;
   justify-content:center;
+  padding:clamp(8px, 2vw, 22px);
   background:
-    radial-gradient(ellipse 70% 30% at 50% 100%, rgba(245,230,200,0.07), transparent 65%),
-    var(--bg-dark);
-  padding:clamp(12px, 3vw, 32px);
+    /* 가로등 불빛 두 점 */
+    radial-gradient(46% 30% at 14% 58%, var(--street-lamp), transparent 72%),
+    radial-gradient(46% 30% at 86% 58%, var(--street-lamp), transparent 72%),
+    /* 골목 바닥의 노을 반사 */
+    radial-gradient(ellipse 85% 34% at 50% 100%, rgba(255,205,150,.16), transparent 72%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-low) 100%);
+}
+
+/* 원경 스카이라인 — 세로 막대 두 겹이면 충분하다 (이미지 0장) */
+.stage::before{
+  content:'';
+  position:absolute;
+  left:0; right:0; top:0;
+  height:clamp(80px, 15vh, 160px);
+  background:
+    repeating-linear-gradient(90deg, var(--sil-near) 0 34px, transparent 34px 80px),
+    repeating-linear-gradient(90deg, var(--sil-far)  0 54px, transparent 54px 122px);
+  background-size:100% 58%, 100% 100%;
+  background-position:0 100%, 0 100%;
+  background-repeat:repeat-x;
+  -webkit-mask-image:linear-gradient(180deg, transparent 0, #000 70%);
+          mask-image:linear-gradient(180deg, transparent 0, #000 70%);
+  pointer-events:none;
 }
 
 .room{
@@ -40,12 +85,8 @@
   max-width:1280px;
   display:flex;
   flex-direction:column;
-  gap:10px;
-  background:var(--bg);
-  border:2px solid var(--bg-dark);
-  box-shadow:0 0 0 4px var(--bg-light) inset, 0 12px 0 var(--bg-dark);
-  padding:14px;
-  min-height: min(820px, 94vh);
+  gap:clamp(6px, 1vw, 12px);
+  min-height:0;
 }
 
 /* ============================================================
@@ -57,20 +98,26 @@
   gap:10px;
   flex-wrap:wrap;
   min-height:34px;
+  /* 아래 블록들은 flex:0 0 auto라 줄어들지 않는다 — 공간이 모자라면
+     그 압박이 전부 이 줄로 쏠려 찌그러진다. 줄바꿈 내용보다 작아지지
+     않게 막아야 안 겹친다. 넘치면 .stage의 세로 스크롤이 받는다. */
+  flex-shrink:0;
 }
 .btn-dot{
-  font-family:var(--dot);
-  font-size:11px;
-  letter-spacing:0.5px;
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
+  font-size:12px;
+  letter-spacing:var(--ui-ls);
   background:var(--placard-bg);
   color:#3A2E1E;
-  border:2px solid var(--placard-bd);
-  padding:7px 12px;
-  box-shadow:2px 2px 0 var(--bg-dark);
-  transition:transform .12s ease, box-shadow .12s ease;
+  border:1px solid var(--placard-bd);
+  border-radius:10px;
+  padding:8px 14px;
+  box-shadow:0 3px 8px rgba(0,0,0,.3);
+  transition:transform .12s ease, box-shadow .12s ease, filter .12s ease;
 }
-.btn-dot:hover{ transform:translate(-1px,-1px); box-shadow:3px 3px 0 var(--bg-dark); }
-.btn-dot:active{ transform:translate(1px,1px); box-shadow:0 0 0 var(--bg-dark); }
+.btn-dot:hover{ transform:translateY(-1px); box-shadow:0 5px 12px rgba(0,0,0,.35); filter:brightness(1.04); }
+.btn-dot:active{ transform:translateY(0); box-shadow:0 2px 5px rgba(0,0,0,.3); }
 
 .ticket-info{
   font-size:13px;
@@ -79,254 +126,337 @@
 }
 .ticket-info b{ color:var(--text); font-weight:600; }
 .demo-chip{
-  font-family:var(--dot);
-  font-size:10px;
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
+  font-size:11px;
   color:#2A2100;
   background:var(--accent);
-  padding:4px 7px;
+  border-radius:999px;
+  padding:4px 10px;
   margin-left:auto;
 }
 
 /* ============================================================
-   부스
+   블록 — 에이전트 한 명당 보도블록 한 칸을 가진다.
+   덕심·비용·이벤트·시야는 정사각형, 컨디션·팀장은 정사각형 2개 길이의
+   납작한 직사각형 (design.md §4.3 신규 — "키보드 키" 은유).
    ============================================================ */
 .booth-grid{
   display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:10px;
-  flex:1;
-  min-height:0;
+  grid-template-columns:repeat(2, var(--tile));
+  grid-auto-rows:var(--tile);
+  justify-content:center;
+  gap:clamp(14px, 2.2vh, 28px);
+  flex:0 0 auto;
 }
 
-.booth{
+/* 컨디션 + 팀장 — 골목 끝, 정사각형 2개 길이지만 더 얇은 블록 */
+.foot-row{
+  display:grid;
+  grid-template-columns:repeat(2, calc(var(--tile) * 2));
+  grid-auto-rows:calc(var(--tile) * 1.4);
+  justify-content:center;
+  gap:clamp(14px, 2.2vh, 28px);
+  flex:0 0 auto;
+}
+#lowBooth{ display:contents; }
+
+.booth, .lead-bar{
   position:relative;
-  background:var(--bg-light);
-  border:2px solid var(--bg-dark);
-  padding:10px 12px 12px;
-  display:flex;
-  flex-direction:column;
-  /* 조명 은유 — 아직 말하지 않은 부스는 어둡다. opacity가 아니라 밝기로 (design.md §3.2) */
-  filter: brightness(0.72) saturate(0.7);
+  width:100%;
+  height:100%;
+  overflow:visible;
+  /* 조명 은유 — 아직 완료되지 않은 블록은 어둡다. opacity가 아니라 밝기로 (design.md §3.2) */
+  filter: brightness(0.82) saturate(0.8);
   transition: filter 400ms ease-out;
 }
-.booth[data-state="done"]{ filter: brightness(1) saturate(1); }
-.booth[data-state="muted"]{ filter: brightness(0.55) saturate(0.3); }
+.booth[data-state="done"], .lead-bar[data-state="done"]{ filter: brightness(1) saturate(1); }
+.booth[data-state="muted"]{ filter: brightness(0.62) saturate(0.4); }
 
+/* 이름표는 블록 위에 얹는 팻말이다 — 별도 줄을 차지하면 블록이 정사각형에서
+   벗어나므로, 자리를 먹지 않게 블록 위로 겹쳐 띄운다 */
 .booth-head{
+  position:absolute;
+  top:0; left:2px; right:2px;
+  z-index:8;
   display:flex;
   align-items:center;
   gap:7px;
-  margin-bottom:6px;
+  flex-wrap:wrap;          /* 좁은 칸에서는 상태를 아랫줄로 흘린다 */
+  pointer-events:none;
 }
 .axis-name{
-  font-family:var(--dot);
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
   font-size:13px;
   color:var(--light);
   letter-spacing:1px;
+  white-space:nowrap;      /* '컨디션'이 '컨디/션'으로 쪼개지지 않게 */
+  text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.5);
 }
-.axis-dot{
-  width:8px; height:8px;
-  background:var(--neutral);
-  border:1px solid var(--bg-dark);
-}
-.axis-dot[data-sign="pos"]{ background:var(--pos); }
-.axis-dot[data-sign="neg"]{ background:var(--neg); }
-.axis-dot[data-sign="off"]{ background:var(--text-dis); }
 .booth-status{
   font-size:11px;
-  color:var(--text-dis);
-  margin-left:auto;
+  color:var(--text-sub);
+  text-shadow:0 1px 3px rgba(0,0,0,.85), 0 0 10px rgba(0,0,0,.5);
 }
 
-.booth-body{
-  flex:1;
+.booth-body, .lead-stage{
+  position:absolute;
+  inset:0;
+}
+
+/* ---- 3D 보도블록 ----
+   키캡처럼 밝은 윗면 + 단단한 옆면 단차 + 바닥 그림자로 입체를 준다.
+   위쪽은 이름표(.booth-head) 한 줄만큼 비워 겹치지 않게 하고,
+   아래쪽 8px는 비워 두어 box-shadow의 옆면(0 8px 0)이 정확히 채운다. */
+.plot-ground{
+  position:absolute;
+  top:clamp(20px, 15%, 30px); right:4%; bottom:8px; left:4%;
+  border-radius:12px;
+  background:
+    radial-gradient(70% 60% at 50% 100%, var(--agent-glow, transparent), transparent 75%),
+    linear-gradient(155deg, var(--pave-hi), var(--pave-top) 62%);
+  box-shadow:
+    inset 0 0 0 2px rgba(255,255,255,.16),   /* 구역 경계선 — 이 블록의 영역 표시 */
+    inset 0 -4px 7px rgba(0,0,0,.16),
+    0 8px 0 var(--pave-side),                /* 옆면 — 키캡처럼 단단한 단차 */
+    0 10px 16px 1px rgba(0,0,0,.4);          /* 바닥 그림자 — 블록이 길 위에 떠 있다 */
+  z-index:0;
+}
+@keyframes paveIdle{ 0%,100%{ opacity:1; } 50%{ opacity:.7; } }
+.booth[data-state="working"] .plot-ground,
+.lead-bar[data-state="working"] .plot-ground{ animation:paveIdle 2.2s ease-in-out infinite; }
+
+/* ---- 신호등 — 블록 바닥에 기둥이 박혀 있다 ---- */
+.lamp{
+  position:absolute;
+  right:9%;
+  bottom:8px;                /* plot-ground의 옆면 높이만큼 바닥에서 시작 */
   display:flex;
   flex-direction:column;
   align-items:center;
-  justify-content:flex-end;
-  gap:8px;
-  min-height:0;
-  position:relative;
+  z-index:4;
+  pointer-events:none;
+}
+.lamp-head{
+  display:flex;
+  flex-direction:column;
+  gap:3px;
+  padding:4px 3.5px;
+  background:#221C22;
+  border-radius:6px;
+  border:1px solid rgba(0,0,0,.6);
+  box-shadow:0 3px 5px rgba(0,0,0,.4);
+}
+.lamp-head i{
+  width:6px; height:6px;
+  border-radius:50%;
+  background:#4A4048;
+  transition:background 300ms ease, box-shadow 300ms ease;
+}
+.lamp[data-sign="neg"] .lamp-head i:nth-child(1){ background:var(--neg); box-shadow:0 0 6px 2px var(--neg); }
+.lamp[data-sign="neu"] .lamp-head i:nth-child(2){ background:var(--accent); box-shadow:0 0 6px 2px var(--accent); }
+.lamp[data-sign="pos"] .lamp-head i:nth-child(3){ background:var(--pos); box-shadow:0 0 6px 2px var(--pos); }
+.lamp-pole{
+  width:4px;
+  height:clamp(22px, 8vh, 50px);
+  background:linear-gradient(90deg, #262119, #574F3D 45%, #262119);
+  border-radius:1px;
+}
+.lamp-base{
+  width:14px; height:5px;
+  margin-top:-1px;
+  background:radial-gradient(50% 100% at 50% 0%, rgba(0,0,0,.45), transparent 75%);
+  border-radius:50%;
 }
 
-/* 부스 소품 — 처음 온 사용자가 소품만 보고 담당 축을 알 수 있어야 한다 (design.md §4.3) */
-.prop{
+/* ---- 건물이 블록 위로 솟아오르는 자리 ----
+   완료(done) 전에는 바닥 속에 눌려 있다가, 완료되는 순간 자라나듯 떠오른다.
+   실제 그림 여부와 무관하게 .rise-stage > * 로 한 번에 건다 —
+   이미지가 나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
+.rise-stage{
   position:absolute;
-  top:0; right:2px;
-  display:grid;
-  grid-template-columns:repeat(8, var(--pp));
-  grid-template-rows:repeat(8, var(--pp));
+  top:clamp(26px, 21%, 38px); right:10%; bottom:8px; left:10%;
+  display:flex;
+  align-items:flex-end;
+  justify-content:center;
+  z-index:2;
 }
-.prop i{ background:transparent; }
-.prop i.cA{ background:var(--accent); }
-.prop i.cM{ background:var(--placard-bd); }
-.prop i.cL{ background:var(--placard-bg); }
+.rise-stage > *{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  object-position:center bottom;
+  image-rendering:auto; /* tokens.css의 pixelated 전역 규칙을 이 이미지에서만 해제 */
+  transform-origin:50% 100%;
+  transition:transform 640ms cubic-bezier(.22,1.55,.4,1), opacity 380ms ease;
+  transform:translateY(12%) scale(.4);
+  opacity:0;
+}
+[data-state="done"] .rise-stage > *{
+  transform:translateY(0) scale(1);
+  opacity:1;
+}
 
-/* ---- 캐릭터 스프라이트 ---- */
-.sprite-stack{
-  position:relative;
-  flex:none;
-  width:calc(12 * var(--px));
-  height:calc(16 * var(--px));
+/* 건물 그림이 아직 없는 자리 — 파일을 넣으면 그대로 대체된다 */
+.art-slot{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:3px;
+  border:2px dashed rgba(245,230,200,.28);
+  border-radius:8px;
+  background:rgba(0,0,0,.18);
+  color:var(--light-dim);
+  text-align:center;
+  padding:6px;
 }
-.sprite{
-  grid-template-columns:repeat(12, var(--px));
-  grid-template-rows:repeat(16, var(--px));
+.art-slot b{
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
+  font-size:12px;
+  color:var(--light);
+  letter-spacing:var(--ui-ls);
+}
+.art-slot small{ font-size:10px; opacity:.8; }
+
+/* ---- 말풍선 (에이전트가 내놓는 한 줄) ----
+   그림 위쪽에 놓고 꼬리를 아래로 내려 캐릭터를 가리킨다.
+   신호등과 같은 삼색(초록·주황·빨강)을 테두리·꼬리 색으로 그대로 쓴다 —
+   위의 신호등을 보고 내려오면 말풍선 색이 왜 그런지 설명해 주는 구조. */
+.speech{
+  /* 꼬리 위치는 JS(layoutTails)가 실제 그림 박스를 재서 넣는다.
+     아래 값은 스크립트 실행 전 한 프레임용 기본값이다. */
+  --tail: 26%;
+  --sign-color: var(--neutral);
   position:absolute;
-  left:0; top:0;
+  left:4%; right:4%;
+  top:0;
+  z-index:6;
+  background:#FFF8EA;
+  border:2px solid var(--sign-color);
+  border-radius:18px;
+  color:#332A1E;
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
+  font-size:17px;
+  line-height:1.3;
+  letter-spacing:var(--ui-ls);
+  text-align:center;
+  padding:10px 14px;
+  box-shadow:0 10px 22px -8px rgba(20,10,20,.55), 0 2px 5px rgba(20,10,20,.22);
+  animation: speechPop 260ms cubic-bezier(.34,1.56,.64,1) both;
 }
-.sprite i{ background:transparent; }
-.sprite i.cH{ background:#2E2418; }              /* 머리 */
-.sprite i.cS{ background:#E0B48C; }              /* 피부 */
-.sprite i.cE{ background:#1A1410; }              /* 눈 */
-.sprite i.cB{ background:var(--agent-color); }   /* 상의 — 축마다 다른 색 */
-.sprite i.cP{ background:#3B4252; }              /* 하의 */
-.sprite i.cK{ background:#1A1410; }              /* 신발 */
-.sprite i.cD{ background:var(--placard-bd); }    /* 책상 */
+.speech.long{ font-size:13px; }
+.speech[data-sign="pos"]{ --sign-color: var(--pos); }
+.speech[data-sign="neg"]{ --sign-color: var(--neg); }
+.speech[data-sign="neu"]{ --sign-color: var(--accent); }
+/* 확신이 셀수록 테두리가 굵다 — 흔들림 대신 굵기로 강도를 말한다 */
+.speech[data-strength="1"]{ border-width:3px; }
+.speech[data-strength="2"]{ border-width:4px; }
+.speech:hover{ filter:brightness(1.03); }
+.speech.is-open{ box-shadow:0 0 0 3px var(--accent), 0 10px 22px -8px rgba(20,10,20,.55); }
 
-/* 타이핑 루프 — 두 프레임을 steps로 갈아끼운다 (중간값 없음, 픽셀이 뭉개지지 않는다) */
-.sprite.frame-b{ opacity:0; }
-[data-state="working"] .sprite.frame-a,
-.lead-bar[data-pose="work"] .sprite.frame-a{ animation: frameSwapA 460ms steps(1) infinite; }
-[data-state="working"] .sprite.frame-b,
-.lead-bar[data-pose="work"] .sprite.frame-b{ animation: frameSwapB 460ms steps(1) infinite; }
-@keyframes frameSwapA{ 0%,49%{opacity:1;} 50%,100%{opacity:0;} }
-@keyframes frameSwapB{ 0%,49%{opacity:0;} 50%,100%{opacity:1;} }
-
-/* 상태별로 보여줄 스프라이트만 남긴다 */
-.sprite{ display:none; }
-[data-state="working"] .sprite.pose-work,
-[data-state="waiting"] .sprite.pose-idle,
-[data-state="muted"]   .sprite.pose-idle,
-[data-state="done"]    .sprite.pose-stand{ display:grid; }
-
-/* ---- 푯말 ---- */
-.placard{
-  position:relative;
-  background:var(--placard-bg);
-  border:3px solid var(--placard-bd);
-  color:#2A2118;
-  font-family:var(--dot);
-  font-size:22px;              /* Galmuri11 ×2 */
-  line-height:1.1;
-  letter-spacing:0.5px;
-  padding:8px 12px;
-  max-width:100%;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
-  box-shadow:3px 3px 0 var(--bg-dark);
-  /* 축 점수 색은 테두리와 인디케이터에만. 바탕 전체를 칠하지 않는다 (design.md §2.2) */
-  --amp: 2.4px;   /* |axis_score| 0일 때의 최소 진폭 30% */
-  --rot: 0deg;
-  animation: sway var(--period, 500ms) ease-in-out infinite;
-  animation-delay: var(--phase, 0ms);
-  transform-origin: 50% 100%;
-}
-.placard.long{ font-family:var(--dot7); font-size:18px; }
-.placard[data-sign="pos"]{ border-color:var(--pos); }
-.placard[data-sign="neg"]{ border-color:var(--neg); }
-.placard:hover{ filter:brightness(1.06); }
-.placard.is-open{ box-shadow:0 0 0 3px var(--accent), 3px 3px 0 var(--bg-dark); }
-/* 푯말을 든 팔 — 캐릭터와 이어 보이게 하는 막대 */
-.placard::after{
+/* 꼬리 — 테두리색 삼각형 위에 바탕색 삼각형을 겹쳐 테두리를 만든다 */
+.speech::before,
+.speech::after{
   content:'';
   position:absolute;
-  left:50%; bottom:-14px;
-  width:6px; height:14px;
-  margin-left:-3px;
-  background:var(--placard-bd);
+  top:100%;
+  left:var(--tail);
+  margin-left:-10px;      /* 삼각형 폭의 절반 — --tail 지점에 꼭짓점을 맞춘다 */
+  width:0; height:0;
+  border:10px solid transparent;
+  border-bottom:0;
+}
+.speech::before{ border-top-color:var(--sign-color); margin-top:0; }
+.speech::after{ border-top-color:#FFF8EA; margin-top:-2px; }
+
+@keyframes speechPop{
+  0%  { opacity:0; transform:translateY(7px) scale(.9); }
+  100%{ opacity:1; transform:translateY(0)   scale(1); }
 }
 
-@keyframes sway{
-  0%,100%{ transform: translateX(calc(var(--amp) * -1)) rotate(calc(var(--rot) * -1)); }
-  50%    { transform: translateX(var(--amp)) rotate(var(--rot)); }
-}
-
-.uncertain-note{
+/* 말풍선 안 둘째 줄 — 확신이 없을 때만 나온다 */
+.speech-note{
+  display:block;
+  margin-top:5px;
   font-size:11px;
-  color:var(--light-dim);
-  font-family:var(--dot);
+  letter-spacing:0;
+  color:#8A7859;
 }
 .muted-line{
   font-size:12px;
   color:var(--text-dis);
 }
 
-/* ---- 컨디션 — 가로로 낮은 부스 ---- */
-.booth-low{ }
-.booth-low .booth-body{
-  flex-direction:row;
-  align-items:flex-end;
-  justify-content:center;
-  gap:18px;
-}
-.booth-low .prop{ top:auto; bottom:0; right:6px; }
-.booth-low .placard::after{ display:none; }
+/* 컨디션·팀장 블록은 정사각형보다 얇은 대신 넓다. 말풍선 글자만 한 단계 줄인다 */
+.foot-row .speech{ font-size:15px; }
+.foot-row .speech.long{ font-size:12px; }
+/* 컨디션 블록에서는 신호등을 왼쪽에 둔다 — 오른쪽은 팀장 쪽을 보고 있어야 자연스럽다 */
+#lowBooth .lamp{ right:auto; left:6%; }
 
 /* ============================================================
-   팀장 바 (design.md §4.2)
+   팀장 본부 — 골목 끝 건물, 컨디션과 같은 얇고 넓은 블록 (design.md §4.2)
+   이름표는 다른 블록과 같은 .booth-head/.axis-name을 그대로 쓴다.
    ============================================================ */
-.lead-bar{
+.lead-stage{
   display:flex;
   align-items:flex-end;
-  gap:18px;
-  background:var(--bg-light);
-  border:2px solid var(--bg-dark);
-  box-shadow:0 -3px 0 var(--placard-bd) inset;
-  padding:10px 16px 12px;
-  min-height:120px;
-  position:relative;
 }
-.lead-label{
-  position:absolute;
-  top:8px; left:16px;
-  font-family:var(--dot);
-  font-size:13px;
-  color:var(--light);
-  letter-spacing:1px;
-}
-.lead-char{ margin-left:2px; }
-.lead-bar[data-pose="work"]  .sprite.pose-work,
-.lead-bar[data-pose="think"] .sprite.pose-think,
-.lead-bar[data-pose="done"]  .sprite.pose-stand{ display:grid; }
-.lead-bar[data-pose="think"] .sprite.pose-think{ animation: bob 900ms steps(2) infinite; }
-@keyframes bob{ 0%{ transform:translateY(0); } 100%{ transform:translateY(-2px); } }
-
+/* 건물 자리는 왼쪽, 판정 문구는 오른쪽에 — 신호등은 둘 사이 경계에 선다.
+   블록이 얇아서(1.4×) 기둥이 정사각형 블록보다 짧아야 튀어나오지 않는다 */
+#leadChar{ right:44%; }
+.lead-bar .lamp{ right:41%; }
+.foot-row .lamp-pole{ height:clamp(14px, 5vh, 26px); }
 .lead-right{
+  position:relative;
+  z-index:6;
   flex:1;
+  min-width:0;
+  height:100%;
   display:flex;
   flex-direction:column;
   align-items:flex-start;
-  gap:6px;
-  padding-bottom:4px;
+  justify-content:flex-end;
+  gap:5px;
+  padding:0 4px 10px 16px;
+  margin-left:auto;
+  max-width:56%;
 }
 .lead-waiting{
   font-size:13px;
-  color:var(--text-dis);
+  color:var(--text-sub);
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
 }
+/* 판정 — 가장 크게 쓰는 자리라 작은 화면에서도 읽힌다 */
 .verdict-word{
-  font-family:var(--dot14);
-  font-size:38px;              /* Galmuri14 × 2 이상 */
-  letter-spacing:2px;
+  font-family:var(--sans);
+  font-weight:800;
+  font-size:clamp(30px, 4.6vw, 40px);
+  letter-spacing:-0.5px;
   background:none;
   border:none;
   padding:0;
   color:var(--accent);
-  text-shadow:3px 3px 0 var(--bg-dark);
+  text-shadow:0 3px 10px rgba(0,0,0,.5);
+  line-height:1.05;
 }
 .verdict-word[data-verdict="NO_GO"]{ color:var(--light); }
 .verdict-hint{
   font-size:12px;
   color:var(--text-sub);
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
 }
 .alt-chip{
-  font-family:var(--dot);
+  font-family:var(--ui);
+  font-weight:var(--ui-w);
   font-size:11px;
   background:var(--accent);
   color:#2A2100;
-  padding:4px 8px;
-  border:2px solid var(--placard-bd);
+  padding:4px 9px;
+  border-radius:999px;
 }
 
 /* 20초 초과 안내 (design.md §6.2) — 평소에는 진행 문구를 쓰지 않는다 */
@@ -335,33 +465,36 @@
   align-items:center;
   gap:10px;
   flex-wrap:wrap;
-  background:var(--bg-dark);
-  border:2px solid var(--placard-bd);
+  background:rgba(0,0,0,.28);
+  border:1px solid rgba(245,230,200,.18);
+  border-radius:12px;
   padding:10px 12px;
 }
 .timeout-box span{ font-size:13px; color:var(--text); }
 
 /* ============================================================
-   말풍선 (design.md §5.3) — DOM에 하나만 두고 옮겨 다닌다
+   말풍선 (design.md §5.3) — DOM에 하나만 두고 옮겨 다닌다.
+   위의 짧은 말풍선(.speech)과 같은 색·모양 언어를 쓴다.
    ============================================================ */
 .bubble{
   position:absolute;
   z-index:20;
   width:min(360px, 78vw);
-  background:var(--placard-bg);
+  background:#FFF8EA;
   color:#2A2118;
-  border:3px solid var(--placard-bd);
-  box-shadow:5px 5px 0 var(--bg-dark);
-  padding:12px 14px;
+  border:2px solid var(--placard-bd);
+  border-radius:18px;
+  box-shadow:0 16px 34px -10px rgba(20,10,20,.55), 0 4px 10px rgba(20,10,20,.25);
+  padding:14px 16px;
 }
 .bubble-who{
-  font-family:var(--dot);
+  font-family:var(--ui);
+  font-weight:700;
   font-size:12px;
   color:var(--placard-bd);
   margin-bottom:6px;
-  letter-spacing:1px;
+  letter-spacing:0.5px;
 }
-/* 본문은 일반 폰트. 100~180자를 도트체로 읽는 건 부담이다 (design.md 원칙 3) */
 .bubble-text{
   font-family:var(--sans);
   font-size:15px;
@@ -371,7 +504,7 @@
 .bubble-alt{
   margin:10px 0 0;
   padding-top:9px;
-  border-top:2px solid rgba(107,88,66,.35);
+  border-top:1px solid rgba(107,88,66,.3);
   font-size:14px;
   line-height:1.6;
   color:#4A3B28;
@@ -381,69 +514,88 @@
   width:0; height:0;
   border:10px solid transparent;
 }
-.bubble[data-dir="down"] .bubble-tail{ top:-23px; border-bottom-color:var(--placard-bd); }
-.bubble[data-dir="up"]   .bubble-tail{ bottom:-23px; border-top-color:var(--placard-bd); }
+.bubble[data-dir="down"] .bubble-tail{ top:-19px; border-bottom-color:var(--placard-bd); }
+.bubble[data-dir="up"]   .bubble-tail{ bottom:-19px; border-top-color:var(--placard-bd); }
 .bubble-close{
   position:absolute;
   top:6px; right:8px;
   background:none; border:none;
-  font-family:var(--dot);
-  font-size:12px;
+  font-family:var(--sans);
+  font-size:14px;
   color:var(--placard-bd);
 }
 
 /* ============================================================
    반응형 (design.md §8)
+   블록 크기는 --tile 하나가 vh·vw 양쪽을 다 잡고 있어서 그리드 자체는
+   손댈 게 없다. 여기서는 글자 크기와 팀장 블록 안쪽 배분만 조정한다.
    ============================================================ */
-@media (min-width:1440px){ :root{ --px:6px; --pp:5px; } }
 @media (max-width:1023px){
-  :root{ --px:4px; --pp:4px; }
-  .placard{ font-size:18px; }
+  .speech{ font-size:15px; }
+  .speech.long{ font-size:12px; }
+  .foot-row .speech{ font-size:13px; }
 }
+
+/* ---- 모바일 ---- */
 @media (max-width:767px){
-  :root{ --px:3px; --pp:3px; }
-  .stage{ padding:0; }
-  .room{ border-width:0; box-shadow:none; min-height:100vh; }
-  /* 2×2는 유지하고 캐릭터를 작게, 푯말은 칸 하단에 가로로 (design.md §8.2) */
-  .booth{ padding:8px; }
-  .booth-body{ justify-content:flex-end; }
-  .placard{
-    font-family:var(--dot7);
-    font-size:14px;              /* Galmuri7 × 2 */
-    white-space:normal;
-    width:100%;
-    text-align:center;
-    padding:7px 6px;
+  .stage{ padding:6px 6px 0; }
+  .room{ gap:6px; }
+  .booth, .lead-bar{ padding:6px; }
+
+  .axis-name{ font-size:12px; letter-spacing:0; }
+  .booth-status{ font-size:10px; }
+  .speech{
+    font-size:14px;
+    line-height:1.35;
+    padding:8px 7px;
     min-height:44px;             /* 터치 타겟 */
     display:flex;
+    flex-direction:column;
     align-items:center;
     justify-content:center;
+    border-width:2px;
   }
-  .placard::after{ display:none; }
-  .verdict-word{ font-size:30px; }
-  .booth-low .booth-body{ gap:10px; }
+  .speech.long{ font-size:12.5px; }
+  .foot-row .speech{ font-size:13px; }
+  .foot-row .speech.long{ font-size:12px; }
+  .speech[data-strength="1"]{ border-width:3px; }
+  .speech[data-strength="2"]{ border-width:4px; }
+  .speech-note{ font-size:10.5px; }
+  .ticket-info{ font-size:12px; }
+  .bubble-text{ font-size:14.5px; line-height:1.65; }
+  .verdict-hint, .alt-chip{ font-size:10.5px; }
+
+  /* 좁은 팀장 블록에서는 판정어 자리를 조금 더 넉넉히 준다 */
+  #leadChar{ right:46%; }
+  .lead-bar .lamp{ right:44%; }
+  .lead-right{ max-width:52%; }
+
+  /* 폭이 좁으면 4×tile을 가로로 못 채운다. 컨디션·팀장을 세로로 쌓아
+     블록을 정사각형 줄의 너비(2×tile)에 맞춰 키운다 — 남는 세로 공간도 채운다 */
+  :root{ --tile: clamp(84px, min(22vh, 40vw), 220px); }
+  .foot-row{ grid-template-columns:calc(var(--tile) * 2); }
+
   /* 말풍선은 하단 고정 시트로 (게임 대사창과 동일) */
   .bubble{
     position:fixed;
     left:0; right:0; bottom:0;
     top:auto;
     width:100%;
-    border-width:3px 0 0;
-    box-shadow:none;
+    border-width:2px 0 0;
+    border-radius:18px 18px 0 0;
+    box-shadow:0 -6px 20px rgba(0,0,0,.35);
     max-height:52vh;
     overflow-y:auto;
   }
   .bubble-tail{ display:none; }
 }
 
-/* 흔들림을 끄고 강도는 테두리 굵기로 표현한다 (design.md §5.2) */
+/* 등장 연출만 끈다. 강도는 원래 테두리 굵기로 말하므로 그대로 남는다 (design.md §5.2) */
 @media (prefers-reduced-motion: reduce){
-  .placard{ animation:none; }
-  .placard[data-strength="2"]{ border-width:7px; }
-  .placard[data-strength="1"]{ border-width:5px; }
-  .placard[data-strength="0"]{ border-width:3px; }
-  .sprite{ animation:none !important; }
-  .booth{ transition:none; }
+  .speech{ animation:none; }
+  .booth, .lead-bar{ transition:none; }
+  .rise-stage > *{ transition:none; }
+  .plot-ground{ animation:none !important; }
 }
 </style>
 </head>
@@ -459,13 +611,27 @@
     </header>
 
     <div class="booth-grid" id="boothGrid"></div>
-    <div id="lowBooth"></div>
 
-    <div class="lead-bar" id="leadBar" data-pose="work">
-      <span class="lead-label">팀장</span>
-      <div class="lead-char" id="leadChar"></div>
-      <div class="lead-right" id="leadRight">
-        <span class="lead-waiting">의견을 모으는 중…</span>
+    <!-- 골목 끝 — 컨디션 블록과 팀장 본부 블록이 나란히 선다.
+         둘 다 정사각형 2개 길이의 얇은 블록이다 (design.md §4.3) -->
+    <div class="foot-row">
+      <div id="lowBooth"></div>
+      <div class="lead-bar" id="leadBar" data-pose="work" data-state="working">
+        <div class="booth-head">
+          <span class="axis-name">팀장</span>
+        </div>
+        <div class="lead-stage" id="leadStage">
+          <div class="plot-ground"></div>
+          <div class="lamp" data-sign="off" aria-hidden="true">
+            <span class="lamp-head"><i></i><i></i><i></i></span>
+            <span class="lamp-pole"></span>
+            <span class="lamp-base"></span>
+          </div>
+          <div class="rise-stage" id="leadChar"></div>
+          <div class="lead-right" id="leadRight">
+            <span class="lead-waiting">의견을 모으는 중…</span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -502,162 +668,160 @@
   }
 
   /* ---------------------------------------------------------
-     픽셀 아트 — index.html의 .pref-icon 기법을 그대로 확장했다.
-     패턴 문자열 한 줄이 한 도트 행이고, 문자 하나가 셀 하나다.
+     에이전트 — color 는 각 건물 그림에서 뽑은 대표색이다.
+     가게 바닥에 깔리는 옅은 불빛으로 쓴다 (--agent-glow).
   --------------------------------------------------------- */
-  function drawPixels(host, rows, prefix){
-    rows.join('').split('').forEach(ch=>{
-      const cell = document.createElement('i');
-      if(ch !== '.') cell.className = prefix + ch;
-      host.appendChild(cell);
-    });
-  }
-  function sprite(rows, classes){
-    const el = document.createElement('div');
-    el.className = 'sprite ' + classes;
-    drawPixels(el, rows, 'c');
-    return el;
-  }
-
-  // 12 × 16 도트. 4인은 동일 베이스에 색만 바꾼다 (design.md §2.4)
-  const POSE = {
-    workA: [
-      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
-      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
-      '..SBBBBBBS..','.SSBBBBBBSS.','...BBBBBB...','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    workB: [
-      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
-      '...HSESEH...','...HSSSSH...','....SSSS....','.S.BBBBBB.S.',
-      '.SSBBBBBBSS.','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    idle: [
-      '............','....HHHH....','...HHHHHH...','...HSSSSH...',
-      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
-      '...BBBBBB...','...BBBBBB...','....SSSS....','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    stand: [
-      '............','..S.HHHH.S..','..SHHHHHHS..','..SHSSSSHS..',
-      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
-      '...BBBBBB...','...BBBBBB...','...BBBBBB...','...BBBBBB...',
-      '...PP..PP...','...PP..PP...','...PP..PP...','...KK..KK...'
-    ],
-    // 팀장 — 헤드셋 착용 (K = 헤드셋 자리, 신발과 같은 어두운 색)
-    leadWorkA: [
-      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
-      '...HSESEH...','...HSSSSH...','....SSSS....','...BBBBBB...',
-      '..SBBBBBBS..','.SSBBBBBBSS.','...BBBBBB...','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    leadWorkB: [
-      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
-      '...HSESEH...','...HSSSSH...','....SSSS....','.S.BBBBBB.S.',
-      '.SSBBBBBBSS.','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    leadThink: [
-      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
-      '...HSESEH...','...HSSSSS...','....SSSSS...','...BBBBBBS..',
-      '...BBBBBB...','...BBBBBB...','...BBBBBB...','DDDDDDDDDDDD',
-      'DDDDDDDDDDDD','...PP..PP...','...PP..PP...','............'
-    ],
-    leadStand: [
-      '............','...KHHHHK...','..KHHHHHHK..','..KHSSSSHK..',
-      '...HSESEH...','...HSSSSH...','....SSSS....','..SBBBBBBS..',
-      '...BBBBBB...','...BBBBBB...','...BBBBBB...','...BBBBBB...',
-      '...PP..PP...','...PP..PP...','...PP..PP...','...KK..KK...'
-    ]
-  };
-
-  // 8 × 8 소품 (design.md §2.4 — 소품만 보고 담당 축을 알 수 있어야 한다)
-  const PROPS = {
-    DEOKSIM:   ['MMMMMMMM','MAAAAAAM','MA....AM','MAAAA.AM','MA....AM','MAAAAAAM','MMMMMMMM','..M..M..'],
-    SIYA:      ['........','.AA..AA.','AMMAAMMA','AMLAALMA','AMMAAMMA','.AA..AA.','...AA...','........'],
-    COST:      ['.MMMMMM.','.MLLLLM.','.M....M.','.MAAAAM.','.MAAAAM.','.MAAAAM.','.MMMMMM.','........'],
-    EVENT:     ['...AA...','..AAAA..','MMMMMMMM','MMAAAAMM','MMAAAAMM','MMAAAAMM','MMAAAAMM','MMMMMMMM'],
-    CONDITION: ['..MMMM..','.MLLLLM.','MLLAALLM','MLLA.LLM','MLL..LLM','MLLLLLLM','.MLLLLM.','..MMMM..']
-  };
-
   const AGENTS = [
-    { key:'DEOKSIM',   label:'덕심',   color:'#B5654A', prop:'캐스팅보드' },
-    { key:'SIYA',      label:'시야',   color:'#5C7FA3', prop:'오페라글라스' },
-    { key:'COST',      label:'비용',   color:'#6E8C5A', prop:'계산기' },
-    { key:'EVENT',     label:'이벤트', color:'#9A6BA5', prop:'증정품 상자' },
-    { key:'CONDITION', label:'컨디션', color:'#A8894A', prop:'시계' }
+    { key:'DEOKSIM',   label:'덕심',   color:'#6E4F76', art:'assets/agents/deoksim.png' },
+    { key:'SIYA',      label:'시야',   color:'#4F6690', art:'assets/agents/siya.png' },
+    { key:'COST',      label:'비용',   color:'#8C6A3A', art:'assets/agents/cost.png' },
+    { key:'EVENT',     label:'이벤트', color:'#C96B79', art:'assets/agents/event.png' },
+    { key:'CONDITION', label:'컨디션', color:'#A8894A', art:'assets/agents/condition.png' }
   ];
+
+  // #RRGGBB → rgba(). 바닥 불빛에 알파를 주려면 성분이 따로 필요하다.
+  function glow(hex, alpha){
+    const n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+  }
+
+  /* ---------------------------------------------------------
+     건물 그림 — 파일이 없으면 자리만 잡아 둔다.
+     나중에 assets/agents/ 에 PNG를 넣으면 코드 수정 없이 그대로 붙는다.
+  --------------------------------------------------------- */
+  function buildingArt(src, label){
+    const img = document.createElement('img');
+    img.className = 'booth-art';
+    img.src = src;
+    img.alt = label + ' 건물';
+    img.decoding = 'async';
+    img.onerror = () => {
+      const slot = document.createElement('div');
+      slot.className = 'art-slot';
+      slot.innerHTML = '<b></b><small>건물 이미지 자리</small>';
+      slot.querySelector('b').textContent = label;
+      img.replaceWith(slot);
+    };
+    return img;
+  }
 
   /* ---------------------------------------------------------
      부스 렌더
   --------------------------------------------------------- */
   const booths = {};
 
-  function buildBooth(a, low){
+  // 신호등 — 하우징(불 3알) + 기둥 + 밑판. 블록마다 하나씩 붙는다
+  function buildLamp(){
+    const lamp = document.createElement('div');
+    lamp.className = 'lamp';
+    lamp.dataset.sign = 'off';
+    lamp.setAttribute('aria-hidden', 'true');
+    lamp.innerHTML = '<span class="lamp-head"><i></i><i></i><i></i></span>' +
+                     '<span class="lamp-pole"></span>' +
+                     '<span class="lamp-base"></span>';
+    return lamp;
+  }
+
+  function buildBooth(a){
     const sec = document.createElement('section');
-    sec.className = 'booth' + (low ? ' booth-low' : '');
+    sec.className = 'booth';
     sec.dataset.agent = a.key;
     sec.dataset.state = 'working';
-    sec.style.setProperty('--agent-color', a.color);
+    sec.style.setProperty('--agent-glow', glow(a.color, 0.30));
 
     const head = document.createElement('div');
     head.className = 'booth-head';
     head.innerHTML = '<span class="axis-name">' + a.label + '</span>' +
-                     '<span class="axis-dot" data-sign="off"></span>' +
                      '<span class="booth-status">작업 중</span>';
     sec.appendChild(head);
 
     const body = document.createElement('div');
     body.className = 'booth-body';
+    body.appendChild(document.createElement('div')).className = 'plot-ground';
 
-    const prop = document.createElement('div');
-    prop.className = 'prop';
-    prop.title = a.prop;
-    drawPixels(prop, PROPS[a.key], 'c');
-    body.appendChild(prop);
+    const lamp = buildLamp();
+    body.appendChild(lamp);
 
-    const placard = document.createElement('button');
-    placard.type = 'button';
-    placard.className = 'placard';
-    placard.hidden = true;
-    body.appendChild(placard);
-
+    // 말풍선이 먼저 와야 그림 위에 서고 꼬리가 아래 캐릭터를 가리킨다
+    const speech = document.createElement('button');
+    speech.type = 'button';
+    speech.className = 'speech';
+    speech.hidden = true;
+    const line = document.createElement('span');
+    line.className = 'speech-line';
+    speech.appendChild(line);
     const note = document.createElement('span');
-    note.className = 'uncertain-note';
+    note.className = 'speech-note';
     note.hidden = true;
     note.textContent = '확실하지 않음';
-    body.appendChild(note);
+    speech.appendChild(note);
+    body.appendChild(speech);
 
-    const stack = document.createElement('div');
-    stack.className = 'sprite-stack';
-    stack.appendChild(sprite(POSE.workA, 'pose-work frame-a'));
-    stack.appendChild(sprite(POSE.workB, 'pose-work frame-b'));
-    stack.appendChild(sprite(POSE.idle,  'pose-idle'));
-    stack.appendChild(sprite(POSE.stand, 'pose-stand'));
-    body.appendChild(stack);
+    // 건물은 완료 전엔 블록 속에 눌려 있다가, 완료되는 순간 솟아오른다 (design.md §4.3)
+    const stage = document.createElement('div');
+    stage.className = 'rise-stage';
+    stage.appendChild(buildingArt(a.art, a.label));
+    body.appendChild(stage);
 
     sec.appendChild(body);
-    booths[a.key] = { el:sec, placard:placard, note:note,
-                      dot:head.querySelector('.axis-dot'),
+    booths[a.key] = { el:sec, speech:speech, line:line, note:note, signal:lamp,
                       status:head.querySelector('.booth-status') };
     return sec;
   }
 
   const grid = $('boothGrid');
-  AGENTS.slice(0,4).forEach(a => grid.appendChild(buildBooth(a, false)));
-  $('lowBooth').appendChild(buildBooth(AGENTS[4], true));
+  AGENTS.slice(0,4).forEach(a => grid.appendChild(buildBooth(a)));
+  $('lowBooth').appendChild(buildBooth(AGENTS[4]));
 
-  // 팀장 — 헤드셋 착용, 하단 바 (design.md §2.4)
-  const leadChar = $('leadChar');
-  leadChar.style.setProperty('--agent-color', '#C9913F');
-  const leadStack = document.createElement('div');
-  leadStack.className = 'sprite-stack';
-  leadStack.appendChild(sprite(POSE.leadWorkA, 'pose-work frame-a'));
-  leadStack.appendChild(sprite(POSE.leadWorkB, 'pose-work frame-b'));
-  leadStack.appendChild(sprite(POSE.leadThink, 'pose-think'));
-  leadStack.appendChild(sprite(POSE.leadStand, 'pose-stand'));
-  leadChar.appendChild(leadStack);
+  // 팀장 본부 — 건물 그림이 들어올 자리. 이미 마크업에 있는 블록/신호등에 얹기만 한다
+  const leadLamp = document.querySelector('#leadStage .lamp');
+  $('leadChar').appendChild(buildingArt('assets/agents/lead.png', '팀장'));
+
+  /* ---------------------------------------------------------
+     말풍선 꼬리 맞추기
+     그림은 object-fit:contain 이라 칸 비율에 따라 좌우 여백이 달라진다.
+     캐릭터는 캔버스 폭의 14% 지점에 서 있으므로(네 장 실측), 실제로 그려진
+     박스를 재서 꼬리를 그 위에 올린다. 고정값으로는 화면마다 어긋난다.
+
+     .booth-art 자체가 아니라 .rise-stage(부모)를 잰다 — art에는 솟아오르는
+     transform이 걸려 있어서, 아직 눌려 있는 동안 재면 작게 쪼그라든 크기가
+     나온다. rise-stage는 transform이 없는 안정된 기준 박스다.
+  --------------------------------------------------------- */
+  const CHAR_X = 0.14;
+
+  function layoutTails(){
+    Object.keys(booths).forEach(k => {
+      const b = booths[k];
+      const stage = b.el.querySelector('.rise-stage');
+      const img = stage ? stage.querySelector('.booth-art') : null;
+      const body = b.el.querySelector('.booth-body');
+      if(!body || !stage) return;
+      const bb = body.getBoundingClientRect();
+      if(!bb.width) return;
+      if(!img || !img.naturalWidth){
+        b.speech.style.setProperty('--tail', '50%');   // 그림이 없으면 가운데
+        return;
+      }
+      const ib = stage.getBoundingClientRect();
+      const sc = Math.min(ib.width / img.naturalWidth, ib.height / img.naturalHeight);
+      const rw = img.naturalWidth * sc;
+      const left = ib.left + (ib.width - rw) / 2 - bb.left;
+      const pct = ((left + CHAR_X * rw) / bb.width) * 100;
+      b.speech.style.setProperty('--tail', Math.max(8, Math.min(92, pct)).toFixed(1) + '%');
+    });
+  }
+
+  // 그림 로드·칸 크기 변화 모두 꼬리 위치를 바꾼다
+  document.querySelectorAll('.booth-art').forEach(img => {
+    if(img.complete) return;
+    img.addEventListener('load', layoutTails);
+  });
+  if(window.ResizeObserver){
+    // --tail 은 의사요소의 left 만 바꾸므로 되먹임 루프가 생기지 않는다
+    const ro = new ResizeObserver(layoutTails);
+    Object.keys(booths).forEach(k => ro.observe(booths[k].el));
+  }
+  layoutTails();
 
   /* ---------------------------------------------------------
      상단 정보 한 줄
@@ -684,13 +848,13 @@
   function closeBubble(){
     bubble.hidden = true;
     openKey = null;
-    document.querySelectorAll('.placard.is-open, .verdict-word.is-open')
+    document.querySelectorAll('.speech.is-open, .verdict-word.is-open')
       .forEach(el => el.classList.remove('is-open'));
   }
 
   function openBubble(key, who, text, alt, anchor){
     if(openKey === key){ closeBubble(); return; }
-    document.querySelectorAll('.placard.is-open, .verdict-word.is-open')
+    document.querySelectorAll('.speech.is-open, .verdict-word.is-open')
       .forEach(el => el.classList.remove('is-open'));
     anchor.classList.add('is-open');
     openKey = key;
@@ -731,19 +895,17 @@
   $('bubbleClose').addEventListener('click', closeBubble);
 
   /* ---------------------------------------------------------
-     푯말 세우기
+     말풍선 띄우기 — 에이전트가 한 줄로 말한다
   --------------------------------------------------------- */
-  const PHASE = { DEOKSIM:0, SIYA:130, COST:260, EVENT:390, CONDITION:520 };
-
-  function raisePlacard(key, out){
+  function raiseSpeech(key, out){
     const b = booths[key];
     const label = GON.AGENT_LABEL[key];
 
     if(out.is_muted){
-      // 회색 푯말은 아예 들지 않는다. 앉아 있는 것으로 충분하다 (design.md §5.1)
+      // 할 말이 없으면 아예 입을 열지 않는다. 어두운 부스로 충분하다 (design.md §5.1)
       b.el.dataset.state = 'muted';
       b.status.textContent = out.placard;
-      b.dot.dataset.sign = 'off';
+      b.signal.dataset.sign = 'off';
       return;
     }
 
@@ -751,27 +913,21 @@
     const mag = Math.abs(s);
     const sign = s > 0 ? 'pos' : (s < 0 ? 'neg' : 'neu');
 
-    // 진폭·주기·위상 (design.md §5.2). 0점도 최소 30%는 움직인다.
-    const amp    = 8 * (0.3 + 0.7 * mag / 2);
-    const period = 500 * (1.4 - 0.4 * mag / 2);
-    b.placard.style.setProperty('--amp', amp.toFixed(1) + 'px');
-    b.placard.style.setProperty('--rot', (mag * 0.7).toFixed(1) + 'deg');
-    b.placard.style.setProperty('--period', Math.round(period) + 'ms');
-    b.placard.style.setProperty('--phase', PHASE[key] + 'ms');
-
-    b.placard.textContent = out.placard;
-    b.placard.dataset.sign = sign;
-    b.placard.dataset.strength = String(mag);
-    // 16자 초과 방어 — 말줄임보다 한 단계 축소가 먼저 (design.md §7.3)
-    b.placard.classList.toggle('long', Array.from(out.placard).length > 12);
-    b.placard.hidden = false;
+    b.line.textContent = out.placard;
+    b.speech.dataset.sign = sign;
+    // 확신의 세기는 테두리 굵기로 말한다 (design.md §5.2)
+    b.speech.dataset.strength = String(mag);
+    // 12자 초과 방어 — 말줄임보다 한 단계 축소가 먼저 (design.md §7.3)
+    b.speech.classList.toggle('long', Array.from(out.placard).length > 12);
+    b.speech.hidden = false;
 
     b.note.hidden = !out.uncertain;
-    b.dot.dataset.sign = sign;
-    b.status.textContent = out.defer ? '판단 유보' : (s > 0 ? '+' + s : String(s));
+    // 점수는 이제 신호등 색으로 말한다 (초록=+, 주황=0, 빨강=-). 숫자는 접는다
+    b.signal.dataset.sign = sign;
+    b.status.textContent = out.defer ? '판단 유보' : '';
     b.el.dataset.state = 'done';
 
-    b.placard.onclick = () => openBubble(key, label, out.detail, null, b.placard);
+    b.speech.onclick = () => openBubble(key, label, out.detail, null, b.speech);
   }
 
   /* ---------------------------------------------------------
@@ -790,7 +946,7 @@
     const wait = Math.max(0, 1000 - (performance.now() - lastAt));
     setTimeout(() => {
       const item = queue.shift();
-      raisePlacard(item.key, item.out);
+      raiseSpeech(item.key, item.out);
       lastAt = performance.now();
       pumping = false;
       pump();
@@ -805,6 +961,8 @@
 
   function startLeadTimeline(){
     leadBar.dataset.pose = 'work';
+    leadBar.dataset.state = 'working';
+    leadLamp.dataset.sign = 'off';
     poseTimers.push(setTimeout(() => { leadBar.dataset.pose = 'think'; }, 5000));
     armTimeout();
   }
@@ -842,6 +1000,9 @@
   function showVerdict(lead){
     clearLeadTimers();
     leadBar.dataset.pose = 'done';
+    // 건물이 블록 위로 솟아오르고, 신호등은 판정 색을 그대로 받는다
+    leadBar.dataset.state = 'done';
+    leadLamp.dataset.sign = lead.verdict === 'NO_GO' ? 'neg' : 'pos';
 
     const right = $('leadRight');
     right.innerHTML = '';
@@ -890,9 +1051,9 @@
     AGENTS.forEach(a => {
       const b = booths[a.key];
       b.el.dataset.state = 'working';
-      b.placard.hidden = true;
+      b.speech.hidden = true;
       b.note.hidden = true;
-      b.dot.dataset.sign = 'off';
+      b.signal.dataset.sign = 'off';
       b.status.textContent = '작업 중';
     });
     // 비용은 시야를 기다리는 동안 대기 포즈다 (design.md §6.1)
@@ -908,7 +1069,7 @@
       run.agents[key].then(out => {
         if(session !== my) return;
         // 호출되지 않은 에이전트는 처음부터 앉은 상태로 둔다 (큐를 태우지 않는다)
-        if(out.is_muted) raisePlacard(key, out);
+        if(out.is_muted) raiseSpeech(key, out);
         else enqueue(key, out);
       });
     });
@@ -925,7 +1086,7 @@
   }
 
   $('backBtn').addEventListener('click', () => { location.href = 'index.html'; });
-  window.addEventListener('resize', closeBubble);
+  window.addEventListener('resize', () => { closeBubble(); layoutTails(); });
 
   start();
 })();
