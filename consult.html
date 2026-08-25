@@ -42,6 +42,12 @@
   /* 블록 한 칸의 기준 크기. 뷰포트 높이·너비 둘 다에 걸어서
      세로로도 가로로도 화면을 넘치지 않게 한다 (design.md §8) */
   --tile: clamp(84px, min(23vh, 19vw), 290px);
+
+  /* 건물 그림이 보도블록 각도와 안 맞아 공통적으로 앞으로(반시계 방향으로)
+     기울어 보인다는 피드백 — rotateX 3D 눕히기는 효과가 너무 약해 안 보였으므로
+     화면 평면에서 시계 방향으로 도는 2D rotate로 바꾼다. 양수 = 시계 방향.
+     세기가 안 맞으면 이 숫자만 조절하면 된다 (이미지 전부에 공통 적용). */
+  --building-lean: 14deg;
 }
 
 .stage{
@@ -299,19 +305,30 @@
 
 /* ---- 건물이 블록 위로 솟아오르는 자리 ----
    완료(done) 전에는 타일 속에 눌려 있다가, 완료되는 순간 자라나듯 떠오른다.
-   건물의 발치는 마름모 꼭짓점(= plot-ground의 height% + bottom%)에 맞춘다 —
-   그래서 .rise-stage의 bottom이 .plot-ground의 두 값을 그대로 더한 값이다.
+   건물의 발치는 마름모 "꼭짓점"이 아니라 마름모가 가장 넓어지는 중심선
+   (= plot-ground의 좌우 꼭짓점 높이, top/left/right-vertex의 y=37.9%)에
+   맞춘다. 꼭짓점은 폭이 0인 점이라 거기 발을 대면 건물이 타일과 한 점에서만
+   만나 허공에 떠 있는 것처럼 보인다 — 폭이 가장 넓은 지점이어야 보도블록
+   위에 실제로 "앉은" 느낌이 난다. bottom을 그만큼 낮추고, top도 같은 폭만큼
+   낮춰서 박스 높이(=건물 크기)는 그대로 두고 위치만 통째로 내린다 — 그래서
+   말풍선(.speech, top:0 기준) 자리는 건드리지 않으면서 건물 윗부분이 말풍선
+   아래로 덜 파고든다.
    실제 그림 여부와 무관하게 .rise-stage > * 로 한 번에 건다 — 이미지가
    나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
 .rise-stage{
   position:absolute;
-  top:clamp(6px, 13%, 30px); right:12%; bottom:50%; left:12%;
+  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:33.3%; left:12%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
   z-index:2;
+  /* 그림 자체는 안 건드리고, 발밑을 축으로 시계 방향으로 살짝 돌려 보도블록
+     각도에 맞춘다 — 안쪽(.rise-stage > *)의 등장 애니메이션 transform과는
+     별도 레이어라 서로 간섭하지 않는다 */
+  transform: rotate(var(--building-lean));
+  transform-origin: 50% 100%;
 }
-.foot-row .rise-stage{ top:4%; bottom:54%; }
+.foot-row .rise-stage{ top:21.4%; bottom:36.6%; }
 .rise-stage > *{
   width:100%;
   height:100%;
