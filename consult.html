@@ -33,10 +33,11 @@
   --curb:     #7A6448;
   --street-lamp: rgba(255,196,120,.28);
 
-  /* 회색 보도블록 — 키캡처럼 입체로 띄운다 */
-  --pave-hi:   #ABA192;
-  --pave-top:  #8D8272;
-  --pave-side: #4A4238;
+  /* 회색 보도블록 — ref/angle.jpg처럼 하이앵글 대각선에서 본 아이소메트릭 타일.
+     윗면 한 색 + 옆면 두 색(왼쪽이 더 밝고 오른쪽이 그늘)으로 입체를 낸다 */
+  --iso-top:   #9C9C9C;
+  --iso-left:  #7C7C7C;
+  --iso-right: #5A5A5A;
 
   /* 블록 한 칸의 기준 크기. 뷰포트 높이·너비 둘 다에 걸어서
      세로로도 가로로도 화면을 넘치지 않게 한다 (design.md §8) */
@@ -138,8 +139,9 @@
 
 /* ============================================================
    블록 — 에이전트 한 명당 보도블록 한 칸을 가진다.
-   덕심·비용·이벤트·시야는 정사각형, 컨디션·팀장은 정사각형 2개 길이의
-   납작한 직사각형 (design.md §4.3 신규 — "키보드 키" 은유).
+   2-2-1-1 구조: 덕심(왼상)·시야(오상)·비용(왼하)·이벤트(오하)가 정사각형
+   2×2로, 그 아래 컨디션 한 줄, 팀장 한 줄이 순서대로 쌓인다. 컨디션·팀장은
+   위 두 정사각형을 합친 가로(2×tile)와 같고 세로만 짧다 (design.md §4.3).
    ============================================================ */
 .booth-grid{
   display:grid;
@@ -149,22 +151,25 @@
   gap:clamp(14px, 2.2vh, 28px);
   flex:0 0 auto;
 }
+.booth-grid .booth{ width:100%; height:100%; }
 
-/* 컨디션 + 팀장 — 골목 끝, 정사각형 2개 길이지만 더 얇은 블록 */
+/* 컨디션 위, 팀장 아래 — 둘 다 정사각형 줄과 같은 가로폭, 더 얇은 블록 */
 .foot-row{
-  display:grid;
-  grid-template-columns:repeat(2, calc(var(--tile) * 2));
-  grid-auto-rows:calc(var(--tile) * 1.4);
-  justify-content:center;
-  gap:clamp(14px, 2.2vh, 28px);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:clamp(10px, 1.6vh, 20px);
   flex:0 0 auto;
 }
 #lowBooth{ display:contents; }
+#lowBooth .booth, .lead-bar{
+  width:calc(var(--tile) * 2);
+  height:calc(var(--tile) * 0.86);
+  flex:0 0 auto;
+}
 
 .booth, .lead-bar{
   position:relative;
-  width:100%;
-  height:100%;
   overflow:visible;
   /* 조명 은유 — 아직 완료되지 않은 블록은 어둡다. opacity가 아니라 밝기로 (design.md §3.2) */
   filter: brightness(0.82) saturate(0.8);
@@ -205,39 +210,61 @@
   inset:0;
 }
 
-/* ---- 3D 보도블록 ----
-   키캡처럼 밝은 윗면 + 단단한 옆면 단차 + 바닥 그림자로 입체를 준다.
-   위쪽은 이름표(.booth-head) 한 줄만큼 비워 겹치지 않게 하고,
-   아래쪽 8px는 비워 두어 box-shadow의 옆면(0 8px 0)이 정확히 채운다. */
+/* ---- 아이소메트릭 보도블록 (ref/angle.jpg) ----
+   하이앵글 대각선에서 내려다본 마름모 타일. 윗면 하나 + 옆면 둘(왼쪽이
+   밝고 오른쪽이 그늘)로 입체를 만들고, drop-shadow로 공중에 띄운다.
+   높이(height) 기준으로 크기를 잡고 aspect-ratio로 폭을 끌어낸다 — 그래야
+   "타일의 꼭짓점(peak)은 항상 컨테이너 맨 위"라는 사실이 유지되어, 건물이
+   솟아오르는 .rise-stage의 시작점(bottom)을 고정 퍼센트로 맞출 수 있다. */
 .plot-ground{
   position:absolute;
-  top:clamp(20px, 15%, 30px); right:4%; bottom:8px; left:4%;
-  border-radius:12px;
-  background:
-    radial-gradient(70% 60% at 50% 100%, var(--agent-glow, transparent), transparent 75%),
-    linear-gradient(155deg, var(--pave-hi), var(--pave-top) 62%);
-  box-shadow:
-    inset 0 0 0 2px rgba(255,255,255,.16),   /* 구역 경계선 — 이 블록의 영역 표시 */
-    inset 0 -4px 7px rgba(0,0,0,.16),
-    0 8px 0 var(--pave-side),                /* 옆면 — 키캡처럼 단단한 단차 */
-    0 10px 16px 1px rgba(0,0,0,.4);          /* 바닥 그림자 — 블록이 길 위에 떠 있다 */
+  left:50%; bottom:6%;
+  height:44%;
+  aspect-ratio: 2 / 1.32;
+  transform:translateX(-50%);
+  filter:
+    drop-shadow(0 3px 3px rgba(0,0,0,.35))
+    drop-shadow(0 10px 14px rgba(0,0,0,.4));  /* 블록이 길 위에 떠 있는 그림자 */
   z-index:0;
+}
+.foot-row .plot-ground{ height:46%; bottom:8%; }
+.plot-ground i{ position:absolute; inset:0; display:block; }
+/* 윗면 — 마름모. 대표색(#9C9C9C) 위에 에이전트 색을 옅게 얹는다 */
+.plot-ground i.iso-top{
+  background:
+    radial-gradient(65% 65% at 50% 42%, var(--agent-glow, transparent), transparent 72%),
+    var(--iso-top);
+  clip-path: polygon(50% 0%, 100% 37.9%, 50% 75.8%, 0% 37.9%);
+}
+/* 왼쪽 옆면 — 빛을 더 받는 쪽 */
+.plot-ground i.iso-left{
+  background:var(--iso-left);
+  clip-path: polygon(0% 37.9%, 50% 75.8%, 50% 100%, 0% 62.1%);
+}
+/* 오른쪽 옆면 — 그늘 쪽, 가장 어둡다 */
+.plot-ground i.iso-right{
+  background:var(--iso-right);
+  clip-path: polygon(100% 37.9%, 50% 75.8%, 50% 100%, 100% 62.1%);
 }
 @keyframes paveIdle{ 0%,100%{ opacity:1; } 50%{ opacity:.7; } }
 .booth[data-state="working"] .plot-ground,
 .lead-bar[data-state="working"] .plot-ground{ animation:paveIdle 2.2s ease-in-out infinite; }
 
-/* ---- 신호등 — 블록 바닥에 기둥이 박혀 있다 ---- */
+/* ---- 신호등 — 타일 오른쪽 꼭짓점에 기둥이 박혀 있다 ----
+   .plot-ground은 세로(height%) 기준으로 크기를 잡고 가로는 종횡비로 끌어내므로,
+   꼭짓점이 .booth-body 가로 기준 몇 %에 놓이는지는 정사각형 칸과 컨디션·팀장의
+   가로세로 비율이 서로 달라 완전히 다른 값이 나온다. 그래서 두 값을 따로 잡는다. */
 .lamp{
   position:absolute;
-  right:9%;
-  bottom:8px;                /* plot-ground의 옆면 높이만큼 바닥에서 시작 */
+  right:17%;
+  bottom:33%;                /* 정사각형 칸의 마름모 오른쪽 꼭짓점 근사치 */
   display:flex;
   flex-direction:column;
   align-items:center;
   z-index:4;
   pointer-events:none;
 }
+.foot-row .lamp{ right:35%; bottom:36%; }   /* 가로로 넓은 칸이라 꼭짓점이 중앙에 훨씬 가깝다 */
 .lamp-head{
   display:flex;
   flex-direction:column;
@@ -271,17 +298,20 @@
 }
 
 /* ---- 건물이 블록 위로 솟아오르는 자리 ----
-   완료(done) 전에는 바닥 속에 눌려 있다가, 완료되는 순간 자라나듯 떠오른다.
-   실제 그림 여부와 무관하게 .rise-stage > * 로 한 번에 건다 —
-   이미지가 나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
+   완료(done) 전에는 타일 속에 눌려 있다가, 완료되는 순간 자라나듯 떠오른다.
+   건물의 발치는 마름모 꼭짓점(= plot-ground의 height% + bottom%)에 맞춘다 —
+   그래서 .rise-stage의 bottom이 .plot-ground의 두 값을 그대로 더한 값이다.
+   실제 그림 여부와 무관하게 .rise-stage > * 로 한 번에 건다 — 이미지가
+   나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
 .rise-stage{
   position:absolute;
-  top:clamp(26px, 21%, 38px); right:10%; bottom:8px; left:10%;
+  top:clamp(6px, 13%, 30px); right:12%; bottom:50%; left:12%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
   z-index:2;
 }
+.foot-row .rise-stage{ top:4%; bottom:54%; }
 .rise-stage > *{
   width:100%;
   height:100%;
@@ -395,7 +425,7 @@
 .foot-row .speech{ font-size:15px; }
 .foot-row .speech.long{ font-size:12px; }
 /* 컨디션 블록에서는 신호등을 왼쪽에 둔다 — 오른쪽은 팀장 쪽을 보고 있어야 자연스럽다 */
-#lowBooth .lamp{ right:auto; left:6%; }
+#lowBooth .lamp{ right:auto; left:35%; }
 
 /* ============================================================
    팀장 본부 — 골목 끝 건물, 컨디션과 같은 얇고 넓은 블록 (design.md §4.2)
@@ -405,10 +435,9 @@
   display:flex;
   align-items:flex-end;
 }
-/* 건물 자리는 왼쪽, 판정 문구는 오른쪽에 — 신호등은 둘 사이 경계에 선다.
-   블록이 얇아서(1.4×) 기둥이 정사각형 블록보다 짧아야 튀어나오지 않는다 */
-#leadChar{ right:44%; }
-.lead-bar .lamp{ right:41%; }
+/* 건물 자리는 왼쪽 절반, 판정 문구는 오른쪽 절반 — 정확히 반씩 나눠야
+   .lead-right의 max-width와 안 겹친다 (50%+50%=100%) */
+#leadChar{ right:50%; }
 .foot-row .lamp-pole{ height:clamp(14px, 5vh, 26px); }
 .lead-right{
   position:relative;
@@ -423,7 +452,7 @@
   gap:5px;
   padding:0 4px 10px 16px;
   margin-left:auto;
-  max-width:56%;
+  max-width:50%;
 }
 .lead-waiting{
   font-size:13px;
@@ -565,15 +594,11 @@
   .bubble-text{ font-size:14.5px; line-height:1.65; }
   .verdict-hint, .alt-chip{ font-size:10.5px; }
 
-  /* 좁은 팀장 블록에서는 판정어 자리를 조금 더 넉넉히 준다 */
-  #leadChar{ right:46%; }
-  .lead-bar .lamp{ right:44%; }
-  .lead-right{ max-width:52%; }
 
-  /* 폭이 좁으면 4×tile을 가로로 못 채운다. 컨디션·팀장을 세로로 쌓아
-     블록을 정사각형 줄의 너비(2×tile)에 맞춰 키운다 — 남는 세로 공간도 채운다 */
-  :root{ --tile: clamp(84px, min(22vh, 40vw), 220px); }
-  .foot-row{ grid-template-columns:calc(var(--tile) * 2); }
+  /* 컨디션·팀장이 이미 세로로 한 줄씩 쌓여 있어(가로 2×tile) 정사각형 줄과
+     가로 제약이 같다 — 그래서 세로(vh)만 채워도 되고, 가로(vw) 상한은
+     넉넉히 올려도 된다 */
+  :root{ --tile: clamp(84px, min(23vh, 46vw), 230px); }
 
   /* 말풍선은 하단 고정 시트로 (게임 대사창과 동일) */
   .bubble{
@@ -621,7 +646,7 @@
           <span class="axis-name">팀장</span>
         </div>
         <div class="lead-stage" id="leadStage">
-          <div class="plot-ground"></div>
+          <div class="plot-ground"><i class="iso-top"></i><i class="iso-left"></i><i class="iso-right"></i></div>
           <div class="lamp" data-sign="off" aria-hidden="true">
             <span class="lamp-head"><i></i><i></i><i></i></span>
             <span class="lamp-pole"></span>
@@ -727,7 +752,7 @@
     sec.className = 'booth';
     sec.dataset.agent = a.key;
     sec.dataset.state = 'working';
-    sec.style.setProperty('--agent-glow', glow(a.color, 0.30));
+    sec.style.setProperty('--agent-glow', glow(a.color, 0.14));
 
     const head = document.createElement('div');
     head.className = 'booth-head';
@@ -737,7 +762,10 @@
 
     const body = document.createElement('div');
     body.className = 'booth-body';
-    body.appendChild(document.createElement('div')).className = 'plot-ground';
+    const ground = document.createElement('div');
+    ground.className = 'plot-ground';
+    ground.innerHTML = '<i class="iso-top"></i><i class="iso-left"></i><i class="iso-right"></i>';
+    body.appendChild(ground);
 
     const lamp = buildLamp();
     body.appendChild(lamp);
