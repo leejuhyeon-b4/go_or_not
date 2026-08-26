@@ -23,15 +23,32 @@
   --ui-w: 600;
   --ui-ls: 0;
 
-  /* 골목 팔레트 — 노을이 진 저녁. 어둡되 색이 살아 있어야 거리로 읽힌다 */
-  --sky-top: #4A3A57;
-  --sky-mid: #6E4E56;
-  --sky-low: #93694C;
-  --sil-far: #3A2E48;
-  --sil-near: #48394C;
-  --road:     #55483C;
-  --curb:     #7A6448;
+  /* 골목 팔레트 — 뮤지컬 백스테이지. 공연 시작 전, 조명 트러스만 부분적으로
+     켜진 무대 뒤편. 어둡되 색이 살아 있어야 공간으로 읽힌다 */
+  --sky-top: #0F0D0F;
+  --sky-mid: #241A1D;
+  --sky-low: #3A2620;
+  --sil-far: #171214;
+  --sil-near: #241A18;
+  --road:     #1C1613;
+  --curb:     #362A20;
   --street-lamp: rgba(255,196,120,.28);
+
+  /* 조명 트러스·기구 색 — 골목 위에 매달린 조명 바 */
+  --truss:      #57504A;
+  --truss-hi:   #7C7268;
+  --truss-dark: #1C1815;
+  --fixture:    #35302A;
+  --fixture-hi: #6B6156;
+  --gel-amber: rgba(255,176,96,.5);
+  --gel-blue:  rgba(120,172,255,.38);
+  --gel-rose:  rgba(230,120,175,.36);
+
+  /* 무대장비·소품 — 골목 양옆에 쌓인 플라이트케이스 */
+  --case:      #2A231D;
+  --case-hi:   #453A2F;
+  --case-edge: #171310;
+  --case-latch:#8C7A4A;
 
   /* 회색 보도블록 — ref/angle.jpg처럼 하이앵글 대각선에서 본 아이소메트릭 타일.
      윗면 한 색 + 옆면 두 색(왼쪽이 더 밝고 오른쪽이 그늘)으로 입체를 낸다 */
@@ -47,7 +64,8 @@
      기울어 보인다는 피드백 — rotateX 3D 눕히기는 효과가 너무 약해 안 보였으므로
      화면 평면에서 시계 방향으로 도는 2D rotate로 바꾼다. 양수 = 시계 방향.
      세기가 안 맞으면 이 숫자만 조절하면 된다 (이미지 전부에 공통 적용). */
-  --building-lean: 14deg;
+  --building-lean: 7deg;
+  --building-lean-foot: 0deg;
 }
 
 .stage{
@@ -61,29 +79,182 @@
   justify-content:center;
   padding:clamp(8px, 2vw, 22px);
   background:
-    /* 가로등 불빛 두 점 */
-    radial-gradient(46% 30% at 14% 58%, var(--street-lamp), transparent 72%),
-    radial-gradient(46% 30% at 86% 58%, var(--street-lamp), transparent 72%),
-    /* 골목 바닥의 노을 반사 */
-    radial-gradient(ellipse 85% 34% at 50% 100%, rgba(255,205,150,.16), transparent 72%),
-    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 45%, var(--sky-low) 100%);
+    /* 트러스 조명 세 대가 쏘아 내리는 색 빛 — 위에서 퍼져 바닥 웅덩이로 모인다 */
+    radial-gradient(24% 55% at 18% 3%,  var(--gel-blue),  transparent 74%),
+    radial-gradient(20% 46% at 50% 2%,  var(--gel-rose),  transparent 74%),
+    radial-gradient(26% 58% at 82% 4%,  var(--gel-amber), transparent 74%),
+    radial-gradient(34% 20% at 18% 96%, rgba(120,172,255,.16), transparent 72%),
+    radial-gradient(28% 16% at 50% 97%, rgba(230,120,175,.12), transparent 72%),
+    radial-gradient(36% 20% at 82% 96%, rgba(255,176,96,.18), transparent 72%),
+    /* 무대 한가운데 떨어지는 흐린 작업등 웅덩이 */
+    radial-gradient(ellipse 60% 22% at 50% 100%, rgba(255,205,150,.13), transparent 72%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 48%, var(--sky-low) 100%);
 }
 
-/* 원경 스카이라인 — 세로 막대 두 겹이면 충분하다 (이미지 0장) */
-.stage::before{
+/* 조명 트러스 — 골목 위에 걸린 조명 바에 핀 조명(pin spot)이 한 줄로
+   매달려 있다. 그러데이션 하나로는 조명 기구티가 안 나서, 클램프·하우징·
+   렌즈·빔을 실제 요소로 쌓아 만든다 (이미지 0장, 마크업은 .room 앞에 둔다) */
+.truss-rig{
+  position:absolute;
+  left:0; right:0; top:clamp(6px, 1.4vh, 18px);
+  height:clamp(92px, 15.5vh, 158px);
+  overflow:hidden;
+  pointer-events:none;
+  z-index:0;
+  -webkit-mask-image:linear-gradient(180deg, #000 62%, transparent 97%);
+          mask-image:linear-gradient(180deg, #000 62%, transparent 97%);
+}
+.truss-pipe{
+  position:absolute;
+  left:0; right:0; top:16px;
+  height:9px;
+  border-radius:2px;
+  background:linear-gradient(180deg, var(--truss-hi) 0 32%, var(--truss) 32% 68%, var(--truss-dark) 68% 100%);
+  box-shadow:0 3px 6px rgba(0,0,0,.5);
+}
+.truss-lights{
+  position:absolute;
+  left:4%; right:4%; top:24px;
+  display:flex;
+  justify-content:space-between;
+}
+.pinspot{
+  position:relative;
+  width:clamp(20px, 2.05vw, 32px);
+  height:clamp(46px, 7vh, 68px);
+  flex:0 0 auto;
+}
+/* 클램프 — 트러스 파이프에 거는 고정쇠. 여기까지는 고정, 아래(.pinspot-rig)만
+   조준각만큼 돈다 — 실제 요크(yoke) 마운트처럼 몸체만 회전해야 자연스럽다 */
+.pinspot-clamp{
+  position:absolute; top:0; left:50%;
+  width:42%; height:6px;
+  transform:translateX(-50%);
+  border-radius:1px;
+  background:linear-gradient(180deg, var(--truss-hi), var(--truss-dark));
+  box-shadow:0 0 0 1.5px var(--truss-dark);
+}
+.pinspot-rig{
+  position:absolute; left:0; right:0; top:6px; bottom:0;
+  transform:rotate(var(--aim, 0deg));
+  transform-origin:50% 0%;
+}
+/* 요크 암 두 짝 — 각진 몸통을 좌우에서 붙잡는다. 조명 기구다운 인상은
+   둥근 갓이 아니라 이 마운트 구조에서 나온다 */
+.pinspot-arm{
+  position:absolute; top:0;
+  width:13%;
+  height:56%;
+  background:linear-gradient(90deg, var(--fixture-hi), var(--fixture) 65%);
+  border-radius:1px;
+}
+.pinspot-arm--l{ left:5%; }
+.pinspot-arm--r{ right:5%; }
+/* 배럴 — 각진 사각 기둥. 둥근 캡슐 대신 곧은 모서리로 산업용 기구답게 */
+.pinspot-body{
+  position:absolute; top:5%;
+  left:19%; right:19%;
+  height:54%;
+  background:linear-gradient(100deg, var(--fixture-hi) 0 24%, var(--fixture) 32% 100%);
+  border-radius:1.5px;
+  box-shadow:inset 0 -3px 4px rgba(0,0,0,.55), inset 1px 0 2px rgba(255,255,255,.08), 0 2px 4px rgba(0,0,0,.4);
+}
+/* 피벗 볼트 — 요크 암과 배럴이 맞물리는 지점 */
+.pinspot-body::before, .pinspot-body::after{
+  content:'';
+  position:absolute; top:8%;
+  width:4px; height:4px;
+  border-radius:50%;
+  background:var(--truss-hi);
+  box-shadow:0 0 0 1px var(--truss-dark);
+}
+.pinspot-body::before{ left:-17%; }
+.pinspot-body::after{ right:-17%; }
+/* 렌즈 — 꺼진 기구는 검게, 켜진 기구는 젤 색으로 빛난다. 원형 갓 대신 각진
+   젤 프레임으로 그려 완구 느낌을 뺀다 */
+.pinspot-lens{
+  position:absolute; top:60%; left:26%; right:26%;
+  height:9%;
+  background:#100D0B;
+  border-radius:1px;
+  box-shadow:0 0 0 1px var(--truss-dark);
+}
+.pinspot[data-lit="blue"] { --lit: #9CC2FF; }
+.pinspot[data-lit="rose"] { --lit: #F2A8D2; }
+.pinspot[data-lit="amber"]{ --lit: #FFCB8E; }
+.pinspot[data-lit] .pinspot-lens{
+  background:var(--lit);
+  box-shadow:0 0 4px 1px var(--lit), 0 0 14px 5px var(--lit);
+}
+/* 켜진 기구만 요크를 살짝 돌려 무대 쪽을 겨냥한 인상을 준다 */
+.pinspot[data-lit="blue"]  .pinspot-rig{ --aim: -13deg; }
+.pinspot[data-lit="rose"]  .pinspot-rig{ --aim: 0deg; }
+.pinspot[data-lit="amber"] .pinspot-rig{ --aim: 13deg; }
+.pinspot-beam{ display:none; }
+.pinspot[data-lit] .pinspot-beam{
+  display:block;
+  position:absolute;
+  top:69%; left:50%;
+  width:170px; height:58vh;
+  transform:translateX(-50%);
+  clip-path:polygon(42% 0, 58% 0, 100% 100%, 0% 100%);
+  background:linear-gradient(180deg, var(--lit) 0%, transparent 78%);
+  opacity:.3;
+  mix-blend-mode:screen;
+}
+
+/* 무대장비·소품 — 골목 양옆에 쌓아 둔 플라이트케이스와 그 앞 바닥 모니터
+   스피커. .room 바깥 여백에만 놓여서 부스 그림과 겹치지 않는다 (이미지 0장) */
+.stage-prop{
+  position:absolute;
+  bottom:clamp(6px, 1.5vh, 16px);
+  width:clamp(48px, 6.2vw, 96px);
+  height:clamp(70px, 12.5vh, 150px);
+  display:flex;
+  flex-direction:column;
+  gap:7%;
+  pointer-events:none;
+  z-index:0;
+  filter:drop-shadow(0 8px 12px rgba(0,0,0,.45));
+}
+/* 케이스 본체 — 각진 사각 몸통에 이중 테두리(리브)와 네 모서리 금속 코너,
+   가운데 손잡이 홈을 얹는다. 원형 요소를 다 빼서 드럼통처럼 안 보이게 한다 */
+.stage-prop i{
+  display:block;
+  position:relative;
+  border-radius:3px;
+  background:
+    linear-gradient(var(--case-latch), var(--case-latch)) 6% 12% / 22% 16% no-repeat,
+    linear-gradient(var(--case-latch), var(--case-latch)) 72% 12% / 22% 16% no-repeat,
+    linear-gradient(var(--case-latch), var(--case-latch)) 6% 74% / 22% 16% no-repeat,
+    linear-gradient(var(--case-latch), var(--case-latch)) 72% 74% / 22% 16% no-repeat,
+    var(--case);
+  box-shadow:
+    inset 0 0 0 3px var(--case-hi),
+    inset 0 0 0 5px var(--case-edge);
+}
+.stage-prop i:first-child{ flex:1.2; }
+.stage-prop i:last-child{ flex:1; }
+.stage-prop i::before{
   content:'';
   position:absolute;
-  left:0; right:0; top:0;
-  height:clamp(80px, 15vh, 160px);
-  background:
-    repeating-linear-gradient(90deg, var(--sil-near) 0 34px, transparent 34px 80px),
-    repeating-linear-gradient(90deg, var(--sil-far)  0 54px, transparent 54px 122px);
-  background-size:100% 58%, 100% 100%;
-  background-position:0 100%, 0 100%;
-  background-repeat:repeat-x;
-  -webkit-mask-image:linear-gradient(180deg, transparent 0, #000 70%);
-          mask-image:linear-gradient(180deg, transparent 0, #000 70%);
-  pointer-events:none;
+  left:22%; right:22%; top:42%;
+  height:15%;
+  background:var(--case-edge);
+  border-radius:2px;
+  box-shadow:inset 0 1px 1px rgba(0,0,0,.6);
+}
+.stage-prop--left{ left:clamp(6px, 2.4vw, 34px); }
+.stage-prop--right{ right:clamp(6px, 2.4vw, 34px); }
+/* 케이스 발치의 바닥 모니터 스피커 — 사다리꼴 웨지 한 장으로 충분하다 */
+.stage-prop::after{
+  content:'';
+  position:absolute;
+  left:0; right:0; bottom:-11%;
+  height:20%;
+  clip-path:polygon(9% 100%, 27% 0, 73% 0, 91% 100%);
+  background:linear-gradient(180deg, var(--fixture-hi), var(--fixture) 72%);
+  box-shadow:0 4px 7px rgba(0,0,0,.4);
 }
 
 .room{
@@ -94,6 +265,9 @@
   flex-direction:column;
   gap:clamp(6px, 1vw, 12px);
   min-height:0;
+  /* 조명 트러스가 .stage 맨 위에 걸려 있어서, 그 아래로 내려와야
+     상단 정보 줄(.room-top)이 트러스와 안 겹친다 */
+  margin-top:clamp(78px, 12.5vh, 128px);
 }
 
 /* ============================================================
@@ -222,36 +396,49 @@
    높이(height) 기준으로 크기를 잡고 aspect-ratio로 폭을 끌어낸다 — 그래야
    "타일의 꼭짓점(peak)은 항상 컨테이너 맨 위"라는 사실이 유지되어, 건물이
    솟아오르는 .rise-stage의 시작점(bottom)을 고정 퍼센트로 맞출 수 있다. */
+/* 마름모의 가로세로 비율(aspect-ratio)이 이 타일의 "각도"를 정하고, clip-path의
+   y=31.8%/63.5% 지점이 두께 비율(옆면:윗면)을 정한다. 사각 4명(덕심·시야·비용·
+   이벤트)은 칸 안에서 너무 작아 보인다는 피드백으로 height를 1.6배 키웠다 —
+   폭도 aspect-ratio를 통해 같이 1.6배 커진다(칸보다 커져 넘치는 건
+   .booth{overflow:visible}라 의도된 동작). */
 .plot-ground{
   position:absolute;
   left:50%; bottom:6%;
-  height:44%;
-  aspect-ratio: 2 / 1.32;
+  height:42%;
+  aspect-ratio: 3.35 / 1.32;
   transform:translateX(-50%);
   filter:
     drop-shadow(0 3px 3px rgba(0,0,0,.35))
     drop-shadow(0 10px 14px rgba(0,0,0,.4));  /* 블록이 길 위에 떠 있는 그림자 */
   z-index:0;
 }
-.foot-row .plot-ground{ height:46%; bottom:8%; }
+/* 컨디션·팀장은 반대로 두께가 너무 두껍다는 피드백이라, 옛 얇은 비율
+   (37.9/75.8/62.1, aspect-ratio 4/1.32)로 되돌린다 — 폭(칸 크기의 2배)은
+   그대로 두고 옆면만 다시 얇아진다. 그래서 이 두 그룹은 이제 두께 비율
+   자체가 달라 clip-path를 공유할 수 없어 아래에서 각각 따로 정의한다. */
+.foot-row .plot-ground{ height:51.2%; bottom:8%; aspect-ratio: 4 / 1.32; }
 .plot-ground i{ position:absolute; inset:0; display:block; }
 /* 윗면 — 마름모. 대표색(#9C9C9C) 위에 에이전트 색을 옅게 얹는다 */
 .plot-ground i.iso-top{
   background:
     radial-gradient(65% 65% at 50% 42%, var(--agent-glow, transparent), transparent 72%),
     var(--iso-top);
-  clip-path: polygon(50% 0%, 100% 37.9%, 50% 75.8%, 0% 37.9%);
+  clip-path: polygon(50% 0%, 100% 31.8%, 50% 63.5%, 0% 31.8%);
 }
 /* 왼쪽 옆면 — 빛을 더 받는 쪽 */
 .plot-ground i.iso-left{
   background:var(--iso-left);
-  clip-path: polygon(0% 37.9%, 50% 75.8%, 50% 100%, 0% 62.1%);
+  clip-path: polygon(0% 31.8%, 50% 63.5%, 50% 100%, 0% 68.2%);
 }
 /* 오른쪽 옆면 — 그늘 쪽, 가장 어둡다 */
 .plot-ground i.iso-right{
   background:var(--iso-right);
-  clip-path: polygon(100% 37.9%, 50% 75.8%, 50% 100%, 100% 62.1%);
+  clip-path: polygon(100% 31.8%, 50% 63.5%, 50% 100%, 100% 68.2%);
 }
+/* 컨디션·팀장 전용 — 얇은 옛 비율 */
+.foot-row .plot-ground i.iso-top{ clip-path: polygon(50% 0%, 100% 37.9%, 50% 75.8%, 0% 37.9%); }
+.foot-row .plot-ground i.iso-left{ clip-path: polygon(0% 37.9%, 50% 75.8%, 50% 100%, 0% 62.1%); }
+.foot-row .plot-ground i.iso-right{ clip-path: polygon(100% 37.9%, 50% 75.8%, 50% 100%, 100% 62.1%); }
 @keyframes paveIdle{ 0%,100%{ opacity:1; } 50%{ opacity:.7; } }
 .booth[data-state="working"] .plot-ground,
 .lead-bar[data-state="working"] .plot-ground{ animation:paveIdle 2.2s ease-in-out infinite; }
@@ -263,14 +450,16 @@
 .lamp{
   position:absolute;
   right:17%;
-  bottom:33%;                /* 정사각형 칸의 마름모 오른쪽 꼭짓점 근사치 */
+  bottom:34.7%;              /* 정사각형 칸의 마름모 오른쪽 꼭짓점 근사치 */
   display:flex;
   flex-direction:column;
   align-items:center;
   z-index:4;
   pointer-events:none;
 }
-.foot-row .lamp{ right:35%; bottom:36%; }   /* 가로로 넓은 칸이라 꼭짓점이 중앙에 훨씬 가깝다 */
+/* 폭이 2배가 된 마름모(위 .foot-row .plot-ground)의 오른쪽 꼭짓점 근사치 —
+   가로 비율은 사각 칸과 같아졌으므로(66.7%) 가장자리까지 거리도 17%로 같다 */
+.foot-row .lamp{ right:16.7%; bottom:39.8%; }
 .lamp-head{
   display:flex;
   flex-direction:column;
@@ -317,7 +506,7 @@
    나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
 .rise-stage{
   position:absolute;
-  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:33.3%; left:12%;
+  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:34.7%; left:12%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
@@ -328,7 +517,10 @@
   transform: rotate(var(--building-lean));
   transform-origin: 50% 100%;
 }
-.foot-row .rise-stage{ top:21.4%; bottom:36.6%; }
+/* 컨디션·팀장 그림(team.png에서 딴 것)은 다른 넷(agents.png)과 원본 삽화의
+   카메라 각도 자체가 달라서, 같은 --building-lean을 그대로 쓰면 어긋난다 —
+   그래서 이 둘만 따로 기울기를 잡는다. */
+.foot-row .rise-stage{ top:18.2%; bottom:39.8%; transform: rotate(var(--building-lean-foot)); }
 .rise-stage > *{
   width:100%;
   height:100%;
@@ -442,7 +634,7 @@
 .foot-row .speech{ font-size:15px; }
 .foot-row .speech.long{ font-size:12px; }
 /* 컨디션 블록에서는 신호등을 왼쪽에 둔다 — 오른쪽은 팀장 쪽을 보고 있어야 자연스럽다 */
-#lowBooth .lamp{ right:auto; left:35%; }
+#lowBooth .lamp{ right:auto; left:16.7%; }
 
 /* ============================================================
    팀장 본부 — 골목 끝 건물, 컨디션과 같은 얇고 넓은 블록 (design.md §4.2)
@@ -452,9 +644,11 @@
   display:flex;
   align-items:flex-end;
 }
-/* 건물 자리는 왼쪽 절반, 판정 문구는 오른쪽 절반 — 정확히 반씩 나눠야
-   .lead-right의 max-width와 안 겹친다 (50%+50%=100%) */
-#leadChar{ right:50%; }
+/* 건물 자리를 절반으로 접어 두면 팀장 그림이 판정 문구보다 작아 보인다는
+   피드백 — 보도블록의 좌우 꼭짓점(16.7%~83.3%, .foot-row .plot-ground 폭과
+   동일)까지 꽉 채운다. 판정 문구(.lead-right)는 z-index가 더 높아 그림 위에
+   그대로 얹히고, 텍스트 자체의 그림자로 겹쳐도 읽힌다. */
+#leadChar{ left:16.7%; right:16.7%; }
 .foot-row .lamp-pole{ height:clamp(14px, 5vh, 26px); }
 .lead-right{
   position:relative;
@@ -580,6 +774,8 @@
   .speech{ font-size:15px; }
   .speech.long{ font-size:12px; }
   .foot-row .speech{ font-size:13px; }
+  /* .room이 .stage 대부분을 차지해 옆 여백이 없어지면 소품이 부스와 겹친다 */
+  .stage-prop{ display:none; }
 }
 
 /* ---- 모바일 ---- */
@@ -644,6 +840,20 @@
 <body>
 
 <div class="stage">
+  <div class="truss-rig" aria-hidden="true">
+    <div class="truss-pipe"></div>
+    <div class="truss-lights">
+      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot" data-lit="blue"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot" data-lit="rose"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot" data-lit="amber"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+    </div>
+  </div>
+  <div class="stage-prop stage-prop--left" aria-hidden="true"><i></i><i></i></div>
+  <div class="stage-prop stage-prop--right" aria-hidden="true"><i></i><i></i></div>
   <div class="room" id="room">
 
     <header class="room-top">

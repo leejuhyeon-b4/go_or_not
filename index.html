@@ -401,20 +401,26 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 
 .seat-stage{
   position:relative;
-  height:130px;
+  height:150px;
   display:flex;
   align-items:flex-end;
   justify-content:center;
+  overflow:hidden;         /* 뷰포트가 좁아 의자 줄이 넘칠 때 잘라낸다 */
 }
 
+/* 실제 뮤지컬 좌석 사진(chair.png) 위에서 쏘는 핀 조명 — 좌석이 사각 실루엣
+   에서 세로로 긴 사진으로 바뀌면서, 초점도 위쪽 한 점보다 등받이 상단
+   전체를 넓게 덮도록 타원을 낮고 넓게 늘렸다. 진행도에 따라 --spot-w·
+   --spot-a가 커지는 건 그대로라 "점점 환해지는" 연출은 그대로 유지된다. */
 .spotlight{
   position:absolute;
   inset:0;
   pointer-events:none;
-  background: radial-gradient(ellipse var(--spot-w, 40px) 70px at 50% 30%,
-              rgba(245,230,200, var(--spot-a, .12)) 0%,
-              rgba(245,230,200, calc(var(--spot-a, .12) * .35)) 45%,
-              transparent 72%);
+  background: radial-gradient(ellipse var(--spot-w, 70px) 130px at 50% 6%,
+              rgba(255,221,170, var(--spot-a, .16)) 0%,
+              rgba(255,221,170, calc(var(--spot-a, .16) * .4)) 46%,
+              transparent 76%);
+  mix-blend-mode: screen;
   transition: background 350ms ease-out;
 }
 
@@ -422,35 +428,21 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   position:relative;
   z-index:1;
   display:flex;
-  gap:6px;
-  filter: brightness(var(--seat-b, 0.45)) saturate(var(--seat-s, 0.5));
+  align-items:flex-end;
+  gap:clamp(1px, 0.8vw, 6px);
+  filter: brightness(var(--seat-b, 0.42)) saturate(var(--seat-s, 0.55));
   transition: filter 350ms ease-out;
 }
 
+/* 좌석 한 칸 = chair.png 한 장. 사진이라 tokens.css의 전역 pixelated
+   규칙을 여기서만 풀고, 바닥에 앉은 느낌을 주는 그림자를 얹는다 */
 .seat{
-  width:26px;
-  height:34px;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
+  height:clamp(58px, 9.5vw, 96px);
+  width:auto;
+  flex:0 0 auto;
+  image-rendering:auto;
+  filter:drop-shadow(0 5px 5px rgba(0,0,0,.5));
 }
-.seat .back{
-  width:24px; height:16px;
-  background:var(--light-dim);
-  border:1px solid var(--bg-dark);
-}
-.seat .bottom{
-  width:26px; height:9px;
-  background:var(--light-dim);
-  border:1px solid var(--bg-dark);
-  margin-top:1px;
-}
-.seat .legs{
-  width:20px; height:6px;
-  display:flex;
-  justify-content:space-between;
-}
-.seat .legs i{ width:3px; height:6px; background:var(--bg-dark); }
 
 .progress-note{
   position:absolute;
@@ -1243,13 +1235,16 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   }
 
   /* ---------------------------------------------------------
-     좌석 열 렌더 (개수는 항목 수와 무관, 고정 10석)
+     좌석 열 렌더 (개수는 항목 수와 무관, 고정 6석) — 실사 사진이라
+     칸이 넓어져서, 예전 10칸 그대로 두면 옆으로 넘친다.
   --------------------------------------------------------- */
   const seatRowEl = $('seatRow');
-  for(let i=0;i<10;i++){
-    const seat = document.createElement('div');
+  for(let i=0;i<6;i++){
+    const seat = document.createElement('img');
     seat.className = 'seat';
-    seat.innerHTML = '<div class="back"></div><div class="bottom"></div><div class="legs"><i></i><i></i></div>';
+    seat.src = 'assets/landing/chair.png';
+    seat.alt = '';
+    seat.decoding = 'async';
     seatRowEl.appendChild(seat);
   }
 
