@@ -62,9 +62,12 @@
 
   /* 건물 그림이 보도블록 각도와 안 맞아 공통적으로 앞으로(반시계 방향으로)
      기울어 보인다는 피드백 — rotateX 3D 눕히기는 효과가 너무 약해 안 보였으므로
-     화면 평면에서 시계 방향으로 도는 2D rotate로 바꾼다. 양수 = 시계 방향.
-     세기가 안 맞으면 이 숫자만 조절하면 된다 (이미지 전부에 공통 적용). */
-  --building-lean: 7deg;
+     화면 평면에서 시계 방향으로 도는 2D rotate로 바꿔 봤었다. 그런데 덕심·시야·
+     비용·이벤트 네 장은 애초에 그림 자체가 정면(3/4 정면) 시점으로 그려져
+     있어서, 대각선 아이소메트릭 보도블록과는 2D 회전으로 아무리 돌려도 원천적
+     으로 각도가 맞지 않는다는 게 반복 확인됐다 — 그래서 이 네 장은 회전을
+     포기하고(0deg) 대신 보도블록 쪽을 그림에 맞춰 얕게(§4.5) 만든다. */
+  --building-lean: 0deg;
   --building-lean-foot: 0deg;
 }
 
@@ -418,22 +421,26 @@
    자체가 달라 clip-path를 공유할 수 없어 아래에서 각각 따로 정의한다. */
 .foot-row .plot-ground{ height:51.2%; bottom:8%; aspect-ratio: 4 / 1.32; }
 .plot-ground i{ position:absolute; inset:0; display:block; }
-/* 윗면 — 마름모. 대표색(#9C9C9C) 위에 에이전트 색을 옅게 얹는다 */
+/* 윗면 — 마름모. 대표색(#9C9C9C) 위에 에이전트 색을 옅게 얹는다.
+   덕심·시야·비용·이벤트 네 그림은 정면 시점이라 타일을 깊게(두껍게) 파면
+   팔수록 그림과 더 부딪힌다는 게 반복 확인됐다 — 꼭짓점 높이를 31.8%→37.9%로
+   올려 옆면을 얇게 만들어(컨디션·팀장과 같은 비율) 타일을 매트에 더 가깝게
+   눕힌다. 폭(aspect-ratio)은 그대로라 옆 칸과 부딪히지 않는다. */
 .plot-ground i.iso-top{
   background:
     radial-gradient(65% 65% at 50% 42%, var(--agent-glow, transparent), transparent 72%),
     var(--iso-top);
-  clip-path: polygon(50% 0%, 100% 31.8%, 50% 63.5%, 0% 31.8%);
+  clip-path: polygon(50% 0%, 100% 37.9%, 50% 75.8%, 0% 37.9%);
 }
 /* 왼쪽 옆면 — 빛을 더 받는 쪽 */
 .plot-ground i.iso-left{
   background:var(--iso-left);
-  clip-path: polygon(0% 31.8%, 50% 63.5%, 50% 100%, 0% 68.2%);
+  clip-path: polygon(0% 37.9%, 50% 75.8%, 50% 100%, 0% 62.1%);
 }
 /* 오른쪽 옆면 — 그늘 쪽, 가장 어둡다 */
 .plot-ground i.iso-right{
   background:var(--iso-right);
-  clip-path: polygon(100% 31.8%, 50% 63.5%, 50% 100%, 100% 68.2%);
+  clip-path: polygon(100% 37.9%, 50% 75.8%, 50% 100%, 100% 62.1%);
 }
 /* 컨디션·팀장 전용 — 얇은 옛 비율 */
 .foot-row .plot-ground i.iso-top{ clip-path: polygon(50% 0%, 100% 37.9%, 50% 75.8%, 0% 37.9%); }
@@ -450,7 +457,7 @@
 .lamp{
   position:absolute;
   right:17%;
-  bottom:34.7%;              /* 정사각형 칸의 마름모 오른쪽 꼭짓점 근사치 */
+  bottom:32.1%;              /* 정사각형 칸의 마름모 오른쪽 꼭짓점 근사치 (37.9% 두께비 기준) */
   display:flex;
   flex-direction:column;
   align-items:center;
@@ -506,7 +513,7 @@
    나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
 .rise-stage{
   position:absolute;
-  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:34.7%; left:12%;
+  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:32.1%; left:12%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
@@ -521,6 +528,9 @@
    카메라 각도 자체가 달라서, 같은 --building-lean을 그대로 쓰면 어긋난다 —
    그래서 이 둘만 따로 기울기를 잡는다. */
 .foot-row .rise-stage{ top:18.2%; bottom:39.8%; transform: rotate(var(--building-lean-foot)); }
+/* 컨디션 전용 — 기차 그림이 발판보다 붕 떠 보인다는 피드백으로 이 칸만 더
+   내린다. 팀장(#leadChar)은 같은 .foot-row 규칙을 그대로 쓰고 건드리지 않는다. */
+#lowBooth .rise-stage{ bottom:30%; }
 .rise-stage > *{
   width:100%;
   height:100%;
