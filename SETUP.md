@@ -1,0 +1,54 @@
+# 설정 체크리스트
+
+프로토타입은 `file://` 로 열지만, 로그인·데이터는 Supabase 를 쓴다.
+아래는 한 번만 하면 되는 설정.
+
+프로젝트: `ewemqbatkrmvzevmlteo` · 대시보드 <https://supabase.com/dashboard/project/ewemqbatkrmvzevmlteo>
+
+---
+
+## 1. DB 스키마 (SQL Editor 에서 순서대로 Run)
+
+| 파일 | 내용 |
+|---|---|
+| `data/schema.sql` | venues / seasons / seatmaps + RLS + 해몽가 예시 |
+| `data/consultations.sql` | 상담 기록 테이블 + RLS |
+| `data/elisabeth.sql` | 엘리자벳 6연 (선택 — 예시 공연) |
+
+## 2. Auth (로그인)
+
+Authentication → **Providers → Email**
+- **Confirm email 끄기** — `file://` 에선 확인 링크를 못 여니까.
+
+상담 앱(`index.html`)은 이제 **로그인해야 상담 시작**이 된다.
+계정은 앱의 회원가입 화면에서 만들거나, Authentication → Users → Add user.
+
+## 3. 관리자 도구 (할인정보 스크린샷 → Gemini)
+
+`supabase/functions/admin/DEPLOY.md` 참고. 요약:
+- Gemini 키 발급 → Edge Function `admin` 배포 → Verify JWT 끄기 → `GEMINI_API_KEY` 시크릿
+- 폰에서 `https://ewemqbatkrmvzevmlteo.supabase.co/functions/v1/admin`
+
+## 4. KOPIS (공연 기본정보 자동 수집)
+
+data.go.kr "예술경영지원센터_공연예술통합전산망" 활용신청 → 키 2개(LIST/DETAIL) → `.env`
+```
+node data/kopis.js "엘리자벳" 2026 6elisabeth
+```
+→ 생성된 `data/kopis-import.sql` 을 SQL Editor 에.
+
+---
+
+## 데이터 흐름
+
+```
+KOPIS ─(node data/kopis.js)→ SQL ─┐
+관리자도구 ─(할인 스크린샷)────────┼→ Supabase (venues/seasons)
+수동 SQL ─────────────────────────┘
+                                   │
+              npm run pull  ───────┤  → data/seed.remote.js (브라우저가 읽음)
+                                   │
+상담(index.html, 로그인) → consult.html → consultations 테이블
+```
+
+`.env` 값은 `.env.example` 참고. 브라우저용 공개 설정은 `data/supabase-config.js` (커밋됨).

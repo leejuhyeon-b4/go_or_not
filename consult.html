@@ -949,6 +949,9 @@
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="data/supabase-config.js"></script>
+<script src="data/auth.js"></script>
 <script src="engine.js"></script>
 <script>
 (function(){
@@ -1394,7 +1397,44 @@
       }
     });
 
-    run.lead.then(lead => { if(session === my) showVerdict(lead); });
+    run.lead.then(lead => {
+      if(session === my) showVerdict(lead);
+      saveConsultationRecord(lead, run);
+    });
+  }
+
+  /* ---------------------------------------------------------
+     상담기록 저장 — 로그인된 상담이고, 데모가 아닐 때만 (PRD §10.1)
+  --------------------------------------------------------- */
+  let savedOnce = false;
+  async function saveConsultationRecord(lead, run){
+    if(savedOnce || bundle === GON.DEMO_BUNDLE) return;
+    if(!window.GON_AUTH || !GON_AUTH.ready()) return;
+    savedOnce = true;
+    try{
+      const sess = await GON_AUTH.adoptStashedSession();
+      if(!sess) { savedOnce = false; return; }   // 로그인 안 된 상태 — 저장 스킵
+      const axis = {};
+      const outs = await Promise.all(Object.keys(run.agents).map(k => run.agents[k].then(o => [k, o])));
+      outs.forEach(([k, o]) => { axis[k] = (o && !o.is_muted) ? o.axis_score : null; });
+      const s = bundle.seat || {};
+      const { error } = await GON_AUTH.saveConsultation({
+        work_title: bundle.season && bundle.season.work_title || null,
+        season_id: bundle.season && bundle.season.id || null,
+        season_label: bundle.season && bundle.season.season_label || null,
+        seat: {
+          floor: s.floor, block: s.block, row: s.row, number: s.number,
+          grade: s.grade, is_restricted: s.is_restricted, side_zone: s.side_zone
+        },
+        paid: (bundle.payment && bundle.payment.total_paid != null) ? bundle.payment.total_paid : null,
+        verdict: lead.verdict,
+        axis_scores: axis,
+        session_date: bundle.session && bundle.session.date || null
+      });
+      if(error) console.warn('[GON] 상담기록 저장 실패:', error.message);
+    }catch(e){
+      console.warn('[GON] 상담기록 저장 예외:', e);
+    }
   }
 
   $('backBtn').addEventListener('click', () => { location.href = 'index.html'; });

@@ -322,9 +322,9 @@ window.GON_SEASONS = [
     source: 'test_cases.md CASE 1 (list_price_estimated)'
   },
   {
-    season_id: 'elisabeth-2026',
+    season_id: '6elisabeth',         // 엘리자벳 6연 (2026). Supabase seed.remote.js 가 채우면 덮인다
     work_title: '엘리자벳',
-    season_label: '2026',
+    season_label: '6연',
     venue_id: null,                  // 극장 미확인 — 추측하지 않는다
     open_date: null,
     close_date: null,

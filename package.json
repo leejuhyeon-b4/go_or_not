@@ -4,6 +4,7 @@
   "private": true,
   "description": "이 회차 갈까말까 — 정적 프로토타입 (의존성 없음)",
   "scripts": {
-    "test": "node test/run.js"
+    "test": "node test/run.js",
+    "pull": "node data/pull.js"
   }
 }

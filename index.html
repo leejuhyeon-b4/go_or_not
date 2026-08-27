@@ -520,6 +520,23 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   box-shadow:6px 6px 0 var(--bg-dark);
   padding:20px;
 }
+.auth-error{
+  margin:10px 0 0; padding:8px 10px;
+  background:rgba(196,103,79,.16); color:var(--neg);
+  font-size:13px; border:1px solid var(--neg);
+}
+.auth-actions{ display:flex; gap:8px; align-items:center; margin-top:14px; }
+.auth-actions .btn-start{ flex:1; }
+#historyBody .hist-row{
+  display:grid; grid-template-columns:1fr auto; gap:2px 10px;
+  padding:10px 0; border-top:1px solid var(--placard-bd);
+}
+#historyBody .hist-row:first-child{ border-top:none; }
+#historyBody .hist-title{ font-weight:700; }
+#historyBody .hist-verdict{ font-family:var(--dot); font-size:13px; }
+#historyBody .hist-verdict.go{ color:var(--pos); }
+#historyBody .hist-verdict.nogo{ color:var(--neg); }
+#historyBody .hist-meta{ font-size:12px; color:var(--text-sub); grid-column:1/-1; }
 .modal h3{
   font-family:var(--dot14);
   font-size:16px;
@@ -863,13 +880,38 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   <div class="modal">
     <button type="button" class="btn-dot modal-close" id="historyClose">닫기</button>
     <h3>이용 내역</h3>
-    <p>아직 완료된 상담이 없습니다.<br>상담을 마치면 이 곳에 기록이 쌓여요.</p>
+    <div id="historyBody"><p>불러오는 중…</p></div>
   </div>
 </div>
 
+<!-- 로그인 게이트 — 로그인해야 상담을 시작할 수 있다 -->
+<div class="modal-backdrop" id="authBackdrop" hidden>
+  <div class="modal">
+    <h3 id="authTitle">로그인</h3>
+    <p id="authIntro">상담을 시작하려면 로그인하세요. 상담 내역이 저장되고, 관람 후 피드백을 받아 정확도가 올라갑니다.</p>
+    <label class="field-label" for="authEmail">이메일</label>
+    <input type="text" id="authEmail" autocomplete="username" inputmode="email">
+    <label class="field-label" for="authPw" style="margin-top:8px">비밀번호</label>
+    <input type="password" id="authPw" autocomplete="current-password">
+    <div id="authError" class="auth-error" hidden></div>
+    <div class="auth-actions">
+      <button type="button" class="btn-start" id="authSubmit">로그인</button>
+      <button type="button" class="btn-dot" id="authToggle">회원가입으로</button>
+    </div>
+  </div>
+</div>
+
+<!-- Supabase 클라이언트 (로그인 + 상담기록 저장). file:// 에서도 동작하려면 인터넷 필요. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="data/supabase-config.js"></script>
+
 <!-- 1회성 수집 데이터 (PRD §9.2) — 상담 시점에는 크롤링하지 않고 조회만 한다 -->
 <script src="data/seed.js"></script>
+<!-- Supabase 오버레이 (있으면 seed.js 위에 덮음). 'npm run pull' 이 생성.
+     아직 안 만들었으면 file:// 콘솔에 404 하나 뜰 뿐 동작엔 영향 없다. -->
+<script src="data/seed.remote.js"></script>
 <script src="data.js"></script>
+<script src="data/auth.js"></script>
 
 <script>
 (function(){
@@ -1275,24 +1317,127 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   }
 
   /* ---------------------------------------------------------
-     로그인 / 이용내역 (프론트 목업 — 실제 인증 없음)
+     로그인 (Supabase Auth) — 로그인해야 상담을 시작할 수 있다
   --------------------------------------------------------- */
-  $('loginBtn').addEventListener('click', ()=>{
+  let authMode = 'signin';   // 'signin' | 'signup'
+
+  function enterAuthed(user){
     state.loggedIn = true;
-    $('loginBtn').hidden = true;
+    $('authBackdrop').hidden = true;
+    $('loginBtn').textContent = '로그아웃';
     $('historyBtn').hidden = false;
     const chip = $('userChip');
     chip.hidden = false;
-    chip.textContent = 'ljh1869@gmail.com';
+    chip.textContent = user && user.email ? user.email : '로그인됨';
     $('consultForm').classList.add('is-lit');
     updateProgress();
+  }
+  function exitAuthed(){
+    state.loggedIn = false;
+    $('loginBtn').textContent = '로그인';
+    $('historyBtn').hidden = true;
+    $('userChip').hidden = true;
+    $('consultForm').classList.remove('is-lit');
+    openAuth();
+    updateProgress();
+  }
+  function openAuth(){
+    if(!window.GON_AUTH || !GON_AUTH.ready()){
+      $('authIntro').textContent = '로그인 기능을 쓸 수 없어요. 인터넷 연결과 data/supabase-config.js 를 확인하세요.';
+      $('authBackdrop').hidden = false;
+      return;
+    }
+    setAuthMode('signin');
+    $('authError').hidden = true;
+    $('authBackdrop').hidden = false;
+  }
+  function setAuthMode(mode){
+    authMode = mode;
+    const signup = mode === 'signup';
+    $('authTitle').textContent = signup ? '회원가입' : '로그인';
+    $('authSubmit').textContent = signup ? '가입하고 시작' : '로그인';
+    $('authToggle').textContent = signup ? '로그인으로' : '회원가입으로';
+    $('authPw').autocomplete = signup ? 'new-password' : 'current-password';
+  }
+
+  $('authToggle').addEventListener('click', ()=> setAuthMode(authMode === 'signup' ? 'signin' : 'signup'));
+
+  $('authSubmit').addEventListener('click', async ()=>{
+    const email = $('authEmail').value.trim();
+    const pw = $('authPw').value;
+    const err = $('authError');
+    err.hidden = true;
+    if(!email || !pw){ err.textContent = '이메일과 비밀번호를 입력하세요.'; err.hidden = false; return; }
+    $('authSubmit').disabled = true;
+    try{
+      const { data, error } = authMode === 'signup'
+        ? await GON_AUTH.signUp(email, pw)
+        : await GON_AUTH.signIn(email, pw);
+      if(error) throw error;
+      if(authMode === 'signup' && !(data && data.session)){
+        err.textContent = '가입은 됐지만 로그인 세션이 없어요. Supabase Auth 에서 "Confirm email" 을 꺼주세요.';
+        err.hidden = false;
+        return;
+      }
+      const user = (data && data.user) || await GON_AUTH.user();
+      enterAuthed(user);
+    }catch(e){
+      err.textContent = (e && e.message) || '로그인에 실패했어요.';
+      err.hidden = false;
+    }finally{
+      $('authSubmit').disabled = false;
+    }
   });
 
-  $('historyBtn').addEventListener('click', ()=>{ $('historyBackdrop').hidden = false; });
+  $('loginBtn').addEventListener('click', async ()=>{
+    if(state.loggedIn){ await GON_AUTH.signOut(); exitAuthed(); }
+    else openAuth();
+  });
+
+  $('historyBtn').addEventListener('click', ()=>{ $('historyBackdrop').hidden = false; loadHistory(); });
   $('historyClose').addEventListener('click', ()=>{ $('historyBackdrop').hidden = true; });
   $('historyBackdrop').addEventListener('click', (e)=>{
     if(e.target === $('historyBackdrop')) $('historyBackdrop').hidden = true;
   });
+
+  async function loadHistory(){
+    const body = $('historyBody');
+    body.innerHTML = '<p>불러오는 중…</p>';
+    try{
+      const { data, error } = await GON_AUTH.listConsultations();
+      if(error) throw error;
+      if(!data || !data.length){
+        body.innerHTML = '<p>아직 완료된 상담이 없습니다.<br>상담을 마치면 이 곳에 기록이 쌓여요.</p>';
+        return;
+      }
+      const V = { GO:'가라', NO_GO:'가지마라' };
+      body.innerHTML = data.map(r=>{
+        const seat = r.seat || {};
+        const seatStr = [seat.floor?seat.floor+'층':'', seat.block||'', seat.row?seat.row+'열':'', seat.number?seat.number+'번':'']
+          .filter(Boolean).join(' ') || '자리 미상';
+        const vcls = r.verdict === 'GO' ? 'go' : (r.verdict === 'NO_GO' ? 'nogo' : '');
+        const paid = (r.paid!=null) ? Number(r.paid).toLocaleString()+'원' : '';
+        const d = (r.consulted_at||'').slice(0,10);
+        return '<div class="hist-row">'
+          + '<span class="hist-title">'+esc(r.work_title||'?')+(r.season_label?' · '+esc(r.season_label):'')+'</span>'
+          + '<span class="hist-verdict '+vcls+'">'+(V[r.verdict]||r.verdict||'-')+'</span>'
+          + '<span class="hist-meta">'+esc(seatStr)+(paid?' · '+paid:'')
+          + (r.session_date?' · 관람 '+r.session_date:'')+' · 상담 '+d+'</span>'
+          + '</div>';
+      }).join('');
+    }catch(e){
+      body.innerHTML = '<p>불러오지 못했어요: '+esc((e&&e.message)||'오류')+'</p>';
+    }
+  }
+  function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  // 시작 시 세션 확인
+  (async ()=>{
+    if(!window.GON_AUTH || !GON_AUTH.ready()){ openAuth(); return; }
+    const user = await GON_AUTH.user();
+    if(user) enterAuthed(user); else openAuth();
+    GON_AUTH.onChange((u)=>{ if(!u && state.loggedIn) exitAuthed(); });
+  })();
 
   /* ---------------------------------------------------------
      이벤트 종류 pill (복수 선택) + 세부 블록 토글
@@ -1481,7 +1626,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     const overlay = $('transitionOverlay');
     overlay.querySelector('span').textContent = '상담실로 들어갑니다…';
     overlay.classList.add('show');
-    setTimeout(()=>{ location.href = 'consult.html'; }, 600);
+    // 상담실(consult.html)이 판정 후 상담기록을 저장할 수 있도록 세션을 넘긴다
+    Promise.resolve(GON_AUTH.stashSession()).catch(()=>{}).then(()=>{
+      setTimeout(()=>{ location.href = 'consult.html'; }, 600);
+    });
   });
 
   $('eventBack').addEventListener('click', ()=>{

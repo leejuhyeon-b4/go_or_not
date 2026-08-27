@@ -7,6 +7,13 @@
 # 의존성
 node_modules/
 
+# npm run pull 이 Supabase 에서 생성 (커밋하지 않음)
+data/seed.remote.js
+
+# Supabase CLI 로컬 파일
+supabase/.temp/
+supabase/.branches/
+
 # OS / 에디터
 .DS_Store
 Thumbs.db
