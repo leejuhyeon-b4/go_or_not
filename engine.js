@@ -433,6 +433,47 @@ window.GON = (function(){
     // DB가 못 채운 항목은 그대로 남긴다 (data.js 가 이미 목록으로 넘겨준다)
     (b.seat.unknown || []).forEach(u => missing.push(u));
     if(b.seat.notes && b.seat.notes.length) b.seat.notes.forEach(n => { glassNote += ' ' + n + '.'; });
+
+    /* ── 사이드 구간 감점 (PRD §5.2) ────────────────────────────────
+       EDGE(극싸·벽싸) -1.0 / SIDE(일반 사이드) -0.5 / 그 외 0.
+       부동소수로 score 에 얹고 마지막에 clamp — 정수 반올림 경로를 타지 않는다.
+       선호 예외: FRONT면 감점 없음 / ACTOR_PATH면 EDGE만 -0.5·SIDE 0 /
+                  VALUE인데 극싸라 등급이 낮아진 경우 감점 없음. */
+    const sideZone = b.seat.side_zone || null;
+    let sidePenalty = 0, sideNote = '';
+    if(sideZone === 'EDGE' || sideZone === 'SIDE'){
+      const wantsFront = prefs.includes('FRONT');
+      const wantsPath  = prefs.includes('ACTOR_PATH');
+      const wantsValue = prefs.includes('VALUE');
+      const valueTradeoff = wantsValue && sideZone === 'EDGE' &&
+        paidGrade != null && GRADE_RANK[paidGrade] != null && GRADE_RANK[feltGrade] != null &&
+        GRADE_RANK[feltGrade] > GRADE_RANK[paidGrade];
+
+      let exemptReason = null;
+      if(wantsFront)          exemptReason = '무조건 앞 선호';
+      else if(valueTradeoff)  exemptReason = '가성비 선호(위치를 값과 바꾼 선택)';
+
+      if(exemptReason){
+        sidePenalty = 0;
+        sideNote = ' ' + (b.seat.side_block ? b.seat.side_block + ' ' : '') +
+                   '사이드 끝자리지만 ' + exemptReason + '라 시야 점수는 깎지 않았습니다.';
+      } else if(wantsPath){
+        sidePenalty = sideZone === 'EDGE' ? -0.5 : 0;
+        sideNote = sideZone === 'EDGE'
+          ? ' 애배 동선 선호라 일반 사이드는 안 봤지만, 무대 옆이 잘리는 벽 쪽 끝자리라 조금 낮췄습니다.'
+          : ' 애배 동선 선호라 사이드 블럭 자체는 감점하지 않았습니다.';
+      } else {
+        sidePenalty = sideZone === 'EDGE' ? -1 : -0.5;
+        sideNote = sideZone === 'EDGE'
+          ? ' 사이드 블럭 벽 쪽 끝자리라 무대 안쪽이 아치에 잘릴 수 있어 시야 점수를 낮췄습니다.'
+          : ' 사이드 블럭 안쪽이라 무대가 치우쳐 보이는 만큼 시야 점수를 조금 낮췄습니다.';
+      }
+      if(sidePenalty < 0) drivers.push('SEAT_QUALITY');
+      if(b.seat.side_estimate) sideNote += ' (극장 기본 배치 기준이라 확실하지 않습니다.)';
+    }
+
+    const axisScore = clamp(score + sidePenalty, -2, 2);
+    const tier = Math.round(axisScore);            // 푯말·서술 분기용 정수 등급
     const uncertain = missing.length >= 2;
 
     // 방향(좌/우) 우열은 판정하지 않는다. 위치는 사실로만 서술한다 (PRD §5.2)
@@ -449,21 +490,31 @@ window.GON = (function(){
     const where = whereFull || '이 자리';
 
     let placard, detail;
-    if(score >= 2){
+    if(tier >= 2){
       placard = place(', 좋아요');
       detail = where + ' 자리입니다. 연뮤덕 기준으로 보면 무대와의 거리도, 전체를 한 번에 담는 폭도 무리가 없는 구간입니다. 오늘 고르신 선호 좌석과도 크게 어긋나지 않습니다.' + glassNote + ' 통로 인접 여부와 등급 정보는 좌석배치도가 없어 확인하지 못했습니다.';
-    } else if(score === 1){
+    } else if(tier === 1){
       placard = place(', 무난해요');
       detail = where + ' 자리입니다. 오늘 목적에 크게 어긋나지 않는 위치이고, 아쉬운 부분이 있더라도 관람 자체를 방해할 정도는 아닙니다. 시야 축에서는 무난한 쪽으로 봅니다.' + glassNote + ' 좌석배치도 데이터가 없어 확실하지는 않습니다.';
-    } else if(score === 0){
+    } else if(tier === 0){
       placard = place('입니다');
       detail = where + ' 자리입니다. 시야 축에서 특별히 좋다고도 나쁘다고도 말하기 어려운 구간이라 중립으로 두었습니다. 좌우 어느 블럭이 유리한지는 오늘 연출에 달린 문제라 판단하지 않았습니다.' + glassNote + ' 통로·블럭 경계 데이터도 없습니다.';
-    } else if(score === -1){
+    } else if(tier === -1){
       placard = place(', 조금 멀어요');
       detail = where + ' 자리입니다. 무대와 거리가 있어 표정 단위의 관찰은 어려운 구간이고, 오늘 고르신 선호와도 조금 어긋납니다. 다만 어느 쪽 블럭이 유리한지는 오늘 연출을 모르므로 판단하지 않았습니다.' + glassNote;
     } else {
       placard = place(', 각도 아쉬워요');
       detail = where + ' 자리입니다. 거리보다 내려다보는 각도가 이 자리의 성격을 결정하는 구간입니다. 시야 축에서는 오늘 목적과 가장 멀다고 봅니다.' + glassNote + ' 이 자리가 오늘 연출과 어떻게 맞물리는지는 확인된 정보가 없습니다.';
+    }
+
+    // 사이드 감점 서술을 붙인다 (180자 계약 — 넘치면 끝 문장 하나를 뺀다)
+    if(sideNote){
+      const dl = t => Array.from(t).length;
+      if(dl(detail + sideNote) > 180){
+        const parts = detail.split('. ');
+        if(parts.length > 2){ parts.pop(); detail = parts.join('. ').replace(/\.?$/, '.'); }
+      }
+      detail += sideNote;
     }
 
     // 기타란에 좌석 걱정을 적으셨으면 언급한다. 다만 점수는 좌석 데이터가 정한다 —
@@ -483,18 +534,20 @@ window.GON = (function(){
     }
 
     return base('SIYA', {
-      axis_score: score,
+      axis_score: axisScore,          // 사이드 감점 반영 — 소수 가능 (PRD §5.2·§7.1)
       primary_drivers: Array.from(new Set(drivers)),
       // 좌석배치도에서 확정된 사실이 많을수록 확신이 올라간다
       confidence: (ft.seat.concern ? 0.9 : 1) *
                   (0.4 + (b.seat.is_aisle !== null ? 0.15 : 0)
                       + (paidGrade != null ? 0.15 : 0)
-                      + (b.seat.zone ? 0.1 : 0)),
+                      + (b.seat.zone ? 0.1 : 0)
+                      + (b.seat.side_zone && !b.seat.side_estimate ? 0.1 : 0)),
       placard: placard,
       detail: detail,
       missing_info: Array.from(new Set(missing)),
       seat_value_grade: seat_value_grade,
-      uncertain: uncertain            // 화면에 "확실하지 않음" 표기
+      side_zone: sideZone,
+      uncertain: uncertain            // 화면에 "확실하지 않음" 표기 (⚠️)
     });
   }
 
@@ -1021,6 +1074,7 @@ window.GON = (function(){
             grade:null,                 // 좌석→등급 매핑 미수집
             is_aisle:true,              // 좌석배치도에서 확인됨 (CASE 1)
             is_restricted:null, zone:null, row_index:6, row_index_in_floor:6,
+            side_zone:null, side_block:'C', side_source:'venue', side_estimate:true,
             notes:[], sources:['test_cases.md CASE 1'],
             unknown:['좌석 등급 (좌석배치도 미수집)', '시야제한석 명단 (미수집)'] },
     // v2.1 §6.5 — band 까지 data.js 가 확정해서 넘긴 결과다.

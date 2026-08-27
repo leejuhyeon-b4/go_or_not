@@ -16,30 +16,46 @@
 
 <style>
 /* ============================================================
-   무대 배경
+   무대 배경 — 상담실(consult.html)의 백스테이지 골목 배경과 맞춘다.
+   공연 전, 조명 트러스만 부분적으로 켜진 무대 뒤편: 어두운 세로 그라디언트
+   위에 위쪽 3색(파랑·장미·호박) 조명 웅덩이와 바닥 반사 웅덩이를 얹는다.
+   도트 폰트·랜딩 카드(.landing) 디자인은 그대로 두고 배경만 바꾼 것이다.
    ============================================================ */
+:root{
+  --sky-top: #0F0D0F;
+  --sky-mid: #241A1D;
+  --sky-low: #3A2620;
+  --gel-amber: rgba(255,176,96,.5);
+  --gel-blue:  rgba(120,172,255,.38);
+  --gel-rose:  rgba(230,120,175,.36);
+}
 .stage{
   min-height:100vh;
   display:flex;
   align-items:stretch;
   justify-content:center;
   background:
-    radial-gradient(ellipse 60% 40% at 50% -10%, rgba(245,230,200,0.06), transparent 60%),
-    var(--bg-dark);
+    radial-gradient(24% 55% at 18% 3%,  var(--gel-blue),  transparent 74%),
+    radial-gradient(20% 46% at 50% 2%,  var(--gel-rose),  transparent 74%),
+    radial-gradient(26% 58% at 82% 4%,  var(--gel-amber), transparent 74%),
+    radial-gradient(34% 20% at 18% 96%, rgba(120,172,255,.16), transparent 72%),
+    radial-gradient(28% 16% at 50% 97%, rgba(230,120,175,.12), transparent 72%),
+    radial-gradient(36% 20% at 82% 96%, rgba(255,176,96,.18), transparent 72%),
+    radial-gradient(ellipse 60% 22% at 50% 100%, rgba(255,205,150,.13), transparent 72%),
+    linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 48%, var(--sky-low) 100%);
   padding:clamp(12px, 3vw, 32px);
 }
 
+/* 회색 밑바탕은 왼쪽 질문지 패널에만 둔다. 카드 전체에 깔면 무대 배경이
+   거의 안 보였다 — .landing 자체는 투명하게 두고 오른쪽은 배경이 비치게 한다. */
 .landing{
   width:100%;
   max-width:1280px;
   display:grid;
   grid-template-columns: minmax(320px, 46%) 1fr;
-  background:var(--bg);
-  border:2px solid var(--bg-dark);
-  box-shadow:0 0 0 4px var(--bg-light) inset, 0 12px 0 var(--bg-dark);
+  background:transparent;
   min-height: min(760px, 92vh);
   position:relative;
-  overflow:hidden;
 }
 
 /* ============================================================
@@ -50,7 +66,10 @@
   display:flex;
   flex-direction:column;
   padding: 18px 22px 22px;
-  border-right:2px solid var(--bg-dark);
+  /* 카드 프레임(테두리·인셋·바닥 그림자)을 이 패널이 넘겨받는다 — 예전엔
+     .landing 전체에 있었다 */
+  border:2px solid var(--bg-dark);
+  box-shadow:0 0 0 4px var(--bg-light) inset, 0 12px 0 var(--bg-dark);
   min-height:0;
 }
 
@@ -376,19 +395,28 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   flex-direction:column;
   justify-content:center;
   padding: 40px 44px;
+  /* 회색 밑바탕 없음 — 무대 배경(.stage 그라디언트)이 그대로 비친다.
+     따뜻한 라디얼 한 겹만 남겨 제목 쪽에 옅은 스포트라이트를 준다 */
   background:
-    radial-gradient(ellipse 80% 60% at 70% 20%, rgba(245,230,200,0.05), transparent 70%),
-    var(--bg);
+    radial-gradient(ellipse 78% 58% at 68% 16%, rgba(255,214,160,0.10), transparent 72%);
   overflow:hidden;
 }
 
+/* 제목은 도트체를 벗고 본문 서체의 굵은 획으로 간다 — 무대 조명 그라디언트
+   위에 올라가므로, 따뜻한 크림→호박 그라디언트를 글자에 클립해 스포트라이트
+   받은 사인보드처럼 보이게 한다 (텍스트가 transparent라 그림자는 filter로). */
 .title{
-  font-family:var(--dot14);
-  font-size:clamp(28px, 4vw, 40px);
-  line-height:1.35;
-  color:var(--text);
-  margin:0 0 14px;
-  text-shadow:2px 2px 0 var(--bg-dark);
+  font-family:var(--sans);
+  font-weight:800;
+  font-size:clamp(34px, 5.2vw, 54px);
+  line-height:1.12;
+  letter-spacing:-0.022em;
+  margin:0 0 18px;
+  background:linear-gradient(163deg, #FCF1DA 12%, #F1C471 62%, #E09A31 100%);
+  -webkit-background-clip:text;
+          background-clip:text;
+  color:transparent;
+  filter:drop-shadow(0 3px 10px rgba(0,0,0,.55));
 }
 
 .subtitle{
@@ -510,24 +538,22 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
    반응형 — design.md §8
    ============================================================ */
 @media (max-width: 1023px){
-  .landing{ grid-template-columns: 1fr; min-height:auto; }
+  .landing{ grid-template-columns: 1fr; min-height:auto; gap:14px; }
   .panel-right{
     order:-1;
-    border-right:none;
-    border-bottom:2px solid var(--bg-dark);
-    padding:28px 24px 20px;
+    padding:24px 20px 8px;
   }
   .subtitle{ margin-bottom:24px; }
   .seat-stage{ height:100px; }
-  .panel-left{ border-right:none; padding:16px 18px 20px; }
+  .panel-left{ padding:16px 18px 20px; }
 }
 
 @media (max-width: 640px){
-  .title{ font-size:26px; }
+  .title{ font-size:30px; }
   .row.split{ flex-direction:column; }
   .pref-grid{ grid-template-columns:repeat(2,1fr); }
   .stage{ padding:0; }
-  .landing{ border-width:0; box-shadow:none; }
+  .panel-left{ border-width:0; box-shadow:none; }
 }
 
 @media (prefers-reduced-motion: reduce){
@@ -1357,7 +1383,9 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     const seatIn = {
       floor: $('seatFloor').value ? Number($('seatFloor').value) : null,
       row: $('seatRowInput').value.trim(),
-      number: $('seatNumber').value ? Number($('seatNumber').value) : null
+      number: $('seatNumber').value ? Number($('seatNumber').value) : null,
+      // 블럭 표기 — 사이드 구간 분류(PRD §5.2)에서 블럭 매칭에 쓴다
+      block: $('seatBlock').value.trim() || null
     };
     const seatInfo = GON_DB.resolveSeat(season, seatIn);
 
@@ -1387,11 +1415,15 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         block: $('seatBlock').value.trim() || null,
         row: seatIn.row,
         number: seatIn.number,
-        // 아래 셋은 DB에서 자동 산출한다. 모르면 null — false 가 아니다
+        // 아래는 DB에서 자동 산출한다. 모르면 null — false 가 아니다
         grade: seatInfo.grade,
         is_aisle: seatInfo.is_aisle,
         is_restricted: seatInfo.is_restricted,
         zone: seatInfo.zone,
+        side_zone: seatInfo.side_zone,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
+        side_block: seatInfo.side_block,
+        side_source: seatInfo.side_source,      // 'season' | 'venue' | null
+        side_estimate: seatInfo.side_estimate,
         row_index: GON_DB.rowIndex(seatIn.row, venue),
         row_index_in_floor: GON_DB.rowIndexWithinFloor(seatIn.row, seatIn.floor, venue),
         notes: seatInfo.notes,

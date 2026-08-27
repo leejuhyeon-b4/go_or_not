@@ -15,7 +15,7 @@
      그래서 JSON이 아니라 전역에 붙이는 .js 로 둔다. 서버가 생기면
      같은 구조 그대로 API 응답으로 바꾸면 된다.
 
-   스키마: PRD §8.4 (theaters / theater_specs / seat_blocks)
+   스키마: PRD §8.4 (theaters / theater_specs / seat_blocks / venue_base_geometry / season_seat_maps)
           PRD §8.5 (works / seasons / season_prices / season_seat_grades)
    ============================================================= */
 
@@ -46,6 +46,32 @@ window.GON_VENUES = {
            tier_start_row:null, has_orchestra_pit:null, balcony_overhang_row:null }
     },
 
+    // 극장 기본 베이스 (PRD §5.2·§8.4·§9.1) — 표준 프로시니엄 배치 추정.
+    // is_estimate:true 라 사이드 판정 시 항상 ⚠️. 공연 좌배도(GON_SEATMAPS)가
+    // 들어오면 그것이 덮는다.
+    base_geometry: {
+      is_estimate: true,
+      note: '표준 프로시니엄 배치 추정 — 실측 좌석배치도 아님',
+      floors: {
+        1: [
+          { name:'OL', side:'left',   seat_min:1,  seat_max:4,  aisle_end:'max', wall_end:'min',
+            aliases:['ol','좌','왼','왼쪽','좌블','좌측','l'] },
+          { name:'C',  side:'center', seat_min:5,  seat_max:20, aisle_end:null,  wall_end:null,
+            aliases:['c','중','중앙','센터','가운데','중블','중블록'] },
+          { name:'OR', side:'right',  seat_min:21, seat_max:24, aisle_end:'min', wall_end:'max',
+            aliases:['or','우','오','오른','오른쪽','우블','우측','r'] }
+        ],
+        2: [
+          { name:'2OL', side:'left',   seat_min:1,  seat_max:3,  aisle_end:'max', wall_end:'min',
+            aliases:['2ol','2층좌','좌','왼'] },
+          { name:'2C',  side:'center', seat_min:4,  seat_max:15, aisle_end:null,  wall_end:null,
+            aliases:['2c','2층중','중','중앙','센터'] },
+          { name:'2OR', side:'right',  seat_min:16, seat_max:18, aisle_end:'min', wall_end:'max',
+            aliases:['2or','2층우','우','오른'] }
+        ]
+      }
+    },
+
     verified_seats: [
       { floor:1, row:'B', number:16, is_aisle:true,
         source:'test_cases.md CASE 2 — 실제 관람에서 통로석 확인' },
@@ -73,6 +99,21 @@ window.GON_VENUES = {
            tier_start_row:null, has_orchestra_pit:null, balcony_overhang_row:null }
     },
 
+    base_geometry: {
+      is_estimate: true,
+      note: '표준 프로시니엄 배치 추정 — 실측 좌석배치도 아님',
+      floors: {
+        1: [
+          { name:'OL', side:'left',   seat_min:1,  seat_max:3,  aisle_end:'max', wall_end:'min',
+            aliases:['ol','좌','왼','왼쪽','좌블','l'] },
+          { name:'C',  side:'center', seat_min:4,  seat_max:16, aisle_end:null,  wall_end:null,
+            aliases:['c','중','중앙','센터','가운데','중블'] },
+          { name:'OR', side:'right',  seat_min:17, seat_max:19, aisle_end:'min', wall_end:'max',
+            aliases:['or','우','오','오른','오른쪽','우블','r'] }
+        ]
+      }
+    },
+
     verified_seats: [
       { floor:1, row:'6', number:7, is_aisle:true,
         source:'test_cases.md CASE 1 — 배우가 통로로 내려왔을 때 코앞이었음' }
@@ -96,6 +137,39 @@ window.GON_VENUES = {
            tier_start_row:null, has_orchestra_pit:null, balcony_overhang_row:null }
     },
 
+    // 중대형 프로시니엄 — 1층 오케스트라에 좌우 사이드 섹션이 있는 편이다.
+    // 여전히 실측이 아니라 추정(is_estimate)이다.
+    base_geometry: {
+      is_estimate: true,
+      note: '중대형 프로시니엄 배치 추정 — 실측 좌석배치도 아님',
+      floors: {
+        1: [
+          { name:'OL', side:'left',   seat_min:1,  seat_max:6,  aisle_end:'max', wall_end:'min',
+            aliases:['ol','좌','왼','왼쪽','좌블','좌측','l','오피좌'] },
+          { name:'C',  side:'center', seat_min:7,  seat_max:30, aisle_end:null,  wall_end:null,
+            aliases:['c','중','중앙','센터','가운데','중블','오케중앙'] },
+          { name:'OR', side:'right',  seat_min:31, seat_max:36, aisle_end:'min', wall_end:'max',
+            aliases:['or','우','오','오른','오른쪽','우블','우측','r','오피우'] }
+        ],
+        2: [
+          { name:'2OL', side:'left',   seat_min:1,  seat_max:5,  aisle_end:'max', wall_end:'min',
+            aliases:['2ol','2층좌','좌','왼'] },
+          { name:'2C',  side:'center', seat_min:6,  seat_max:26, aisle_end:null,  wall_end:null,
+            aliases:['2c','2층중','중','중앙','센터'] },
+          { name:'2OR', side:'right',  seat_min:27, seat_max:31, aisle_end:'min', wall_end:'max',
+            aliases:['2or','2층우','우','오른'] }
+        ],
+        3: [
+          { name:'3OL', side:'left',   seat_min:1,  seat_max:4,  aisle_end:'max', wall_end:'min',
+            aliases:['3ol','3층좌','좌','왼'] },
+          { name:'3C',  side:'center', seat_min:5,  seat_max:22, aisle_end:null,  wall_end:null,
+            aliases:['3c','3층중','중','중앙','센터'] },
+          { name:'3OR', side:'right',  seat_min:23, seat_max:26, aisle_end:'min', wall_end:'max',
+            aliases:['3or','3층우','우','오른'] }
+        ]
+      }
+    },
+
     verified_seats: [
       { floor:1, row:'6', number:25, zone:'중오블',
         sightline_note:'6열에서 매직 카펫 씬이 잘 보였음',
@@ -106,6 +180,16 @@ window.GON_VENUES = {
     collected: false
   }
 };
+
+/* -------------------------------------------------------------
+   공연별 좌석배치도 오버레이 (PRD §8.4 season_seat_maps)
+   — 갱신되면 venue.base_geometry 를 덮는다. updated_at 이 있는
+   항목만 유효. 지금은 수집 전이라 비어 있고, 그래서 모든 사이드
+   판정이 극장 기본 베이스(추정) + ⚠️ 로 나간다.
+   구조: { <season_id>: { updated_at, source, floors:{ <floor>:[ blocks ] } } }
+   blocks 형식은 base_geometry.floors 와 동일 (+ restricted:[번호…] 선택)
+------------------------------------------------------------- */
+window.GON_SEATMAPS = {};
 
 /* -------------------------------------------------------------
    작품 / 시즌 — PRD §8.5 2단 스키마

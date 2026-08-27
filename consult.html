@@ -96,11 +96,17 @@
 
 /* 조명 트러스 — 골목 위에 걸린 조명 바에 핀 조명(pin spot)이 한 줄로
    매달려 있다. 그러데이션 하나로는 조명 기구티가 안 나서, 클램프·하우징·
-   렌즈·빔을 실제 요소로 쌓아 만든다 (이미지 0장, 마크업은 .room 앞에 둔다) */
+   렌즈·빔을 실제 요소로 쌓아 만든다 (이미지 0장, 마크업은 .room-top 바로 뒤) */
 .truss-rig{
-  position:absolute;
-  left:0; right:0; top:clamp(6px, 1.4vh, 18px);
-  height:clamp(92px, 15.5vh, 158px);
+  /* [배치 변경] 예전엔 .stage에 absolute로 걸려 화면 맨 위 → 기본정보(.room-top)와
+     겹쳤다. 이제 .room 안 흐름 요소로, 기본정보 아래·에이전트 위 한 줄을 차지한다.
+     마스크로 비는 아랫부분(38%)만큼 음수 margin-bottom으로 에이전트를 끌어올려
+     조명-에이전트 갭을 줄인다. */
+  position:relative;
+  width:100%;
+  height:clamp(66px, 10vh, 110px);
+  margin-bottom:clamp(-22px, -3vh, -12px);
+  flex-shrink:0;
   overflow:hidden;
   pointer-events:none;
   z-index:0;
@@ -268,9 +274,9 @@
   flex-direction:column;
   gap:clamp(6px, 1vw, 12px);
   min-height:0;
-  /* 조명 트러스가 .stage 맨 위에 걸려 있어서, 그 아래로 내려와야
-     상단 정보 줄(.room-top)이 트러스와 안 겹친다 */
-  margin-top:clamp(78px, 12.5vh, 128px);
+  /* 조명 트러스가 이제 .room 안(기본정보 아래)으로 들어와서, 예전처럼
+     트러스를 피하려고 크게 내릴 필요가 없다 — 화면 위 여백만 살짝 준다 */
+  margin-top:clamp(6px, 1.5vh, 16px);
 }
 
 /* ============================================================
@@ -528,9 +534,22 @@
    카메라 각도 자체가 달라서, 같은 --building-lean을 그대로 쓰면 어긋난다 —
    그래서 이 둘만 따로 기울기를 잡는다. */
 .foot-row .rise-stage{ top:18.2%; bottom:39.8%; transform: rotate(var(--building-lean-foot)); }
-/* 컨디션 전용 — 기차 그림이 발판보다 붕 떠 보인다는 피드백으로 이 칸만 더
-   내린다. 팀장(#leadChar)은 같은 .foot-row 규칙을 그대로 쓰고 건드리지 않는다. */
-#lowBooth .rise-stage{ bottom:30%; }
+/* 컨디션 전용 — 기차 양끝이 보도블록 좌우 꼭짓점(16.7%~83.3%)에 딱 맞아야
+   한다는 피드백. 좌우를 꼭짓점 위치(16.7%)에 물리고, 박스에 그림의 실제
+   비율(1269/420)을 그대로 걸어(top:auto → 높이는 폭에서 파생) object-fit:
+   contain이 박스를 가로로 꽉 채우게 한다 — 그 결과 기차 양끝이 정확히
+   꼭짓점에 닿는다. bottom은 발밑이 타일 앞면에 얹히도록 낮춘다.
+   그림 자체가 원근(왼쪽 기관차는 낮게, 오른쪽 객차는 높게 물러남)이라
+   가로로만 맞추면 오른쪽 끝이 꼭짓점보다 떠 보인다 — 발밑(50% 100%)을 축으로
+   시계 방향 3deg 돌려 오른쪽 끝을 꼭짓점 라인까지 내린다(왼쪽은 그만큼 올라와
+   양끝이 같은 높이에 온다).
+   팀장(#leadChar)은 아래에서 같은 방식으로 따로 잡는다. */
+#lowBooth .rise-stage{
+  left:16.7%; right:16.7%; top:auto;
+  aspect-ratio: 1269 / 420;
+  bottom:33%;
+  transform: rotate(3deg);
+}
 .rise-stage > *{
   width:100%;
   height:100%;
@@ -627,22 +646,32 @@
   100%{ opacity:1; transform:translateY(0)   scale(1); }
 }
 
-/* 말풍선 안 둘째 줄 — 확신이 없을 때만 나온다 */
+/* 확신이 없을 때 — 예전엔 둘째 줄('확실하지 않음')이 붙어 말풍선이 두꺼워져
+   건물을 가렸다. 이제 판정 문구 끝에 경고 이모지 하나만 붙인다(줄 안 늘어남). */
 .speech-note{
-  display:block;
-  margin-top:5px;
-  font-size:11px;
-  letter-spacing:0;
-  color:#8A7859;
+  font-size:0.92em;
+  margin-left:4px;
+  vertical-align:baseline;
+  line-height:1;
 }
 .muted-line{
   font-size:12px;
   color:var(--text-dis);
 }
 
-/* 컨디션·팀장 블록은 정사각형보다 얇은 대신 넓다. 말풍선 글자만 한 단계 줄인다 */
-.foot-row .speech{ font-size:15px; }
-.foot-row .speech.long{ font-size:12px; }
+/* 컨디션 말풍선 — 정사각형 4칸과 "같은 크기"로. 예전엔 블록 전체 폭(2타일)이라
+   기차 그림을 덮었다. 폭을 1타일(4칸과 동일: 칸의 92%)로 줄이고, position:absolute
+   + left/right:0 + 고정 width + margin auto 로 블록 가운데 정렬. 글자도 4칸과 동일. */
+#lowBooth .speech{
+  left:0; right:0;
+  width:calc(var(--tile) * 0.92);
+  margin-inline:auto;
+  /* 블록이 얇아 top:0이면 아직 기차 위에 걸친다 — 블록 위(그리드와의 갭)로
+     조금 띄운다. .booth{overflow:visible}라 밖으로 나가도 잘리지 않는다. */
+  top:-7%;
+  font-size:17px;
+}
+#lowBooth .speech.long{ font-size:13px; }
 /* 컨디션 블록에서는 신호등을 왼쪽에 둔다 — 오른쪽은 팀장 쪽을 보고 있어야 자연스럽다 */
 #lowBooth .lamp{ right:auto; left:16.7%; }
 
@@ -654,11 +683,18 @@
   display:flex;
   align-items:flex-end;
 }
-/* 건물 자리를 절반으로 접어 두면 팀장 그림이 판정 문구보다 작아 보인다는
-   피드백 — 보도블록의 좌우 꼭짓점(16.7%~83.3%, .foot-row .plot-ground 폭과
-   동일)까지 꽉 채운다. 판정 문구(.lead-right)는 z-index가 더 높아 그림 위에
-   그대로 얹히고, 텍스트 자체의 그림자로 겹쳐도 읽힌다. */
-#leadChar{ left:16.7%; right:16.7%; }
+/* 팀장 그림이 판정 문구보다 작아 보인다는 피드백 — 컨디션과 같은 방식으로
+   박스에 lead.png의 실제 비율(1081/420)을 aspect-ratio로 걸고 좌우를 보도블록
+   좌우 꼭짓점(16.7%~83.3%, .foot-row .plot-ground 폭과 동일)에 물려
+   object-fit:contain이 꼭짓점에서 꼭짓점까지 가로를 꽉 채우게 한다. 세로는
+   폭에서 파생되므로 그만큼 그림도 커진다. bottom으로 발밑을 타일에 얹는다.
+   판정 문구(.lead-right)는 z-index가 더 높아 커진 그림 위에 그대로 얹히고,
+   텍스트 자체의 그림자로 겹쳐도 읽힌다. */
+#leadChar{
+  left:16.7%; right:16.7%; top:auto;
+  aspect-ratio: 1081 / 420;
+  bottom:34%;   /* 붕 떠 보인다는 피드백 — 발밑을 타일 안쪽으로 조금 더 내린다 */
+}
 .foot-row .lamp-pole{ height:clamp(14px, 5vh, 26px); }
 .lead-right{
   position:relative;
@@ -783,7 +819,8 @@
 @media (max-width:1023px){
   .speech{ font-size:15px; }
   .speech.long{ font-size:12px; }
-  .foot-row .speech{ font-size:13px; }
+  #lowBooth .speech{ font-size:15px; }
+  #lowBooth .speech.long{ font-size:12px; }
   /* .room이 .stage 대부분을 차지해 옆 여백이 없어지면 소품이 부스와 겹친다 */
   .stage-prop{ display:none; }
 }
@@ -802,17 +839,17 @@
     padding:8px 7px;
     min-height:44px;             /* 터치 타겟 */
     display:flex;
-    flex-direction:column;
+    flex-wrap:wrap;              /* 판정 문구 + 경고 이모지가 같은 줄에 오게 */
     align-items:center;
     justify-content:center;
     border-width:2px;
   }
   .speech.long{ font-size:12.5px; }
-  .foot-row .speech{ font-size:13px; }
-  .foot-row .speech.long{ font-size:12px; }
+  #lowBooth .speech{ font-size:14px; }
+  #lowBooth .speech.long{ font-size:12.5px; }
   .speech[data-strength="1"]{ border-width:3px; }
   .speech[data-strength="2"]{ border-width:4px; }
-  .speech-note{ font-size:10.5px; }
+  .speech-note{ font-size:0.92em; }
   .ticket-info{ font-size:12px; }
   .bubble-text{ font-size:14.5px; line-height:1.65; }
   .verdict-hint, .alt-chip{ font-size:10.5px; }
@@ -850,18 +887,6 @@
 <body>
 
 <div class="stage">
-  <div class="truss-rig" aria-hidden="true">
-    <div class="truss-pipe"></div>
-    <div class="truss-lights">
-      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot" data-lit="blue"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot" data-lit="rose"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot" data-lit="amber"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-      <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
-    </div>
-  </div>
   <div class="stage-prop stage-prop--left" aria-hidden="true"><i></i><i></i></div>
   <div class="stage-prop stage-prop--right" aria-hidden="true"><i></i><i></i></div>
   <div class="room" id="room">
@@ -871,6 +896,21 @@
       <div class="ticket-info" id="ticketInfo"></div>
       <span class="demo-chip" id="demoChip" hidden>데모 데이터</span>
     </header>
+
+    <!-- 조명 레일 — 기본정보 줄(.room-top) 아래, 에이전트 골목 위. 흐름 요소로
+         한 줄을 차지한다 (예전엔 .stage에 absolute로 걸려 기본정보와 겹쳤다) -->
+    <div class="truss-rig" aria-hidden="true">
+      <div class="truss-pipe"></div>
+      <div class="truss-lights">
+        <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot" data-lit="blue"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot" data-lit="rose"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot" data-lit="amber"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+        <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
+      </div>
+    </div>
 
     <div class="booth-grid" id="boothGrid"></div>
 
@@ -1018,7 +1058,9 @@
     const note = document.createElement('span');
     note.className = 'speech-note';
     note.hidden = true;
-    note.textContent = '확실하지 않음';
+    note.textContent = '⚠️';
+    note.title = '좌석배치도 데이터가 부족해 확실하지 않음';
+    note.setAttribute('aria-label', '확실하지 않음');
     speech.appendChild(note);
     body.appendChild(speech);
 
@@ -1057,6 +1099,9 @@
   function layoutTails(){
     Object.keys(booths).forEach(k => {
       const b = booths[k];
+      // 컨디션 말풍선은 블록 가운데에 1타일 폭으로 놓이므로(캐릭터는 기차 왼쪽
+      // 끝) 꼬리도 말풍선 한가운데에서 내린다 — 캐릭터를 가리키면 말풍선 밖이다
+      if(k === 'CONDITION'){ b.speech.style.setProperty('--tail', '50%'); return; }
       const stage = b.el.querySelector('.rise-stage');
       const img = stage ? stage.querySelector('.booth-art') : null;
       const body = b.el.querySelector('.booth-body');
@@ -1175,8 +1220,10 @@
     }
 
     const s = out.axis_score;
-    const mag = Math.abs(s);
-    const sign = s > 0 ? 'pos' : (s < 0 ? 'neg' : 'neu');
+    // axis_score는 사이드 감점(§5.2)으로 소수가 올 수 있다 — 테두리 굵기 단계는
+    // 0/1/2로 반올림해서 쓰고, 부호는 소수 그대로 본다
+    const mag = Math.round(Math.abs(s));
+    const sign = s > 0.001 ? 'pos' : (s < -0.001 ? 'neg' : 'neu');
 
     b.line.textContent = out.placard;
     b.speech.dataset.sign = sign;

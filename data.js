@@ -12,8 +12,9 @@
 window.GON_DB = (function(){
   "use strict";
 
-  const VENUES  = window.GON_VENUES  || {};
-  const SEASONS = window.GON_SEASONS || [];
+  const VENUES   = window.GON_VENUES   || {};
+  const SEASONS  = window.GON_SEASONS  || [];
+  const SEATMAPS = window.GON_SEATMAPS || {};
 
   const HANGUL_ROWS = '가나다라마바사아자차카타파하';
 
@@ -79,7 +80,100 @@ window.GON_DB = (function(){
   }
 
   /* ---------------------------------------------------------
-     좌석 조회 — 등급 / 통로 / 시야제한
+     사이드 구간 분류 — PRD §5.2
+
+     한 열을 통로석부터 세 구간으로 나눈다 (겹침 없는 분할):
+       ≤4석 박스 : [일반 1~2] [SIDE 3번째] [EDGE 벽쪽 끝 1석]
+       5석 이상  : [일반 1~3] [SIDE 4번째~끝에서 3번째] [EDGE 벽쪽 끝 2석]
+     경계가 모호하면 더 센 쪽(EDGE) 우선 — 아래 순서가 그 규칙이다.
+
+     dWall  = 벽 쪽 끝에서 이 좌석까지 (끝좌석이면 1)
+     dAisle = 통로 쪽 끝에서 이 좌석까지 (통로석이면 1)
+  --------------------------------------------------------- */
+  function sideZoneFor(width, dWall, dAisle){
+    if(width == null || dWall == null || dAisle == null) return null;
+    if(width <= 2) return 'EDGE';
+    if(width <= 4){
+      if(dWall <= 1) return 'EDGE';
+      if(dAisle >= 3) return 'SIDE';
+      return null;
+    }
+    // width >= 5
+    if(dWall <= 2) return 'EDGE';
+    if(dAisle >= 4) return 'SIDE';
+    return null;
+  }
+
+  // 사이드처럼 보이는 블럭 표기인가 (배치도가 없을 때 "판단 보류 + ⚠️" 여부 판정)
+  const SIDE_HINT = /좌|왼|우측|오른|오블|좌블|사이드|벽|op|ol|or|(^|[^a-z])[lr]([^a-z]|$)/i;
+
+  function classifySide(venue, season, seat){
+    // determined = 이 좌석의 사이드 구간을 확정했는가 (null=일반 도 확정에 포함).
+    // sideish && !determined 이면 "사이드 같은데 못 정함" → ⚠️
+    const out = { zone:null, block_label:null, source:null, estimate:false,
+                  sideish:false, determined:false };
+    if(!seat || seat.floor == null) return out;
+
+    const hint = String(seat.zone || seat.block || '').toLowerCase().trim();
+    const looksSide = !!hint && SIDE_HINT.test(hint);
+
+    // ① 공연 좌석배치도 오버레이가 있으면 그것, 없으면 극장 기본 베이스(추정)
+    let blocks = null;
+    const smap = season && SEATMAPS[season.season_id];
+    if(smap && smap.updated_at && smap.floors && smap.floors[seat.floor]){
+      blocks = smap.floors[seat.floor]; out.source = 'season'; out.estimate = false;
+    } else if(venue && venue.base_geometry && venue.base_geometry.floors &&
+              venue.base_geometry.floors[seat.floor]){
+      blocks = venue.base_geometry.floors[seat.floor];
+      out.source = 'venue';
+      out.estimate = venue.base_geometry.is_estimate !== false;
+    }
+    if(!blocks){
+      if(looksSide) out.sideish = true;   // 사이드 같은데 배치도가 없음 → ⚠️
+      out.source = null;
+      return out;
+    }
+
+    // ② 블럭 매칭 — 표기(zone/block) 우선, 실패 시 좌석번호가 드는 범위
+    let blk = null;
+    if(hint){
+      blk = blocks.find(bk =>
+        (bk.name && hint === String(bk.name).toLowerCase()) ||
+        (bk.aliases || []).some(a => a && hint.indexOf(a) > -1));
+    }
+    if(!blk && seat.number != null){
+      blk = blocks.find(bk => bk.seat_min != null &&
+        seat.number >= bk.seat_min && seat.number <= bk.seat_max);
+    }
+    if(!blk){
+      if(looksSide) out.sideish = true;
+      out.source = null; out.estimate = false;
+      return out;
+    }
+
+    out.block_label = blk.name || null;
+
+    // ③ 중앙 블럭 → 감점 대상 아님 (확정)
+    if(blk.wall_end == null){ out.determined = true; return out; }
+    out.sideish = true;
+
+    // ④ 사이드 블럭 — 좌석번호가 있어야 구간을 잰다
+    if(seat.number == null || seat.number < blk.seat_min || seat.number > blk.seat_max){
+      return out;   // determined:false, sideish:true → ⚠️
+    }
+    const width  = blk.seat_max - blk.seat_min + 1;
+    const dWall  = blk.wall_end  === 'min' ? (seat.number - blk.seat_min + 1)
+                                           : (blk.seat_max - seat.number + 1);
+    const dAisle = blk.aisle_end === 'min' ? (seat.number - blk.seat_min + 1)
+                 : blk.aisle_end === 'max' ? (blk.seat_max - seat.number + 1)
+                                           : null;
+    out.zone = sideZoneFor(width, dWall, dAisle);
+    out.determined = true;
+    return out;
+  }
+
+  /* ---------------------------------------------------------
+     좌석 조회 — 등급 / 통로 / 시야제한 / 사이드 구간
   --------------------------------------------------------- */
   function resolveSeat(season, seat){
     const out = {
@@ -87,6 +181,10 @@ window.GON_DB = (function(){
       is_aisle: null,
       is_restricted: null,
       zone: null,
+      side_zone: null,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
+      side_block: null,
+      side_source: null,        // 'season' | 'venue' | null
+      side_estimate: false,
       notes: [],
       sources: [],
       unknown: []
@@ -127,6 +225,18 @@ window.GON_DB = (function(){
         (x.numbers || []).indexOf(seat.number) > -1);
     } else {
       out.unknown.push('시야제한석 명단 (미수집)');
+    }
+
+    // ④ 사이드 구간 (PRD §5.2)
+    const sc = classifySide(venue, season, seat);
+    out.side_zone     = sc.zone;
+    out.side_block    = sc.block_label;
+    out.side_source   = sc.source;
+    out.side_estimate = sc.estimate;
+    if(sc.zone && sc.estimate){
+      out.unknown.push('사이드 구간 (이 공연 좌석배치도 미갱신 — 극장 기본 배치 기준)');
+    } else if(sc.sideish && !sc.determined){
+      out.unknown.push('사이드 구간 (좌석배치도 미수집)');
     }
 
     out.sources = out.sources.filter(Boolean);
@@ -332,7 +442,8 @@ window.GON_DB = (function(){
       discounts_verified: !!(season && season.discounts_verified),
       has_grade: !!(seatInfo && seatInfo.grade),
       has_aisle: !!(seatInfo && seatInfo.is_aisle !== null),
-      seat_map_collected: !!(venue && venue.collected)
+      seat_map_collected: !!(venue && venue.collected),
+      side_source: seatInfo ? seatInfo.side_source : null   // 'season' | 'venue' | null
     };
   }
 
@@ -342,6 +453,8 @@ window.GON_DB = (function(){
     rowIndex: rowIndex,
     rowIndexWithinFloor: rowIndexWithinFloor,
     resolveSeat: resolveSeat,
+    classifySide: classifySide,
+    sideZoneFor: sideZoneFor,
     listPrice: listPrice,
     discounts: discounts,
     findDiscount: findDiscount,
