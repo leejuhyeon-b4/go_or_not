@@ -227,9 +227,8 @@ Deno.serve(async (req) => {
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급은 시즌) ----
     if (action === "save-seatmap") {
       const { season_id, floors, grade_zones, restricted_seats } = await req.json();
-      if (!season_id || !floors || typeof floors !== "object") {
-        throw new HttpError(400, "season_id 와 floors 객체가 필요합니다.");
-      }
+      if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
+      const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
         .from("seasons")
         .select("season_id, venue_id")
@@ -241,7 +240,7 @@ Deno.serve(async (req) => {
       }
 
       const cleanFloors: Record<string, unknown[]> = {};
-      for (const [f, blocks] of Object.entries(floors)) {
+      for (const [f, blocks] of Object.entries(floorsObj)) {
         if (!Array.isArray(blocks)) continue;
         const fk = String(f);
         const arr = blocks
@@ -264,9 +263,7 @@ Deno.serve(async (req) => {
           .filter((b) => b.name && Number.isFinite(b.seat_min) && Number.isFinite(b.seat_max));
         if (arr.length) cleanFloors[fk] = arr;
       }
-      if (!Object.keys(cleanFloors).length) {
-        throw new HttpError(400, "저장할 유효한 블록이 없습니다.");
-      }
+      const hasGeometry = Object.keys(cleanFloors).length > 0;
 
       // data.js 는 restricted_seats 를 { floor, row, numbers:[...] } 로 매칭한다.
       // block/reason 은 부가정보로만 남긴다 (소비 계층은 무시).
@@ -290,36 +287,41 @@ Deno.serve(async (req) => {
             .filter((r) => r.floor != null || r.block)
         : [];
 
-      const { data: cur, error: curErr } = await admin
-        .from("venues")
-        .select("base_geometry")
-        .eq("venue_id", venue_id)
-        .single();
-      if (curErr) throw new HttpError(404, `'${venue_id}' 극장이 없어요.`);
+      // 블록(기하)이 있을 때만 극장 정보를 갱신한다. 등급만 넣을 수도 있다.
+      if (hasGeometry) {
+        const { data: cur, error: curErr } = await admin
+          .from("venues")
+          .select("base_geometry")
+          .eq("venue_id", venue_id)
+          .single();
+        if (curErr) throw new HttpError(404, `'${venue_id}' 극장이 없어요.`);
 
-      const bg: Record<string, unknown> = (cur?.base_geometry && typeof cur.base_geometry === "object")
-        ? cur.base_geometry as Record<string, unknown>
-        : {};
-      bg.floors = cleanFloors;
-      bg.is_estimate = false;
-      bg.note = "관리자 좌석배치도 판독 (검토 완료) " + new Date().toISOString().slice(0, 10);
+        const bg: Record<string, unknown> = (cur?.base_geometry && typeof cur.base_geometry === "object")
+          ? cur.base_geometry as Record<string, unknown>
+          : {};
+        bg.floors = cleanFloors;
+        bg.is_estimate = false;
+        bg.note = "관리자 좌석배치도 판독 (검토 완료) " + new Date().toISOString().slice(0, 10);
 
-      const { data, error } = await admin
-        .from("venues")
-        .update({ base_geometry: bg, restricted_seats: cleanRestricted, collected: true })
-        .eq("venue_id", venue_id)
-        .select("venue_id");
-      if (error) throw new HttpError(500, error.message);
-      if (!data?.length) throw new HttpError(404, `'${venue_id}' 극장 저장 실패.`);
+        const { error } = await admin
+          .from("venues")
+          .update({ base_geometry: bg, restricted_seats: cleanRestricted, collected: true })
+          .eq("venue_id", venue_id);
+        if (error) throw new HttpError(500, error.message);
+      }
 
-      // 등급 구역 → 시즌 seat_grades 에 저장 (등급 레이아웃은 공연마다 다름)
+      // 등급 구역 → 시즌 seat_grades. grade_zones 를 명시적으로 보냈으면(빈 배열 포함) 그대로 반영.
       const seatGrades = cleanGradeZones(grade_zones);
-      if (seatGrades.length) {
+      if (Array.isArray(grade_zones)) {
         const { error: sgErr } = await admin
           .from("seasons")
           .update({ seat_grades: seatGrades })
           .eq("season_id", season_id);
         if (sgErr) throw new HttpError(500, sgErr.message);
+      }
+
+      if (!hasGeometry && !Array.isArray(grade_zones)) {
+        throw new HttpError(400, "저장할 블록도 등급도 없습니다.");
       }
 
       return json({

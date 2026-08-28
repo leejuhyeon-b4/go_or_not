@@ -110,11 +110,15 @@
       <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
         <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
       <div id="sblocks"></div>
-      <div class="between" style="margin-top:14px"><label>등급 구역 (선택 — 보통 비움)</label>
+      <div style="margin-top:14px"><label>등급 (선택 — 배치도 이미지로는 못 읽어서 직접 타이핑)</label>
+        <textarea id="sgradeText" rows="4" placeholder="한 줄에 하나. 예:&#10;1층 1-22열 12-37번 VIP&#10;1층 1-22열 1-11번 R&#10;1층 1-22열 38-48번 R&#10;2층 A-M열 S"></textarea>
+        <button id="sgradeParse" class="ghost" style="width:auto;padding:6px 12px;margin-top:6px;font-size:12px">↓ 아래 표에 넣기</button>
+      </div>
+      <div class="between" style="margin-top:8px"><label>등급 구역 표</label>
         <button id="saddGrade" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="sgrades"></div>
-      <div class="hint" style="margin-top:2px">등급은 상담 때 앱이 사용자에게 물어봅니다 (티켓에 적혀 있음).
-        여기는 <b>미리 넣어두고 싶을 때만</b> 직접 입력 — 층 / 열범위 / 좌석번호범위 / 등급. 비우면 제한 없음, 좁은 구역이 우선.</div>
+      <div class="hint" style="margin-top:2px">열범위·번호범위 비우면 제한 없음. 같은 열에서 가운데 VIP·양끝 R 이면 행 3개.
+        좁은 구역이 우선. 비워두면 상담 때 앱이 사용자에게 등급을 물어봅니다.</div>
       <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
         <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="srestr"></div>
@@ -372,8 +376,11 @@ $("dsaveBtn").onclick = async () => {
 function renderCurSeatSeason() {
   const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
   if (!s) return;
-  const n = Array.isArray(s.seat_grades) ? s.seat_grades.length : 0;
-  $("vcurInfo").textContent = "현재 등급 매핑 " + n + "행" + (n ? " (검증됨)" : " — 미수집");
+  const zg = Array.isArray(s.seat_grades) ? s.seat_grades : [];
+  $("vcurInfo").textContent = "현재 등급 구역 " + zg.length + "개" + (zg.length ? "" : " — 비면 상담 때 사용자에게 물음");
+  setMsg($("sparseMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
+  renderSGrades(zg);
+  show($("seditCard"), true);
 }
 
 $("sfile").onchange = () => {
@@ -458,6 +465,38 @@ function addSGrade(z) {
 }
 $("saddGrade").onclick = () => addSGrade();
 
+// "1층 1-22열 12-37번 VIP" 같은 줄들을 구역 객체로
+function parseGradeLine(line) {
+  const toks = String(line).trim().split(/\s+/).filter(Boolean);
+  if (!toks.length) return null;
+  let floor = 1, from_row = "", to_row = "", from_seat = null, to_seat = null, grade = "";
+  toks.forEach((t) => {
+    if (/층$/.test(t)) { floor = parseInt(t, 10) || 1; return; }
+    if (/열$/.test(t)) {
+      const p = t.replace(/[열석]/g, "").split(/[-~–]/);
+      from_row = (p[0] || "").trim();
+      to_row = p.length > 1 ? ((p[1] || "").trim() || from_row) : from_row;
+      return;
+    }
+    if (/번$/.test(t)) {
+      const p = t.replace(/[번석]/g, "").split(/[-~–]/);
+      from_seat = p[0] ? Number(p[0]) : null;
+      to_seat = p.length > 1 ? (p[1] ? Number(p[1]) : null) : from_seat;
+      return;
+    }
+    grade = t.replace(/석$/, "").toUpperCase();
+  });
+  if (!grade) return null;
+  return { floor, from_row, to_row, from_seat, to_seat, grade };
+}
+$("sgradeParse").onclick = () => {
+  const lines = ($("sgradeText").value || "").split("\n");
+  let n = 0;
+  lines.forEach((l) => { const z = parseGradeLine(l); if (z) { addSGrade(z); n++; } });
+  if (n) { $("sgradeText").value = ""; show($("seditCard"), true); }
+  setMsg($("sparseMsg"), n ? n + "개 등급 구역을 표에 넣었어요. 확인 후 저장." : "해석할 줄이 없어요.", n ? "ok" : "err");
+};
+
 function renderSRestr(list) {
   $("srestr").innerHTML = "";
   (list || []).forEach(addSRestr);
@@ -509,13 +548,17 @@ $("ssaveBtn").onclick = async () => {
     reason: r.querySelector(".rs").value.trim() || null,
   })).filter((r) => r.floor != null || r.block);
 
-  if (!Object.keys(floors).length) { setMsg($("ssaveMsg"), "블록을 하나 이상 넣어주세요.", "err"); return; }
+  if (!Object.keys(floors).length && !grade_zones.length) {
+    setMsg($("ssaveMsg"), "블록이나 등급 구역 중 하나는 넣어주세요.", "err"); return;
+  }
   $("ssaveBtn").disabled = true;
   setMsg($("ssaveMsg"), "저장 중…", "");
   try {
-    const res = await api("save-seatmap", { season_id, floors, grade_zones, restricted_seats });
+    const payload = { season_id, grade_zones, restricted_seats };
+    if (Object.keys(floors).length) payload.floors = floors;   // 블록 없으면 극장 기하는 안 건드림
+    const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
-      "저장 완료 (등급 매핑 " + (res.seat_grades || 0) + "행). 데스크탑에서 'npm run pull'.", "ok");
+      "저장 완료 (등급 구역 " + (res.seat_grades || 0) + "개). 데스크탑에서 'npm run pull'.", "ok");
     await loadSeasons();
     $("seatSeason").value = season_id;
     renderCurSeatSeason();

@@ -98,9 +98,9 @@ eq(DB.resolveSeat(gz, { floor: 2, row: 'C', number: 1 }).grade, null, '다른 �
 eq(DB.resolveSeat({ seat_grades: [{ floor: 1, row: 'B', grade: 'S' }] }, { floor: 1, row: 'b', number: 3 }).grade,
    'S', '구식 {floor,row,grade} 형태도 매칭');
 
-// resolveSeat — 통로/등급/시야제한 + 사이드
+// resolveSeat — 등급/시야제한 + 사이드
 const rs = DB.resolveSeat(haemong, { floor: 1, row: 'B', number: 16 });
-eq(rs.is_aisle, true, 'resolveSeat B16 통로석 (verified_seats)');
+ok(!('is_aisle' in rs), 'resolveSeat 는 통로 인접 여부를 다루지 않는다');
 eq(rs.grade, null, 'resolveSeat 등급 미수집 → null (false 아님)');
 ok(rs.unknown.includes('좌석 등급 (좌석배치도 미수집)'), 'resolveSeat unknown 에 등급 누락');
 
@@ -199,7 +199,7 @@ async function runAll(b) {
 }
 
 const BUNDLES = {
-  // CASE 1 (웨스턴) — 데모 번들 그대로. 애배+자첫+통로석, 컨디션 없음
+  // CASE 1 (웨스턴) — 데모 번들 그대로. 애배+자첫, 컨디션 없음
   demo_case1: GON.DEMO_BUNDLE,
 
   // CASE 5 형 — 컨디션 부담 4개 누적 → veto

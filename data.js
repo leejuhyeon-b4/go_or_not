@@ -181,12 +181,11 @@ window.GON_DB = (function(){
   }
 
   /* ---------------------------------------------------------
-     좌석 조회 — 등급 / 통로 / 시야제한 / 사이드 구간
+     좌석 조회 — 등급 / 시야제한 / 사이드 구간
   --------------------------------------------------------- */
   function resolveSeat(season, seat){
     const out = {
       grade: null,
-      is_aisle: null,
       is_restricted: null,
       zone: null,
       side_zone: null,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
@@ -230,21 +229,20 @@ window.GON_DB = (function(){
     }
     if(out.grade == null) out.unknown.push('좌석 등급 (좌석배치도 미수집)');
 
-    // ② 통로 인접 — 확인된 좌석만. 목록에 없으면 모르는 것이다
+    // ② 확인된 좌석의 실측 메모 (zone·각도·시야). 통로 인접 여부는 다루지 않는다
+    //    — 어느 좌석이 통로 옆인지 배치도로 확정할 수 없어 판단하지 않기로 함.
     if(venue && venue.verified_seats){
       const v = venue.verified_seats.find(x =>
         x.floor === seat.floor &&
         String(x.row).toUpperCase() === String(seat.row).toUpperCase() &&
         x.number === seat.number);
       if(v){
-        if(typeof v.is_aisle === 'boolean') out.is_aisle = v.is_aisle;
         if(v.zone) out.zone = v.zone;
         if(v.angle_note) out.notes.push(v.angle_note);
         if(v.sightline_note) out.notes.push(v.sightline_note);
         out.sources.push(v.source);
       }
     }
-    if(out.is_aisle == null) out.unknown.push('통로 인접 여부 (좌석배치도 미수집)');
 
     // ③ 시야제한석 — 명단을 수집한 극장에서만 false 라고 말할 수 있다
     if(venue && venue.collected){
@@ -508,7 +506,6 @@ window.GON_DB = (function(){
       has_discounts: !!(season && season.discounts),
       discounts_verified: !!(season && season.discounts_verified),
       has_grade: !!(seatInfo && seatInfo.grade),
-      has_aisle: !!(seatInfo && seatInfo.is_aisle !== null),
       seat_map_collected: !!(venue && venue.collected),
       side_source: seatInfo ? seatInfo.side_source : null   // 'season' | 'venue' | null
     };

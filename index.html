@@ -1032,7 +1032,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     workAffinity:null,     // 자첫이 아닐 때만 받는다 (LOVE/LIKE/MEH/DISLIKE)
     operaGlass:null,
     eventExists:'NO',
-    prefRank:[],           // ['FRONT','AISLE'] 순서 = 순위
+    prefRank:[],           // ['FRONT','CENTER'] 순서 = 순위
     actorPathSide:null,    // ACTOR_PATH 선택 시에만 사용 (LEFT/CENTER/RIGHT)
     disposal:new Set(),
     eventTypes:new Set(),
@@ -1051,11 +1051,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     { key:'WHOLE',       label:'한눈에',   pattern:'SSSSS 00000 00000 00000 00M00' },
     // 애배 동선: 한쪽으로 치우친 자리라는 느낌만 (왼/오는 선택 후 별도로 입력)
     { key:'ACTOR_PATH',  label:'애배 동선', pattern:'SSSSS 00000 0M000 00000 00000' },
-    // 통로석: 좌우 양쪽에 통로가 있는 모양
-    { key:'AISLE',       label:'통로석',   pattern:'SSSSS A000A A0M0A A000A A000A' },
     // 가성비: 무대 기준선 없이 붕 떠오르는 반짝임
     { key:'VALUE',       label:'가성비',   pattern:'00M00 0MMM0 MMMMM 0M0M0 M000M' }
   ];
+  // 통로석은 뺐다 — 어느 좌석이 통로 옆인지 배치도로 확정할 수 없어 판단이 불가능하다.
 
   /* ---------------------------------------------------------
      유틸
@@ -1926,7 +1925,6 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         // 다등급인데 매핑이 없으면 사용자가 R-3b 에서 고른 값으로 채운다 (grade_source 로 구분)
         grade: seatInfo.grade || state.seatGrade || null,
         grade_source: seatInfo.grade ? 'venue' : (state.seatGrade ? 'user' : null),
-        is_aisle: seatInfo.is_aisle,
         is_restricted: seatInfo.is_restricted || state.seatRestricted || null,
         zone: seatInfo.zone,
         side_zone: seatInfo.side_zone,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
