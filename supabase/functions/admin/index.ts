@@ -138,6 +138,31 @@ function cleanNumberZones(zones: unknown) {
   return out;
 }
 
+// 극싸/사이드: 번호 구역 + zone('EDGE'|'SIDE')
+function cleanSideZones(zones: unknown) {
+  if (!Array.isArray(zones)) return [];
+  const out: Array<{ floor: number; row_from: string | null; row_to: string | null; row_parity: "even" | "odd" | null; numbers: number[]; zone: "EDGE" | "SIDE"; source: string }> = [];
+  for (const z of zones) {
+    const zz = z as { floor?: unknown; row_from?: unknown; from_row?: unknown; row_to?: unknown; to_row?: unknown; row_parity?: unknown; numbers?: unknown; zone?: unknown };
+    const floor = Number(zz?.floor);
+    if (!Number.isFinite(floor)) continue;
+    const nums = Array.isArray(zz?.numbers)
+      ? [...new Set((zz.numbers as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))]
+      : [];
+    if (!nums.length) continue;
+    const rf = String((zz?.row_from ?? zz?.from_row) ?? "").trim().toUpperCase();
+    const rt = String((zz?.row_to ?? zz?.to_row) ?? "").trim().toUpperCase();
+    const zn = String(zz?.zone ?? "").trim().toUpperCase();
+    out.push({
+      floor, row_from: rf || null, row_to: rt || rf || null,
+      row_parity: parityOf(zz?.row_parity), numbers: nums,
+      zone: zn === "EDGE" ? "EDGE" : "SIDE",
+      source: "관리자 좌석배치도 판독",
+    });
+  }
+  return out;
+}
+
 function aliasesFor(name: string, side: string, floor: string) {
   const n = String(name).toLowerCase().trim();
   const bySide: Record<string, string[]> = {
@@ -178,7 +203,7 @@ Deno.serve(async (req) => {
       // 먼저 넓게 시도하고, 실패하면 기본 컬럼만.
       const wide = await admin
         .from("seasons")
-        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, aisle_seats, restricted_seats")
+        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, aisle_seats, restricted_seats, side_seats")
         .order("work_title");
       if (!wide.error) return json({ seasons: wide.data });
       const narrow = await admin
@@ -262,7 +287,7 @@ Deno.serve(async (req) => {
 
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
     if (action === "save-seatmap") {
-      const { season_id, floors, grade_zones, aisle_seats, restricted_zones } = await req.json();
+      const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats } = await req.json();
       if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
       const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
@@ -339,16 +364,20 @@ Deno.serve(async (req) => {
       if (Array.isArray(aisle_seats)) seasonUpdate.aisle_seats = aisleZones;
       const restrZones = cleanNumberZones(restricted_zones);
       if (Array.isArray(restricted_zones)) seasonUpdate.restricted_seats = restrZones;
+      const sideZones = cleanSideZones(side_seats);
+      if (Array.isArray(side_seats)) seasonUpdate.side_seats = sideZones;
 
       if (Object.keys(seasonUpdate).length) {
         const { error: seuErr } = await admin
           .from("seasons").update(seasonUpdate).eq("season_id", season_id);
         if (seuErr) {
-          if (/aisle_seats|restricted_seats|column/i.test(seuErr.message)) {
+          if (/aisle_seats|restricted_seats|side_seats|column/i.test(seuErr.message)) {
             throw new HttpError(400,
-              "seasons 에 aisle_seats / restricted_seats 컬럼이 없어요. SQL Editor 에서:\n" +
-              "alter table seasons add column if not exists aisle_seats jsonb default '[]'::jsonb, " +
-              "add column if not exists restricted_seats jsonb default '[]'::jsonb;");
+              "seasons 에 신규 컬럼이 없어요. SQL Editor 에서:\n" +
+              "alter table seasons\n" +
+              "  add column if not exists aisle_seats jsonb default '[]'::jsonb,\n" +
+              "  add column if not exists restricted_seats jsonb default '[]'::jsonb,\n" +
+              "  add column if not exists side_seats jsonb default '[]'::jsonb;");
           }
           throw new HttpError(500, seuErr.message);
         }
@@ -360,7 +389,8 @@ Deno.serve(async (req) => {
 
       return json({
         ok: true, season_id, venue_id,
-        seat_grades: seatGrades.length, aisle_seats: aisleZones.length, restricted: restrZones.length,
+        seat_grades: seatGrades.length, aisle_seats: aisleZones.length,
+        restricted: restrZones.length, side_seats: sideZones.length,
       });
     }
 
@@ -441,9 +471,11 @@ async function geminiExtractSeatmapMemo(b64: string, mime: string) {
 # 등급 (열범위 생략 = 전 열, 등급만 쓰면 그 열 전체)
 <시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급> / <등급>
 
-# 통로 / 시야제한 (그 열범위에서 통로 옆·시야제한인 좌석번호)
+# 통로 / 시야제한 / 극싸·사이드 (그 열범위의 해당 좌석번호)
 <시작열>-<끝열>열 통로 <번호>,<번호>
 <시작열>-<끝열>열 시야제한 <번호>,<번호>
+<시작열>-<끝열>열 극싸 <번호>,<번호>       (벽 쪽 끝 1~2자리)
+<시작열>-<끝열>열 사이드 <번호>,<번호>     (벽 쪽 안쪽)
 
 예:
 1층

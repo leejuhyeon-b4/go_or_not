@@ -108,6 +108,13 @@ const asz = { venue_id: 'yes24-stage-1', aisle_seats: [{ floor: 1, row_from: 'A'
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 11 }).is_aisle, true, 'aisle_seats 매칭 → true');
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 15 }).is_aisle, false, 'aisle_seats 명단 있으면 false 도 확정');
 
+// season.side_seats — 관리자가 직접 표시한 극싸/사이드가 블럭 기하보다 우선
+const ssz = { venue_id: 'yes24-stage-1',
+  side_seats: [{ floor: 1, row_from: 'D', row_to: 'D', numbers: [4, 24], zone: 'EDGE' }] };
+eq(DB.resolveSeat(ssz, { floor: 1, row: 'D', number: 4 }).side_zone, 'EDGE', 'side_seats 명단 매칭 → EDGE');
+eq(DB.resolveSeat(ssz, { floor: 1, row: 'D', number: 12 }).side_zone, null, '층에 명단 있으면 명단 밖은 일반(기하 무시)');
+eq(DB.resolveSeat(ssz, { floor: 1, row: 'D', number: 4 }).side_source, 'season', 'side_source = season');
+
 // 짝수열/홀수열 — 통로 번호가 열 홀짝에 따라 1 밀리는 극장
 const par = { venue_id: 'yes24-stage-1', aisle_seats: [
   { floor: 1, row_parity: 'even', numbers: [16, 32] },

@@ -47,8 +47,9 @@ create table if not exists seasons (
   discount_proof_policy text,                           -- FULL_PRICE | GRADE_CHANGE | UNKNOWN
   seat_grades           jsonb   default '[]'::jsonb,    -- 등급 구역: [{floor, row_from?, row_to?, seat_from?, seat_to?, grade, source}]
                                                         --   같은 열 가운데 VIP·양끝 R 같은 경우를 seat 범위로. 구식 {floor,row,grade} 도 지원. 좁은 구역 우선
-  aisle_seats           jsonb   default '[]'::jsonb,    -- 통로 인접 좌석: [{floor, row_from?, row_to?, numbers:[...]}] · 관리자 문단 입력
+  aisle_seats           jsonb   default '[]'::jsonb,    -- 통로 인접 좌석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 문단 입력
   restricted_seats      jsonb   default '[]'::jsonb,    -- 시야제한(공연별): [{floor, row_from?, row_to?, numbers:[...]}] · venue.restricted_seats 와 별개, 있으면 우선
+  side_seats            jsonb   default '[]'::jsonb,    -- 극싸/사이드: [{floor, row_from?, row_to?, row_parity?, numbers:[...], zone:'EDGE'|'SIDE'}] · 있으면 블럭 기하보다 우선
   cancellation_policy   jsonb,
   source                text,
   created_at            timestamptz default now()
@@ -58,7 +59,8 @@ create table if not exists seasons (
 --   alter table seasons
 --     add column if not exists discounts_updated_at timestamptz,
 --     add column if not exists aisle_seats jsonb default '[]'::jsonb,
---     add column if not exists restricted_seats jsonb default '[]'::jsonb;
+--     add column if not exists restricted_seats jsonb default '[]'::jsonb,
+--     add column if not exists side_seats jsonb default '[]'::jsonb;
 
 -- ---------- 공연별 좌석배치도 오버레이 (PRD §8.4 season_seat_maps) ----------
 create table if not exists seatmaps (

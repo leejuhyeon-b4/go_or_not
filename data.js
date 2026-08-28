@@ -305,15 +305,28 @@ window.GON_DB = (function(){
     }
 
     // ④ 사이드 구간 (PRD §5.2)
+    //   관리자가 배치도 보고 직접 표시한 극싸/사이드 명단이 최우선 (season.side_seats).
+    //   그 층에 명단이 있으면 그걸 신뢰(명단에 없는 좌석은 일반). 없으면 블럭 기하로 추정.
     const sc = classifySide(venue, season, seat);
-    out.side_zone     = sc.zone;
-    out.side_block    = sc.block_label;
-    out.side_source   = sc.source;
-    out.side_estimate = sc.estimate;
-    if(sc.zone && sc.estimate){
-      out.unknown.push('사이드 구간 (이 공연 좌석배치도 미갱신 — 극장 기본 배치 기준)');
-    } else if(sc.sideish && !sc.determined){
-      out.unknown.push('사이드 구간 (좌석배치도 미수집)');
+    out.side_block = sc.block_label;
+
+    const sideList = (season && Array.isArray(season.side_seats)) ? season.side_seats : null;
+    const floorHasSideList = sideList && sideList.some(function(z){ return z.floor === seat.floor; });
+
+    if(floorHasSideList){
+      const hit = sideList.find(function(z){ return seatInZone(z, seat, venue); });
+      out.side_zone = (hit && (hit.zone === 'EDGE' || hit.zone === 'SIDE')) ? hit.zone : null;
+      out.side_source = 'season';
+      out.side_estimate = false;
+    } else {
+      out.side_zone     = sc.zone;
+      out.side_source   = sc.source;
+      out.side_estimate = sc.estimate;
+      if(sc.zone && sc.estimate){
+        out.unknown.push('사이드 구간 (이 공연 좌석배치도 미갱신 — 극장 기본 배치 기준)');
+      } else if(sc.sideish && !sc.determined){
+        out.unknown.push('사이드 구간 (좌석배치도 미수집)');
+      }
     }
 
     out.sources = out.sources.filter(Boolean);
