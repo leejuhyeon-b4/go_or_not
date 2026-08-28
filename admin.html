@@ -110,11 +110,11 @@
       <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
         <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
       <div id="sblocks"></div>
-      <div class="between" style="margin-top:14px"><label>등급 구역 — 층 / 열범위 / 좌석번호범위 / 등급</label>
+      <div class="between" style="margin-top:14px"><label>등급 구역 (선택 — 보통 비움)</label>
         <button id="saddGrade" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="sgrades"></div>
-      <div class="hint" style="margin-top:2px">열범위·번호범위 비우면 제한 없음. 같은 열에서 가운데 VIP·양끝 R 이면
-        행 2개: (열1~22, 번3~18, VIP) + (열1~22, 번1~2, R) + (열1~22, 번19~20, R). 좁은 구역이 우선.</div>
+      <div class="hint" style="margin-top:2px">등급은 상담 때 앱이 사용자에게 물어봅니다 (티켓에 적혀 있음).
+        여기는 <b>미리 넣어두고 싶을 때만</b> 직접 입력 — 층 / 열범위 / 좌석번호범위 / 등급. 비우면 제한 없음, 좁은 구역이 우선.</div>
       <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
         <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="srestr"></div>
@@ -399,12 +399,12 @@ $("sparseBtn").onclick = async () => {
       (restricted_seats || []).forEach((x) => restr.push(x));
     }
     const mBlocks = dedupeByKey(blocks, (b) => b.floor + "|" + String(b.name || "").trim().toLowerCase());
-    const mZones = dedupeByKey(zones, (z) => [z.floor, z.from_row, z.to_row, z.from_seat, z.to_seat, z.grade].join("|").toUpperCase());
     setMsg($("sparseMsg"),
-      files.length + "장 → 블록 " + mBlocks.length + " · 등급구역 " + mZones.length + " · 시야제한 " + restr.length + ". 반드시 확인하세요.", "ok");
+      files.length + "장 → 블록 " + mBlocks.length + " · 시야제한 " + restr.length + ". 반드시 확인하세요.", "ok");
     renderSBlocks(mBlocks);
-    renderSGrades(mZones);
     renderSRestr(restr);
+    // 등급 구역은 Gemini 판독이 부정확해 자동 채우지 않는다.
+    // 앱이 상담 때 사용자에게 등급을 물어본다 (R-3b). 여기 직접 넣고 싶을 때만.
     show($("seditCard"), true);
   } catch (e) {
     setMsg($("sparseMsg"), e.message, "err");
