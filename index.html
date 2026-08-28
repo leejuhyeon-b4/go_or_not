@@ -1006,8 +1006,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     loggedIn:false,
     matinee:null,
     // R-4 할인 사다리 (v2.1 §1.5)
-    // 할인 버튼의 값을 담는다: '' 미답 | 'NONE' 정가 | 'OTHER' 목록에 없음 | 권종명
+    // 할인 버튼의 값: '' 미답 | 'NONE' 정가 | 'OTHER' 목록에 없음 | 권종명
     selectedDiscount:'',
+    // 실제 고른 할인 객체 — 같은 이름이 등급별로 여러 개일 수 있어 이름만으론 부족하다
+    selectedDiscountObj:null,
     proofStatus:null,      // NOT_REQUIRED | AVAILABLE | UNAVAILABLE
     altGradeName:null,     // 증빙 불가 + GRADE_CHANGE 일 때 고른 대체 권종
     casting:null,
@@ -1157,33 +1159,42 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   // 수집한 할인 목록을 버튼으로 편다. 목록이 없어도 정가·목록없음 버튼은 두고,
   // 비용축은 degraded 로 "몇 % 받았는지"만 사실로 말한다.
   function discountBtnLabel(d){
-    return d.name.replace(/\s*할인$/,'') + ' ' + d.rate + '%';
+    const g = (d.grades && d.grades.length) ? ' (' + d.grades.join('·') + ')' : '';
+    return d.name.replace(/\s*할인$/,'') + ' ' + d.rate + '%' + g;
   }
   function fillDiscountButtons(){
     const box = $('discountBtns');
     const season = currentSeason();
-    const ds  = GON_DB.discounts(season);
-    const hasList = !!(ds && ds.length);
-    const prev = state.selectedDiscount;
+    const ds  = GON_DB.discounts(season) || [];
+    const hasList = ds.length > 0;
+    const prevObj = state.selectedDiscountObj;
+    const prevV = state.selectedDiscount;
     box.innerHTML = '';
 
-    const opts = [{ v:'NONE', label:'정가' }];
-    if(hasList) ds.forEach(d=> opts.push({ v:d.name, label:discountBtnLabel(d) }));
-    opts.push({ v:'OTHER', label: hasList ? '목록에 없는 할인' : '할인 받음' });
+    // 항목: 정가 / (등급별로 나뉜 것 포함) 각 할인 / 목록에 없는 할인
+    const opts = [{ v:'NONE', label:'정가', d:null }];
+    ds.forEach(d=> opts.push({ v:d.name, label:discountBtnLabel(d), d:d }));
+    opts.push({ v:'OTHER', label: hasList ? '목록에 없는 할인' : '할인 받음', d:null });
 
-    // 공연을 바꿔도 같은 이름의 권종이 있으면 선택을 유지한다
-    const keep = opts.some(o=> o.v === prev) ? prev : '';
-    state.selectedDiscount = keep;
+    // 공연을 바꿔도 같은 이름·할인율이면 선택을 유지한다
+    let keptOpt = null;
+    if(prevV === 'NONE' || prevV === 'OTHER'){
+      keptOpt = opts.find(o=> o.v === prevV);
+    } else if(prevObj){
+      keptOpt = opts.find(o=> o.d && o.d.name === prevObj.name && Number(o.d.rate) === Number(prevObj.rate));
+    }
+    state.selectedDiscount = keptOpt ? keptOpt.v : '';
+    state.selectedDiscountObj = keptOpt ? keptOpt.d : null;
 
     opts.forEach(o=>{
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pill';
-      b.dataset.value = o.v;
       b.textContent = o.label;
-      if(o.v === keep) b.classList.add('active');
+      if(o === keptOpt) b.classList.add('active');
       b.addEventListener('click', ()=>{
         state.selectedDiscount = o.v;
+        state.selectedDiscountObj = o.d;
         box.querySelectorAll('.pill').forEach(x=> x.classList.toggle('active', x === b));
         syncTicketFields();
         updateProgress();
@@ -1221,7 +1232,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     const prev = state.altGradeName;
     sel.innerHTML = '';
     sel.appendChild(new Option('정가로 추가결제', ''));
-    ds.filter(d=> d.name !== state.selectedDiscount)
+    ds.filter(d=> d !== state.selectedDiscountObj)
       .forEach(d=> sel.appendChild(new Option(d.name + ' ' + d.rate + '%', d.name)));
     const keep = Array.from(sel.options).some(o=> o.value === prev) ? prev : '';
     sel.value = keep;
@@ -1234,7 +1245,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     const v = state.selectedDiscount;
     if(!v || v === 'NONE') return false;
     if(v === 'OTHER') return true;
-    const d = GON_DB.findDiscount(currentSeason(), v);
+    const d = state.selectedDiscountObj;
     return !!d && (d.type === 'ELIGIBILITY' || d.type === 'LOYALTY');
   }
 
@@ -1242,8 +1253,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     const season = currentSeason();
     return GON_DB.computePayment(season, currentList(), {
       paid: Number($('paidAmount').value) || 0,
-      selectedName: (state.selectedDiscount && state.selectedDiscount !== 'NONE' &&
-                     state.selectedDiscount !== 'OTHER') ? state.selectedDiscount : null,
+      selected: state.selectedDiscount === 'OTHER' ? null : state.selectedDiscountObj,
       isOther: state.selectedDiscount === 'OTHER',
       firstWatch: state.firstWatch === 'YES',
       proofStatus: needsProof() ? state.proofStatus : null,

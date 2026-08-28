@@ -256,7 +256,10 @@ $("dparseBtn").onclick = async () => {
       const { discounts } = await api("parse", { image_base64: b64, mime_type: files[i].type });
       (discounts || []).forEach((d) => all.push(d));
     }
-    const merged = dedupeByKey(all, (d) => String(d.name || "").trim().toLowerCase());
+    // 같은 이름이라도 등급/할인율이 다르면 다른 항목 (조기예매 R 10% vs S 20%)
+    const merged = dedupeByKey(all, (d) =>
+      String(d.name || "").trim().toLowerCase() + "|" + Number(d.rate) + "|" +
+      (Array.isArray(d.grades) ? [...d.grades].map((g) => String(g).toUpperCase()).sort().join(",") : ""));
     setMsg($("dparseMsg"), files.length + "장에서 " + merged.length + "개 항목 (중복 제거). 아래에서 확인하세요.", "ok");
     renderDRows(merged);
     show($("deditCard"), true);

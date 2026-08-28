@@ -109,6 +109,19 @@ eq(DB.baselineRate(seasonGr, { selected: seasonGr.discounts[1] }), 30, 'baseline
 eq(DB.baselineRate({ discounts: [{ name: 's', rate: 40, type: 'STANDING', grades: ['VIP'] }] }, { grade: 'R' }),
    0, 'baseline STANDING 이라도 등급 안 맞으면 0');
 
+// 같은 이름 등급별 할인율 다른 항목 — computePayment 는 넘겨받은 객체를 그대로 쓴다
+const splitSeason = { discounts: [
+  { name: '조기예매 할인', rate: 10, type: 'STANDING', grades: ['VIP', 'R'] },
+  { name: '조기예매 할인', rate: 20, type: 'STANDING', grades: ['S', 'A'] },
+], discount_proof_policy: 'FULL_PRICE' };
+const payS = DB.computePayment(splitSeason, { price: 100000, grade: 'S' },
+  { paid: 80000, selected: splitSeason.discounts[1] });
+eq(payS.selected_discount.rate, 20, 'computePayment S석 → 조기예매 20% 적용');
+eq(payS.baseline_rate, 20, 'baseline S석 → 20 (VIP·R 10% 는 제외)');
+const payR = DB.computePayment(splitSeason, { price: 100000, grade: 'R' },
+  { paid: 90000, selected: splitSeason.discounts[0] });
+eq(payR.baseline_rate, 10, 'baseline R석 → 10 (S·A 20% 는 제외)');
+
 /* ============================================================
    2. 사이드 구간 분류 (PRD §5.2)
    ============================================================ */

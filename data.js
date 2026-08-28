@@ -364,8 +364,9 @@ window.GON_DB = (function(){
      band 까지 여기서 확정해서 넘긴다. 엔진은 산수를 하지 않고
      푯말 문구와 설명만 쓴다.
 
-     input = { paid, selectedName, isOther, firstWatch, proofStatus, altName, matinee }
-       selectedName : 사다리에서 고른 할인명. null = 정가
+     input = { paid, selected, isOther, firstWatch, proofStatus, altName, matinee }
+       selected     : 사다리에서 고른 할인 객체 {name,rate,type,...}. null = 정가
+                      (같은 이름이 등급별로 여러 개일 수 있어 이름 아닌 객체로 받는다)
        isOther      : "목록에 없는 할인" 선택 여부
        proofStatus  : NOT_REQUIRED | AVAILABLE | UNAVAILABLE | null
        altName      : GRADE_CHANGE 로 바꿀 대체 권종명
@@ -376,7 +377,7 @@ window.GON_DB = (function(){
     const inp   = input || {};
     const paid  = Number(inp.paid) || 0;
     const lp    = list ? list.price : null;
-    const sel   = inp.isOther ? null : findDiscount(season, inp.selectedName);
+    const sel   = inp.isOther ? null : (inp.selected || null);
     const policy = (season && season.discount_proof_policy) || null;
 
     // 권종 적용가 — "목록에 없는 할인"이면 역산할 근거가 없으므로 결제액 그대로 본다.
