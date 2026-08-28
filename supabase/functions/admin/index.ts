@@ -1,32 +1,40 @@
 // =============================================================
-// supabase/functions/admin — 모바일 관리자 도구
+// supabase/functions/admin — 관리자 도구 JSON API
 //
-//   GET  /functions/v1/admin              → 관리자 페이지(HTML)
-//   POST /functions/v1/admin?action=seasons → 공연 목록 (드롭다운용)
-//   POST /functions/v1/admin?action=parse   → 이미지 → Gemini 판독 → 할인 목록 (저장 안 함)
-//   POST /functions/v1/admin?action=save    → 검토된 할인 목록을 seasons.discounts 에 저장
+//   관리자 화면(HTML)은 앱의 admin.html. Supabase 가 Edge Function 의
+//   HTML 응답을 sandbox/text-plain 으로 강제해서, 이 함수는 JSON API 만 한다.
 //
-// 인증: POST 는 Supabase Auth 로그인 필수(아무 인증 사용자나 = 관리자 1명만 만들 것).
-//       GET(페이지)은 무인증 — 그래서 이 함수는 "Verify JWT" 를 꺼야 한다.
+//   GET  /functions/v1/admin                  → 안내 JSON
+//   POST /functions/v1/admin?action=auth      → 비밀번호 확인만
+//   POST /functions/v1/admin?action=seasons   → 공연 목록 (할인 드롭다운용)
+//   POST /functions/v1/admin?action=venues    → 극장 목록 (좌석배치도 드롭다운용)
+//   POST /functions/v1/admin?action=parse         → 할인표 이미지 → Gemini → [{name,rate,type}]
+//   POST /functions/v1/admin?action=save          → 검토된 할인 목록 → seasons.discounts
+//   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {floors, restricted_seats}
+//   POST /functions/v1/admin?action=save-seatmap  → 검토된 배치도 → venues.base_geometry / restricted_seats
+//
+// 인증: POST 는 헤더 x-admin-password 가 ADMIN_PASSWORD 시크릿과 일치해야 통과.
+//       별도 계정 없음. GET(페이지)은 무인증 — 그래서 이 함수는 "Verify JWT" 를 꺼야 한다.
 //
 // 필요한 env (Edge Function Secrets):
+//   ADMIN_PASSWORD   ← 직접 등록. 폰에서 입력할 공유 비밀번호 하나.
 //   GEMINI_API_KEY   ← 직접 등록 (aistudio.google.com)
 //   GEMINI_MODEL     ← 선택, 기본 gemini-2.0-flash
-//   SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY ← 자동 주입됨
+//   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ← 자동 주입됨
 // =============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD") ?? "";
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
-const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash";
+const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.6-flash";
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
 const CORS = {
   "access-control-allow-origin": "*",
-  "access-control-allow-headers": "authorization, content-type",
+  "access-control-allow-headers": "content-type, x-admin-password",
   "access-control-allow-methods": "GET, POST, OPTIONS",
 };
 
@@ -40,13 +48,38 @@ const json = (body: unknown, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", ...CORS },
   });
 
-async function requireUser(req: Request) {
-  const jwt = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  if (!jwt) throw new HttpError(401, "로그인이 필요합니다.");
-  const anon = createClient(SUPABASE_URL, ANON_KEY, { auth: { persistSession: false } });
-  const { data, error } = await anon.auth.getUser(jwt);
-  if (error || !data.user) throw new HttpError(401, "세션이 만료됐어요. 다시 로그인하세요.");
-  return data.user;
+function timingSafeEqual(a: string, b: string) {
+  const enc = new TextEncoder();
+  const ba = enc.encode(a), bb = enc.encode(b);
+  if (ba.length !== bb.length) return false;
+  let out = 0;
+  for (let i = 0; i < ba.length; i++) out |= ba[i] ^ bb[i];
+  return out === 0;
+}
+
+function requireAdmin(req: Request) {
+  if (!ADMIN_PASSWORD) throw new HttpError(500, "ADMIN_PASSWORD 시크릿이 설정되지 않았어요.");
+  const given = req.headers.get("x-admin-password") ?? "";
+  if (!timingSafeEqual(given, ADMIN_PASSWORD)) throw new HttpError(401, "비밀번호가 틀렸어요.");
+}
+
+// 블록 side → 통로/벽 위치. 기존 seed.js 규칙과 동일:
+//   좌블 = 좌석번호 큰 쪽이 통로, 작은 쪽이 벽 / 우블은 반대 / 중블은 둘 다 없음
+function blockDefaults(side: string) {
+  if (side === "left") return { aisle_end: "max", wall_end: "min" };
+  if (side === "right") return { aisle_end: "min", wall_end: "max" };
+  return { aisle_end: null, wall_end: null };
+}
+function aliasesFor(name: string, side: string, floor: string) {
+  const n = String(name).toLowerCase().trim();
+  const bySide: Record<string, string[]> = {
+    left: ["좌", "왼", "왼쪽", "좌블", "좌측", "l"],
+    center: ["중", "중앙", "센터", "가운데", "중블", "중블록", "c"],
+    right: ["우", "오", "오른", "오른쪽", "우블", "우측", "r"],
+  };
+  const set = new Set<string>([n, ...(bySide[side] ?? [])]);
+  if (floor && floor !== "1") set.add(floor + "층");
+  return [...set].filter(Boolean);
 }
 
 Deno.serve(async (req) => {
@@ -55,16 +88,24 @@ Deno.serve(async (req) => {
   const action = url.searchParams.get("action");
 
   try {
-    // ---- 관리자 페이지 ----
+    // ---- 안내 (이 함수는 JSON API 만. 관리자 화면은 앱의 admin.html) ----
     if (req.method === "GET" && !action) {
-      return new Response(PAGE(), {
-        headers: { "content-type": "text/html; charset=utf-8", ...CORS },
+      return json({
+        ok: true,
+        info: "이 엔드포인트는 JSON API 입니다. 관리자 화면은 앱의 admin.html 에서 여세요.",
       });
     }
 
+    if (req.method !== "POST") return json({ error: "알 수 없는 요청" }, 404);
+
+    // 여기부터 전부 비밀번호 필요
+    requireAdmin(req);
+
+    // ---- 비밀번호 확인만 ----
+    if (action === "auth") return json({ ok: true });
+
     // ---- 공연 목록 ----
-    if (req.method === "POST" && action === "seasons") {
-      await requireUser(req);
+    if (action === "seasons") {
       const { data, error } = await admin
         .from("seasons")
         .select("season_id, work_title, season_label, discounts, discounts_verified")
@@ -73,9 +114,18 @@ Deno.serve(async (req) => {
       return json({ seasons: data });
     }
 
-    // ---- 이미지 판독 (저장 X) ----
-    if (req.method === "POST" && action === "parse") {
-      await requireUser(req);
+    // ---- 극장 목록 ----
+    if (action === "venues") {
+      const { data, error } = await admin
+        .from("venues")
+        .select("venue_id, name, collected")
+        .order("name");
+      if (error) throw new HttpError(500, error.message);
+      return json({ venues: data });
+    }
+
+    // ---- 할인표 판독 (저장 X) ----
+    if (action === "parse") {
       if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
       const { image_base64, mime_type } = await req.json();
       if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
@@ -83,9 +133,8 @@ Deno.serve(async (req) => {
       return json({ discounts });
     }
 
-    // ---- 저장 ----
-    if (req.method === "POST" && action === "save") {
-      await requireUser(req);
+    // ---- 할인 저장 ----
+    if (action === "save") {
       const { season_id, discounts } = await req.json();
       if (!season_id || !Array.isArray(discounts)) {
         throw new HttpError(400, "season_id 와 discounts 배열이 필요합니다.");
@@ -105,10 +154,98 @@ Deno.serve(async (req) => {
         .eq("season_id", season_id)
         .select("season_id");
       if (error) throw new HttpError(500, error.message);
-      if (!data?.length) {
-        throw new HttpError(404, `'${season_id}' 시즌이 없어요. 공연을 먼저 추가하세요.`);
-      }
+      if (!data?.length) throw new HttpError(404, `'${season_id}' 시즌이 없어요. 공연을 먼저 추가하세요.`);
       return json({ ok: true, season_id, saved: clean });
+    }
+
+    // ---- 좌석배치도 판독 (저장 X) ----
+    if (action === "parse-seatmap") {
+      if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
+      const { image_base64, mime_type } = await req.json();
+      if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
+      const result = await geminiExtractSeatmap(image_base64, mime_type ?? "image/jpeg");
+      return json(result);
+    }
+
+    // ---- 좌석배치도 저장 ----
+    if (action === "save-seatmap") {
+      const { venue_id, floors, restricted_seats } = await req.json();
+      if (!venue_id || !floors || typeof floors !== "object") {
+        throw new HttpError(400, "venue_id 와 floors 객체가 필요합니다.");
+      }
+
+      const cleanFloors: Record<string, unknown[]> = {};
+      for (const [f, blocks] of Object.entries(floors)) {
+        if (!Array.isArray(blocks)) continue;
+        const fk = String(f);
+        const arr = blocks
+          .map((b) => {
+            const side = ["left", "center", "right"].includes((b as { side?: string })?.side ?? "")
+              ? (b as { side: string }).side
+              : "center";
+            const d = blockDefaults(side);
+            const bb = b as { name?: string; seat_min?: unknown; seat_max?: unknown };
+            return {
+              name: String(bb?.name ?? "").trim(),
+              side,
+              seat_min: Number(bb?.seat_min),
+              seat_max: Number(bb?.seat_max),
+              aisle_end: d.aisle_end,
+              wall_end: d.wall_end,
+              aliases: aliasesFor(String(bb?.name ?? ""), side, fk),
+            };
+          })
+          .filter((b) => b.name && Number.isFinite(b.seat_min) && Number.isFinite(b.seat_max));
+        if (arr.length) cleanFloors[fk] = arr;
+      }
+      if (!Object.keys(cleanFloors).length) {
+        throw new HttpError(400, "저장할 유효한 블록이 없습니다.");
+      }
+
+      // data.js 는 restricted_seats 를 { floor, row, numbers:[...] } 로 매칭한다.
+      // block/reason 은 부가정보로만 남긴다 (소비 계층은 무시).
+      const cleanRestricted = Array.isArray(restricted_seats)
+        ? restricted_seats
+            .map((r) => {
+              const rr = r as
+                { floor?: unknown; block?: unknown; row?: unknown; number?: unknown; numbers?: unknown; reason?: unknown };
+              const nums = Array.isArray(rr?.numbers)
+                ? rr.numbers
+                : (rr?.number != null ? [rr.number] : []);
+              return {
+                floor: Number.isFinite(Number(rr?.floor)) ? Number(rr.floor) : null,
+                block: rr?.block ? String(rr.block).trim() : null,
+                row: rr?.row ? String(rr.row).trim().toUpperCase() : null,
+                numbers: (nums as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n)),
+                reason: rr?.reason ? String(rr.reason).trim() : null,
+                source: "관리자 좌석배치도 판독",
+              };
+            })
+            .filter((r) => r.floor != null || r.block)
+        : [];
+
+      const { data: cur, error: curErr } = await admin
+        .from("venues")
+        .select("base_geometry")
+        .eq("venue_id", venue_id)
+        .single();
+      if (curErr) throw new HttpError(404, `'${venue_id}' 극장이 없어요.`);
+
+      const bg: Record<string, unknown> = (cur?.base_geometry && typeof cur.base_geometry === "object")
+        ? cur.base_geometry as Record<string, unknown>
+        : {};
+      bg.floors = cleanFloors;
+      bg.is_estimate = false;
+      bg.note = "관리자 좌석배치도 판독 (검토 완료) " + new Date().toISOString().slice(0, 10);
+
+      const { data, error } = await admin
+        .from("venues")
+        .update({ base_geometry: bg, restricted_seats: cleanRestricted, collected: true })
+        .eq("venue_id", venue_id)
+        .select("venue_id");
+      if (error) throw new HttpError(500, error.message);
+      if (!data?.length) throw new HttpError(404, `'${venue_id}' 극장 저장 실패.`);
+      return json({ ok: true, venue_id, floors: cleanFloors, restricted_seats: cleanRestricted });
     }
 
     return json({ error: "알 수 없는 요청" }, 404);
@@ -154,6 +291,77 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
     },
   };
 
+  const arr = await geminiJson(body);
+  return Array.isArray(arr) ? arr : [];
+}
+
+// ---- Gemini 비전: 좌석배치도 → {floors:[...], restricted_seats:[...]} ------
+async function geminiExtractSeatmap(b64: string, mime: string) {
+  const prompt =
+`이 이미지는 한국 공연장의 좌석배치도다. 배치도에 실제로 보이는 정보만 추출하라. 못 읽으면 비운다. 추측 금지.
+- floors: 층·블록 목록. 각 항목:
+  - floor: 층 번호 (1, 2, 3)
+  - name: 배치도에 표기된 구역명 그대로 (예 "OP", "A블록", "1층 중앙")
+  - side: 무대에서 객석을 봤을 때 "left" | "center" | "right"
+  - seat_min, seat_max: 그 블록의 좌석 번호 범위 (정수). 범위를 못 읽으면 그 블록은 넣지 마라.
+- restricted_seats: 배치도에 '시야제한', '시야제한석', '제한관람', 'restricted' 등으로 표시된 좌석/구역:
+  - floor, block(구역명), row(열), numbers(해당 열의 좌석번호 배열), reason. 행·번호가 특정되지 않으면 block 만 채운다.`;
+
+  const body = {
+    contents: [{
+      parts: [
+        { inline_data: { mime_type: mime, data: b64 } },
+        { text: prompt },
+      ],
+    }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          floors: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                floor: { type: "INTEGER" },
+                name: { type: "STRING" },
+                side: { type: "STRING", enum: ["left", "center", "right"] },
+                seat_min: { type: "INTEGER" },
+                seat_max: { type: "INTEGER" },
+              },
+              required: ["floor", "name", "side", "seat_min", "seat_max"],
+            },
+          },
+          restricted_seats: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                floor: { type: "INTEGER" },
+                block: { type: "STRING" },
+                row: { type: "STRING" },
+                numbers: { type: "ARRAY", items: { type: "INTEGER" } },
+                reason: { type: "STRING" },
+              },
+              required: ["floor"],
+            },
+          },
+        },
+        required: ["floors", "restricted_seats"],
+      },
+    },
+  };
+
+  const obj = await geminiJson(body);
+  return {
+    floors: Array.isArray(obj?.floors) ? obj.floors : [],
+    restricted_seats: Array.isArray(obj?.restricted_seats) ? obj.restricted_seats : [],
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+async function geminiJson(body: unknown): Promise<any> {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
     { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
@@ -162,249 +370,10 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
     throw new HttpError(502, `Gemini 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
   }
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "[]";
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "null";
   try {
-    const arr = JSON.parse(text);
-    return Array.isArray(arr) ? arr : [];
+    return JSON.parse(text);
   } catch {
     throw new HttpError(502, "Gemini 응답을 해석하지 못했어요. 다시 시도해보세요.");
   }
-}
-
-// ---- 관리자 페이지 (모바일 우선, 자체 완결) ---------------------------------
-function PAGE() {
-  return `<!doctype html><html lang="ko"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>갈까말까 · 관리자</title>
-<style>
-  :root { color-scheme: light dark; --bg:#faf9f7; --fg:#1c1a17; --mut:#6b655c; --line:#e2ddd4;
-          --card:#fff; --accent:#2f6f4f; --danger:#b23b3b; }
-  @media (prefers-color-scheme: dark) { :root {
-    --bg:#161513; --fg:#eceae6; --mut:#9a938a; --line:#333029; --card:#211f1c; --accent:#5fbd99; --danger:#e07a7a; } }
-  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
-         background:var(--bg); color:var(--fg); padding:max(16px,env(safe-area-inset-top)) 16px 40px; }
-  h1 { font-size:18px; margin:4px 0 20px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
-  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
-  input, select, button, textarea { font:inherit; width:100%; padding:12px; border-radius:10px;
-         border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-  button { background:var(--accent); color:#fff; border:none; font-weight:600; margin-top:10px; }
-  button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:400; }
-  button:disabled { opacity:.5; }
-  .row { display:grid; grid-template-columns:1fr 64px 128px 36px; gap:6px; align-items:center; margin-bottom:6px; }
-  .row input, .row select { padding:9px; }
-  .row .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
-  .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
-  .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
-  .msg.ok  { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
-  .hint { font-size:12px; color:var(--mut); margin-top:8px; }
-  img.preview { width:100%; border-radius:10px; margin-top:10px; display:none; }
-  .hidden { display:none; }
-  .between { display:flex; justify-content:space-between; align-items:baseline; }
-</style></head><body>
-<h1>이 회차 갈까말까 · 관리자</h1>
-
-<div id="loginCard" class="card">
-  <label for="email">이메일</label>
-  <input id="email" type="email" autocomplete="username" inputmode="email">
-  <label for="pw" style="margin-top:10px">비밀번호</label>
-  <input id="pw" type="password" autocomplete="current-password">
-  <button id="loginBtn">로그인</button>
-  <div id="loginMsg" class="msg err hidden"></div>
-</div>
-
-<div id="app" class="hidden">
-  <div class="card">
-    <div class="between"><label for="season">공연 (시즌)</label>
-      <button id="logout" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">로그아웃</button></div>
-    <select id="season"></select>
-    <div id="curInfo" class="hint"></div>
-  </div>
-
-  <div class="card">
-    <label for="file">할인정보 스크린샷</label>
-    <input id="file" type="file" accept="image/*" capture="environment">
-    <img id="preview" class="preview" alt="">
-    <button id="parseBtn" disabled>Gemini 로 판독</button>
-    <div class="hint">예매처 '할인정보' 화면을 캡처해서 올리세요. 저장은 아래에서 확인 후.</div>
-    <div id="parseMsg" class="msg hidden"></div>
-  </div>
-
-  <div id="editCard" class="card hidden">
-    <div class="between"><label>판독 결과 — 확인·수정 후 저장</label>
-      <button id="addRow" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
-    <div id="rows"></div>
-    <div class="hint">rate = 정수 %. type: STANDING(누구나) / ELIGIBILITY(자격증빙) / LOYALTY(재관람전용)</div>
-    <button id="saveBtn">이 공연 할인으로 저장</button>
-    <div id="saveMsg" class="msg hidden"></div>
-  </div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-const SB_URL = ${JSON.stringify(SUPABASE_URL)};
-const SB_ANON = ${JSON.stringify(ANON_KEY)};
-const FN = SB_URL + "/functions/v1/admin";
-const sb = window.supabase.createClient(SB_URL, SB_ANON);
-const $ = (id) => document.getElementById(id);
-const show = (el, on) => el.classList.toggle("hidden", !on);
-const setMsg = (el, text, kind) => { el.textContent = text; el.className = "msg " + (kind||""); show(el, !!text); };
-
-let TOKEN = null;
-
-async function api(action, payload) {
-  const res = await fetch(FN + "?action=" + action, {
-    method: "POST",
-    headers: { "content-type": "application/json", "Authorization": "Bearer " + TOKEN },
-    body: JSON.stringify(payload || {}),
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
-  return data;
-}
-
-async function boot() {
-  const { data } = await sb.auth.getSession();
-  if (data.session) { TOKEN = data.session.access_token; enterApp(); }
-}
-
-$("loginBtn").onclick = async () => {
-  setMsg($("loginMsg"), "", "");
-  $("loginBtn").disabled = true;
-  const { data, error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("pw").value });
-  $("loginBtn").disabled = false;
-  if (error) { setMsg($("loginMsg"), error.message, "err"); return; }
-  TOKEN = data.session.access_token;
-  enterApp();
-};
-
-$("logout").onclick = async () => { await sb.auth.signOut(); location.reload(); };
-
-async function enterApp() {
-  show($("loginCard"), false);
-  show($("app"), true);
-  try {
-    const { seasons } = await api("seasons");
-    const sel = $("season");
-    sel.innerHTML = "";
-    seasons.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.season_id;
-      const mark = s.discounts_verified ? " ✓" : (s.discounts ? " (임시)" : "");
-      o.textContent = s.work_title + " " + (s.season_label || "") + mark;
-      o._s = s;
-      sel.appendChild(o);
-    });
-    sel.onchange = renderCur;
-    renderCur();
-  } catch (e) {
-    setMsg($("parseMsg"), e.message, "err");
-  }
-}
-
-function renderCur() {
-  const s = $("season").selectedOptions[0]?._s;
-  if (!s) return;
-  const d = s.discounts;
-  $("curInfo").textContent = d
-    ? "현재 " + d.length + "개" + (s.discounts_verified ? " (검증됨)" : " (임시 — 덮어써도 됨)")
-    : "현재 할인 정보 없음";
-}
-
-$("file").onchange = () => {
-  const f = $("file").files[0];
-  show($("editCard"), false);
-  setMsg($("parseMsg"), "", "");
-  if (!f) { $("parseBtn").disabled = true; return; }
-  const img = $("preview");
-  img.src = URL.createObjectURL(f);
-  img.style.display = "block";
-  $("parseBtn").disabled = false;
-};
-
-$("parseBtn").onclick = async () => {
-  const f = $("file").files[0];
-  if (!f) return;
-  $("parseBtn").disabled = true;
-  setMsg($("parseMsg"), "판독 중… (몇 초)", "");
-  try {
-    const b64 = await new Promise((ok, no) => {
-      const r = new FileReader();
-      r.onload = () => ok(String(r.result).split(",")[1]);
-      r.onerror = () => no(new Error("이미지를 읽지 못했어요"));
-      r.readAsDataURL(f);
-    });
-    const { discounts } = await api("parse", { image_base64: b64, mime_type: f.type });
-    setMsg($("parseMsg"), discounts.length + "개 항목 판독됨. 아래에서 확인하세요.", "ok");
-    renderRows(discounts);
-    show($("editCard"), true);
-  } catch (e) {
-    setMsg($("parseMsg"), e.message, "err");
-  } finally {
-    $("parseBtn").disabled = false;
-  }
-};
-
-function renderRows(list) {
-  const box = $("rows");
-  box.innerHTML = "";
-  (list.length ? list : [{ name: "", rate: 0, type: "STANDING" }]).forEach(addRow);
-}
-function addRow(d) {
-  d = d || { name: "", rate: 0, type: "STANDING" };
-  const div = document.createElement("div");
-  div.className = "row";
-  div.innerHTML =
-    '<input class="n" placeholder="할인명" value="' + escapeHtml(d.name || "") + '">' +
-    '<input class="r" type="number" inputmode="numeric" value="' + (Number(d.rate) || 0) + '">' +
-    '<select class="t">' +
-      ['STANDING', 'ELIGIBILITY', 'LOYALTY'].map((t) =>
-        '<option ' + (d.type === t ? 'selected' : '') + '>' + t + '</option>').join('') +
-    '</select>' +
-    '<button class="del">×</button>';
-  div.querySelector(".del").onclick = () => div.remove();
-  $("rows").appendChild(div);
-}
-$("addRow").onclick = () => addRow();
-
-$("saveBtn").onclick = async () => {
-  const season_id = $("season").value;
-  const discounts = [...document.querySelectorAll("#rows .row")].map((r) => ({
-    name: r.querySelector(".n").value.trim(),
-    rate: Number(r.querySelector(".r").value),
-    type: r.querySelector(".t").value,
-  })).filter((d) => d.name);
-  if (!discounts.length) { setMsg($("saveMsg"), "저장할 행이 없어요.", "err"); return; }
-  $("saveBtn").disabled = true;
-  setMsg($("saveMsg"), "저장 중…", "");
-  try {
-    await api("save", { season_id, discounts });
-    setMsg($("saveMsg"), "저장 완료. 데스크탑에서 'npm run pull' 하면 앱에 반영돼요.", "ok");
-    const { seasons } = await api("seasons");
-    const cur = $("season").value;
-    $("season").innerHTML = "";
-    seasons.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.season_id;
-      const mark = s.discounts_verified ? " ✓" : (s.discounts ? " (임시)" : "");
-      o.textContent = s.work_title + " " + (s.season_label || "") + mark;
-      o._s = s; $("season").appendChild(o);
-    });
-    $("season").value = cur;
-    renderCur();
-  } catch (e) {
-    setMsg($("saveMsg"), e.message, "err");
-  } finally {
-    $("saveBtn").disabled = false;
-  }
-};
-
-function escapeHtml(s) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
-boot();
-</script>
-</body></html>`;
 }

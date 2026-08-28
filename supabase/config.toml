@@ -2,5 +2,6 @@
 project_id = "ewemqbatkrmvzevmlteo"
 
 [functions.admin]
-# 관리자 페이지(GET)는 무인증으로 서빙하고, POST 는 함수 안에서 JWT 를 직접 검증한다.
+# 관리자 페이지(GET)는 무인증으로 서빙하고, POST 는 함수 안에서
+# x-admin-password 헤더(ADMIN_PASSWORD 시크릿)를 직접 검증한다.
 verify_jwt = false

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>갈까말까 · 관리자</title>
+<style>
+  :root { color-scheme: light dark; --bg:#faf9f7; --fg:#1c1a17; --mut:#6b655c; --line:#e2ddd4;
+          --card:#fff; --accent:#2f6f4f; --danger:#b23b3b; }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#161513; --fg:#eceae6; --mut:#9a938a; --line:#333029; --card:#211f1c; --accent:#5fbd99; --danger:#e07a7a; } }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+         background:var(--bg); color:var(--fg); padding:max(16px,env(safe-area-inset-top)) 16px 40px; }
+  h1 { font-size:18px; margin:4px 0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
+  input, select, button, textarea { font:inherit; width:100%; padding:12px; border-radius:10px;
+         border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+  button { background:var(--accent); color:#fff; border:none; font-weight:600; margin-top:10px; }
+  button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:400; }
+  button:disabled { opacity:.5; }
+  .row { display:grid; grid-template-columns:1fr 64px 128px 36px; gap:6px; align-items:center; margin-bottom:6px; }
+  .row input, .row select { padding:9px; }
+  .srow { display:grid; grid-template-columns:44px 1fr 48px 56px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
+  .srow input, .srow select { padding:8px; font-size:14px; }
+  .rrow { display:grid; grid-template-columns:40px 1fr 44px 52px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
+  .rrow input { padding:8px; font-size:14px; }
+  .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
+  .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
+  .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
+  .msg.ok  { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
+  .hint { font-size:12px; color:var(--mut); margin-top:8px; }
+  img.preview { width:100%; border-radius:10px; margin-top:10px; display:none; }
+  .hidden { display:none; }
+  .between { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .tabs { display:flex; gap:6px; margin-bottom:14px; }
+  .tabs button { margin:0; background:transparent; color:var(--mut); border:1px solid var(--line); }
+  .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+</style>
+</head>
+<body>
+<h1>이 회차 갈까말까 · 관리자</h1>
+
+<div id="loginCard" class="card">
+  <label for="pw">관리자 비밀번호</label>
+  <input id="pw" type="password" autocomplete="current-password" inputmode="text">
+  <button id="loginBtn">들어가기</button>
+  <div id="loginMsg" class="msg err hidden"></div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="tabs">
+    <button data-tab="disc" class="on">할인정보</button>
+    <button data-tab="seat">좌석배치도</button>
+    <button id="logout" class="ghost" style="flex:0 0 auto;width:auto;padding:9px 12px;font-size:12px">로그아웃</button>
+  </div>
+
+  <!-- ============ 할인정보 ============ -->
+  <section id="tab-disc">
+    <div class="card">
+      <label for="season">공연 (시즌)</label>
+      <select id="season"></select>
+      <div id="curInfo" class="hint"></div>
+    </div>
+    <div class="card">
+      <label for="dfile">할인정보 스크린샷</label>
+      <input id="dfile" type="file" accept="image/*" capture="environment">
+      <img id="dpreview" class="preview" alt="">
+      <button id="dparseBtn" disabled>Gemini 로 판독</button>
+      <div class="hint">예매처 '할인정보' 화면을 캡처해서 올리세요. 저장은 아래에서 확인 후.</div>
+      <div id="dparseMsg" class="msg hidden"></div>
+    </div>
+    <div id="deditCard" class="card hidden">
+      <div class="between"><label>판독 결과 — 확인·수정 후 저장</label>
+        <button id="daddRow" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
+      <div id="drows"></div>
+      <div class="hint">rate = 정수 %. type: STANDING(누구나) / ELIGIBILITY(자격증빙) / LOYALTY(재관람전용)</div>
+      <button id="dsaveBtn">이 공연 할인으로 저장</button>
+      <div id="dsaveMsg" class="msg hidden"></div>
+    </div>
+  </section>
+
+  <!-- ============ 좌석배치도 ============ -->
+  <section id="tab-seat" class="hidden">
+    <div class="card">
+      <label for="venue">극장</label>
+      <select id="venue"></select>
+      <div id="vcurInfo" class="hint"></div>
+    </div>
+    <div class="card">
+      <label for="sfile">좌석배치도 이미지</label>
+      <input id="sfile" type="file" accept="image/*" capture="environment">
+      <img id="spreview" class="preview" alt="">
+      <button id="sparseBtn" disabled>Gemini 로 판독</button>
+      <div class="hint">배치도 전체가 선명하게 나오게. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
+      <div id="sparseMsg" class="msg hidden"></div>
+    </div>
+    <div id="seditCard" class="card hidden">
+      <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
+        <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
+      <div id="sblocks"></div>
+      <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
+        <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
+      <div id="srestr"></div>
+      <div class="hint">통로/벽 위치와 별칭은 위치(left/center/right)에서 자동 생성됩니다. 저장하면 collected = true.</div>
+      <button id="ssaveBtn">이 극장 배치도로 저장</button>
+      <div id="ssaveMsg" class="msg hidden"></div>
+    </div>
+  </section>
+</div>
+
+<script src="data/supabase-config.js"></script>
+<script>
+const FN = ((window.GON_SUPABASE && GON_SUPABASE.url) || "") + "/functions/v1/admin";
+const $ = (id) => document.getElementById(id);
+const show = (el, on) => el.classList.toggle("hidden", !on);
+const setMsg = (el, text, kind) => { el.textContent = text; el.className = "msg " + (kind||""); show(el, !!text); };
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+
+let PW = null;
+try { PW = sessionStorage.getItem("gon:admin:pw"); } catch (e) {}
+
+async function api(action, payload) {
+  const res = await fetch(FN + "?action=" + action, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-admin-password": PW || "" },
+    body: JSON.stringify(payload || {}),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+  return data;
+}
+
+function fileToB64(f) {
+  return new Promise((ok, no) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",")[1]);
+    r.onerror = () => no(new Error("이미지를 읽지 못했어요"));
+    r.readAsDataURL(f);
+  });
+}
+
+async function boot() {
+  if (!FN.startsWith("http")) {
+    setMsg($("loginMsg"), "data/supabase-config.js 를 못 읽었어요. 파일 위치를 확인하세요.", "err");
+    return;
+  }
+  if (!PW) return;
+  try { await api("auth"); enterApp(); } catch (e) { PW = null; }
+}
+
+$("loginBtn").onclick = async () => {
+  setMsg($("loginMsg"), "", "");
+  $("loginBtn").disabled = true;
+  PW = $("pw").value;
+  try {
+    await api("auth");
+    try { sessionStorage.setItem("gon:admin:pw", PW); } catch (e) {}
+    enterApp();
+  } catch (e) {
+    PW = null;
+    setMsg($("loginMsg"), e.message, "err");
+  } finally {
+    $("loginBtn").disabled = false;
+  }
+};
+
+$("logout").onclick = () => { try { sessionStorage.removeItem("gon:admin:pw"); } catch (e) {} location.reload(); };
+
+document.querySelectorAll(".tabs [data-tab]").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll(".tabs [data-tab]").forEach((x) => x.classList.toggle("on", x === b));
+    show($("tab-disc"), b.dataset.tab === "disc");
+    show($("tab-seat"), b.dataset.tab === "seat");
+  };
+});
+
+async function enterApp() {
+  show($("loginCard"), false);
+  show($("app"), true);
+  await Promise.all([loadSeasons(), loadVenues()]);
+}
+
+/* ---------------- 할인정보 ---------------- */
+async function loadSeasons() {
+  try {
+    const { seasons } = await api("seasons");
+    const sel = $("season");
+    sel.innerHTML = "";
+    (seasons || []).forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.season_id;
+      const mark = s.discounts_verified ? " ✓" : (s.discounts ? " (임시)" : "");
+      o.textContent = s.work_title + " " + (s.season_label || "") + mark;
+      o._s = s;
+      sel.appendChild(o);
+    });
+    sel.onchange = renderCurSeason;
+    renderCurSeason();
+  } catch (e) {
+    setMsg($("dparseMsg"), e.message, "err");
+  }
+}
+function renderCurSeason() {
+  const s = $("season").selectedOptions[0] && $("season").selectedOptions[0]._s;
+  if (!s) return;
+  const d = s.discounts;
+  $("curInfo").textContent = d
+    ? "현재 " + d.length + "개" + (s.discounts_verified ? " (검증됨)" : " (임시 — 덮어써도 됨)")
+    : "현재 할인 정보 없음";
+}
+
+$("dfile").onchange = () => {
+  const f = $("dfile").files[0];
+  show($("deditCard"), false);
+  setMsg($("dparseMsg"), "", "");
+  if (!f) { $("dparseBtn").disabled = true; return; }
+  const img = $("dpreview");
+  img.src = URL.createObjectURL(f);
+  img.style.display = "block";
+  $("dparseBtn").disabled = false;
+};
+
+$("dparseBtn").onclick = async () => {
+  const f = $("dfile").files[0];
+  if (!f) return;
+  $("dparseBtn").disabled = true;
+  setMsg($("dparseMsg"), "판독 중… (몇 초)", "");
+  try {
+    const b64 = await fileToB64(f);
+    const { discounts } = await api("parse", { image_base64: b64, mime_type: f.type });
+    setMsg($("dparseMsg"), discounts.length + "개 항목 판독됨. 아래에서 확인하세요.", "ok");
+    renderDRows(discounts);
+    show($("deditCard"), true);
+  } catch (e) {
+    setMsg($("dparseMsg"), e.message, "err");
+  } finally {
+    $("dparseBtn").disabled = false;
+  }
+};
+
+function renderDRows(list) {
+  $("drows").innerHTML = "";
+  (list && list.length ? list : [{ name: "", rate: 0, type: "STANDING" }]).forEach(addDRow);
+}
+function addDRow(d) {
+  d = d || { name: "", rate: 0, type: "STANDING" };
+  const div = document.createElement("div");
+  div.className = "row";
+  div.innerHTML =
+    '<input class="n" placeholder="할인명" value="' + esc(d.name || "") + '">' +
+    '<input class="r" type="number" inputmode="numeric" value="' + (Number(d.rate) || 0) + '">' +
+    '<select class="t">' +
+      ["STANDING", "ELIGIBILITY", "LOYALTY"].map((t) =>
+        '<option ' + (d.type === t ? "selected" : "") + ">" + t + "</option>").join("") +
+    "</select>" +
+    '<button class="del">×</button>';
+  div.querySelector(".del").onclick = () => div.remove();
+  $("drows").appendChild(div);
+}
+$("daddRow").onclick = () => addDRow();
+
+$("dsaveBtn").onclick = async () => {
+  const season_id = $("season").value;
+  const discounts = [...document.querySelectorAll("#drows .row")].map((r) => ({
+    name: r.querySelector(".n").value.trim(),
+    rate: Number(r.querySelector(".r").value),
+    type: r.querySelector(".t").value,
+  })).filter((d) => d.name);
+  if (!discounts.length) { setMsg($("dsaveMsg"), "저장할 행이 없어요.", "err"); return; }
+  $("dsaveBtn").disabled = true;
+  setMsg($("dsaveMsg"), "저장 중…", "");
+  try {
+    await api("save", { season_id, discounts });
+    setMsg($("dsaveMsg"), "저장 완료. 데스크탑에서 'npm run pull' 하면 앱에 반영돼요.", "ok");
+    await loadSeasons();
+  } catch (e) {
+    setMsg($("dsaveMsg"), e.message, "err");
+  } finally {
+    $("dsaveBtn").disabled = false;
+  }
+};
+
+/* ---------------- 좌석배치도 ---------------- */
+async function loadVenues() {
+  try {
+    const { venues } = await api("venues");
+    const sel = $("venue");
+    sel.innerHTML = "";
+    (venues || []).forEach((v) => {
+      const o = document.createElement("option");
+      o.value = v.venue_id;
+      o.textContent = v.name + (v.collected ? " ✓" : " (미수집)");
+      sel.appendChild(o);
+    });
+  } catch (e) {
+    setMsg($("sparseMsg"), e.message, "err");
+  }
+}
+
+$("sfile").onchange = () => {
+  const f = $("sfile").files[0];
+  show($("seditCard"), false);
+  setMsg($("sparseMsg"), "", "");
+  if (!f) { $("sparseBtn").disabled = true; return; }
+  const img = $("spreview");
+  img.src = URL.createObjectURL(f);
+  img.style.display = "block";
+  $("sparseBtn").disabled = false;
+};
+
+$("sparseBtn").onclick = async () => {
+  const f = $("sfile").files[0];
+  if (!f) return;
+  $("sparseBtn").disabled = true;
+  setMsg($("sparseMsg"), "판독 중… (몇 초)", "");
+  try {
+    const b64 = await fileToB64(f);
+    const { floors, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: f.type });
+    setMsg($("sparseMsg"), "블록 " + floors.length + "개 · 시야제한 " + restricted_seats.length + "개 판독됨. 반드시 확인하세요.", "ok");
+    renderSBlocks(floors);
+    renderSRestr(restricted_seats);
+    show($("seditCard"), true);
+  } catch (e) {
+    setMsg($("sparseMsg"), e.message, "err");
+  } finally {
+    $("sparseBtn").disabled = false;
+  }
+};
+
+function renderSBlocks(list) {
+  $("sblocks").innerHTML = "";
+  (list && list.length ? list : [{ floor: 1, name: "", side: "center", seat_min: "", seat_max: "" }]).forEach(addSBlock);
+}
+function addSBlock(b) {
+  b = b || { floor: 1, name: "", side: "center", seat_min: "", seat_max: "" };
+  const div = document.createElement("div");
+  div.className = "srow";
+  div.innerHTML =
+    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (b.floor != null ? b.floor : "") + '">' +
+    '<input class="n" placeholder="블록명" value="' + esc(b.name || "") + '">' +
+    '<select class="sd">' +
+      [["left","좌"],["center","중"],["right","우"]].map(([v,t]) =>
+        '<option value="' + v + '"' + (b.side === v ? " selected" : "") + ">" + t + "</option>").join("") +
+    "</select>" +
+    '<input class="mn" type="number" inputmode="numeric" placeholder="min" value="' + (b.seat_min != null ? b.seat_min : "") + '">' +
+    '<input class="mx" type="number" inputmode="numeric" placeholder="max" value="' + (b.seat_max != null ? b.seat_max : "") + '">' +
+    '<button class="del">×</button>';
+  div.querySelector(".del").onclick = () => div.remove();
+  $("sblocks").appendChild(div);
+}
+$("saddBlock").onclick = () => addSBlock();
+
+function renderSRestr(list) {
+  $("srestr").innerHTML = "";
+  (list || []).forEach(addSRestr);
+}
+function addSRestr(r) {
+  r = r || { floor: 1, block: "", row: "", numbers: [], reason: "" };
+  const nums = Array.isArray(r.numbers) ? r.numbers.join(",") : (r.number != null ? String(r.number) : "");
+  const div = document.createElement("div");
+  div.className = "rrow";
+  div.innerHTML =
+    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (r.floor != null ? r.floor : "") + '">' +
+    '<input class="b" placeholder="블록" value="' + esc(r.block || "") + '">' +
+    '<input class="rw" placeholder="열" value="' + esc(r.row || "") + '">' +
+    '<input class="nm" placeholder="번(쉼표)" value="' + esc(nums) + '">' +
+    '<input class="rs" placeholder="사유" value="' + esc(r.reason || "") + '">' +
+    '<button class="del">×</button>';
+  div.querySelector(".del").onclick = () => div.remove();
+  $("srestr").appendChild(div);
+}
+$("saddRestr").onclick = () => addSRestr();
+
+$("ssaveBtn").onclick = async () => {
+  const venue_id = $("venue").value;
+  const floors = {};
+  [...document.querySelectorAll("#sblocks .srow")].forEach((r) => {
+    const f = String(parseInt(r.querySelector(".f").value, 10) || "");
+    const name = r.querySelector(".n").value.trim();
+    if (!f || !name) return;
+    (floors[f] = floors[f] || []).push({
+      name,
+      side: r.querySelector(".sd").value,
+      seat_min: Number(r.querySelector(".mn").value),
+      seat_max: Number(r.querySelector(".mx").value),
+    });
+  });
+  const restricted_seats = [...document.querySelectorAll("#srestr .rrow")].map((r) => ({
+    floor: parseInt(r.querySelector(".f").value, 10) || null,
+    block: r.querySelector(".b").value.trim() || null,
+    row: r.querySelector(".rw").value.trim() || null,
+    numbers: (r.querySelector(".nm").value || "").split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0),
+    reason: r.querySelector(".rs").value.trim() || null,
+  })).filter((r) => r.floor != null || r.block);
+
+  if (!Object.keys(floors).length) { setMsg($("ssaveMsg"), "블록을 하나 이상 넣어주세요.", "err"); return; }
+  $("ssaveBtn").disabled = true;
+  setMsg($("ssaveMsg"), "저장 중…", "");
+  try {
+    await api("save-seatmap", { venue_id, floors, restricted_seats });
+    setMsg($("ssaveMsg"), "저장 완료. 데스크탑에서 'npm run pull' 후, seed 값은 필요하면 손보세요.", "ok");
+    await loadVenues();
+  } catch (e) {
+    setMsg($("ssaveMsg"), e.message, "err");
+  } finally {
+    $("ssaveBtn").disabled = false;
+  }
+};
+
+boot();
+</script>
+</body>
+</html>

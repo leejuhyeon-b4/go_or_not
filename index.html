@@ -504,6 +504,21 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   color:#2A2100;
 }
 
+/* 관리자 진입 — 우하단에 아주 옅게. 클릭하면 관리자 도구(비밀번호)로 이동 */
+.admin-dot{
+  position:fixed;
+  right:6px; bottom:4px;
+  font-size:13px;
+  line-height:1;
+  padding:8px;
+  opacity:.16;
+  text-decoration:none;
+  color:var(--text-sub);
+  z-index:30;
+  transition:opacity .2s;
+}
+.admin-dot:hover, .admin-dot:focus-visible{ opacity:.75; }
+
 /* ============================================================
    모달 — 이용내역
    ============================================================ */
@@ -550,6 +565,23 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   margin:0 0 16px;
 }
 .modal .modal-close{ float:right; }
+
+/* ---- 사후 피드백 모달 (PRD §3.6 · §10.1) ---- */
+#feedbackBackdrop .fb-context{
+  font-size:12px;
+  color:var(--text-sub);
+  line-height:1.5;
+  margin:0 0 14px;
+  padding-bottom:10px;
+  border-bottom:1px solid var(--placard-bd);
+}
+#feedbackBackdrop .fb-step{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  margin-bottom:12px;
+}
+#feedbackBackdrop .fb-step[hidden]{ display:none; }
 
 /* ============================================================
    반응형 — design.md §8
@@ -876,11 +908,57 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 
 <div class="transition-overlay" id="transitionOverlay"><span>상담실로 들어갑니다…</span></div>
 
+<a id="adminDot" class="admin-dot" title="관리자" aria-label="관리자 도구">⚙</a>
+
 <div class="modal-backdrop" id="historyBackdrop" hidden>
   <div class="modal">
     <button type="button" class="btn-dot modal-close" id="historyClose">닫기</button>
     <h3>이용 내역</h3>
     <div id="historyBody"><p>불러오는 중…</p></div>
+  </div>
+</div>
+
+<!-- 사후 피드백 모달 — 관람일이 지난 상담에 대해 다음 접속 때 한 번 묻는다 (PRD §3.6) -->
+<div class="modal-backdrop" id="feedbackBackdrop" hidden>
+  <div class="modal">
+    <h3>이 회차, 어떻게 되셨어요?</h3>
+    <p class="fb-context" id="fbContext"></p>
+
+    <div class="fb-step" id="fbStepResult">
+      <label class="field-label">실제로는?</label>
+      <div class="segment" data-group="fbResult">
+        <button type="button" data-value="WENT">갔음</button>
+        <button type="button" data-value="GAVE">나눔</button>
+        <button type="button" data-value="SKIP">안 감</button>
+      </div>
+    </div>
+
+    <div class="fb-step" id="fbStepSeat" hidden>
+      <label class="field-label">자리는 어떠셨어요?</label>
+      <div class="scale-group" id="fbSeatScale">
+        <button type="button" class="scale-btn" data-value="0">최악</button>
+        <button type="button" class="scale-btn" data-value="1">별로</button>
+        <button type="button" class="scale-btn" data-value="2">보통</button>
+        <button type="button" class="scale-btn" data-value="3">좋음</button>
+        <button type="button" class="scale-btn" data-value="4">최고</button>
+      </div>
+    </div>
+
+    <div class="fb-step" id="fbStepGift" hidden>
+      <label class="field-label">이벤트(증정)는 어떠셨어요?</label>
+      <div class="scale-group" id="fbGiftScale">
+        <button type="button" class="scale-btn" data-value="0">최악</button>
+        <button type="button" class="scale-btn" data-value="1">별로</button>
+        <button type="button" class="scale-btn" data-value="2">보통</button>
+        <button type="button" class="scale-btn" data-value="3">좋음</button>
+        <button type="button" class="scale-btn" data-value="4">최고</button>
+      </div>
+    </div>
+
+    <div class="auth-actions">
+      <button type="button" class="btn-start" id="fbSubmit" disabled>보내기</button>
+      <button type="button" class="btn-dot" id="fbLater">나중에</button>
+    </div>
   </div>
 </div>
 
@@ -1331,6 +1409,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     chip.textContent = user && user.email ? user.email : '로그인됨';
     $('consultForm').classList.add('is-lit');
     updateProgress();
+    checkPendingFeedback();
   }
   function exitAuthed(){
     state.loggedIn = false;
@@ -1411,6 +1490,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         return;
       }
       const V = { GO:'가라', NO_GO:'가지마라' };
+      const RES = { WENT:'다녀옴', GAVE:'나눔', SKIP:'안 감' };
+      const todayStr = new Date().toISOString().slice(0,10);
       body.innerHTML = data.map(r=>{
         const seat = r.seat || {};
         const seatStr = [seat.floor?seat.floor+'층':'', seat.block||'', seat.row?seat.row+'열':'', seat.number?seat.number+'번':'']
@@ -1418,11 +1499,18 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         const vcls = r.verdict === 'GO' ? 'go' : (r.verdict === 'NO_GO' ? 'nogo' : '');
         const paid = (r.paid!=null) ? Number(r.paid).toLocaleString()+'원' : '';
         const d = (r.consulted_at||'').slice(0,10);
+        let statusStr = '';
+        if(r.outcome && r.outcome.result){
+          statusStr = RES[r.outcome.result] || '';
+        } else if(r.session_date && r.session_date >= todayStr){
+          statusStr = '관람 예정';
+        }
         return '<div class="hist-row">'
           + '<span class="hist-title">'+esc(r.work_title||'?')+(r.season_label?' · '+esc(r.season_label):'')+'</span>'
           + '<span class="hist-verdict '+vcls+'">'+(V[r.verdict]||r.verdict||'-')+'</span>'
           + '<span class="hist-meta">'+esc(seatStr)+(paid?' · '+paid:'')
-          + (r.session_date?' · 관람 '+r.session_date:'')+' · 상담 '+d+'</span>'
+          + (r.session_date?' · 관람 '+r.session_date:'')+' · 상담 '+d
+          + (statusStr?' · '+statusStr:'')+'</span>'
           + '</div>';
       }).join('');
     }catch(e){
@@ -1430,6 +1518,121 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     }
   }
   function esc(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  /* ---------------------------------------------------------
+     사후 피드백 모달 — PRD §3.6 · §10.1
+
+     로그인 직후, 관람일이 지났는데 아직 결과를 안 받은 상담이 있으면
+     한 번에 하나만 묻는다. "나중에" 를 누르면 그 건은 localStorage 로
+     계속 스킵한다 (§10.3 — 자주 물으면 이탈).
+  --------------------------------------------------------- */
+  const fb = { rec:null, result:null, seat_sat:null, gift_sat:null, hasEvent:false };
+
+  function snoozeKey(id){ return 'gon:snooze:' + id; }
+  function isSnoozed(id){
+    try{ return !!localStorage.getItem(snoozeKey(id)); }catch(e){ return false; }
+  }
+  function snooze(id){
+    try{ localStorage.setItem(snoozeKey(id), String(Date.now())); }catch(e){}
+  }
+
+  async function checkPendingFeedback(){
+    if(!window.GON_AUTH || !GON_AUTH.ready()) return;
+    let rows;
+    try{
+      const { data, error } = await GON_AUTH.listConsultations();
+      if(error) throw error;
+      rows = data || [];
+    }catch(e){ return; }
+
+    const todayStr = new Date().toISOString().slice(0,10);
+    const pending = rows.filter(r=>
+      r.session_date && r.session_date < todayStr &&   // 관람일이 지났고
+      !r.outcome &&                                    // 아직 결과 미입력
+      !isSnoozed(r.id)                                 // "나중에" 로 미룬 적 없음
+    );
+    // 오래된 관람부터
+    pending.sort((a,b)=> a.session_date < b.session_date ? -1 : 1);
+    if(pending.length) openFeedback(pending[0]);
+  }
+
+  function openFeedback(rec){
+    fb.rec = rec;
+    fb.result = null; fb.seat_sat = null; fb.gift_sat = null;
+    // EVENT 축 점수가 남아 있으면 이벤트가 있었던 회차다 (muted 면 null)
+    fb.hasEvent = !!(rec.axis_scores && rec.axis_scores.EVENT != null);
+
+    const seat = rec.seat || {};
+    const seatStr = [seat.floor?seat.floor+'층':'', seat.block||'', seat.row?seat.row+'열':'', seat.number?seat.number+'번':'']
+      .filter(Boolean).join(' ');
+    $('fbContext').textContent = (rec.work_title||'?')
+      + (rec.season_label ? ' · ' + rec.season_label : '')
+      + (rec.session_date ? ' · ' + rec.session_date + ' 관람' : '')
+      + (seatStr ? ' · ' + seatStr : '');
+
+    document.querySelectorAll('#feedbackBackdrop [data-group="fbResult"] button, #feedbackBackdrop .scale-btn')
+      .forEach(b=> b.classList.remove('active'));
+    $('fbStepSeat').hidden = true;
+    $('fbStepGift').hidden = true;
+    $('fbSubmit').disabled = true;
+    $('feedbackBackdrop').hidden = false;
+  }
+
+  function fbSync(){
+    const r = fb.result;
+    const askSeat = r === 'WENT';
+    const askGift = (r === 'WENT' || r === 'GAVE') && fb.hasEvent;
+    $('fbStepSeat').hidden = !askSeat;
+    $('fbStepGift').hidden = !askGift;
+    if(!askSeat) fb.seat_sat = null;
+    if(!askGift) fb.gift_sat = null;
+
+    let ready = false;
+    if(r === 'SKIP') ready = true;
+    else if(r === 'WENT') ready = fb.seat_sat !== null && (!askGift || fb.gift_sat !== null);
+    else if(r === 'GAVE') ready = !askGift || fb.gift_sat !== null;
+    $('fbSubmit').disabled = !ready;
+  }
+
+  segBind('fbResult', v=>{
+    fb.result = v;
+    fb.seat_sat = null; fb.gift_sat = null;
+    document.querySelectorAll('#fbSeatScale .scale-btn, #fbGiftScale .scale-btn')
+      .forEach(b=> b.classList.remove('active'));
+    fbSync();
+  });
+
+  [['fbSeatScale','seat_sat'], ['fbGiftScale','gift_sat']].forEach(([grid, key])=>{
+    document.querySelectorAll('#'+grid+' .scale-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        document.querySelectorAll('#'+grid+' .scale-btn').forEach(b=> b.classList.remove('active'));
+        btn.classList.add('active');
+        fb[key] = Number(btn.dataset.value);
+        fbSync();
+      });
+    });
+  });
+
+  $('fbLater').addEventListener('click', ()=>{
+    if(fb.rec) snooze(fb.rec.id);
+    $('feedbackBackdrop').hidden = true;
+  });
+
+  $('fbSubmit').addEventListener('click', async ()=>{
+    if($('fbSubmit').disabled || !fb.rec) return;
+    const outcome = { result: fb.result };
+    if(fb.seat_sat !== null) outcome.seat_sat = fb.seat_sat;
+    if(fb.gift_sat !== null) outcome.gift_sat = fb.gift_sat;
+    $('fbSubmit').disabled = true;
+    try{
+      const { error } = await GON_AUTH.updateOutcome(fb.rec.id, outcome);
+      if(error) throw error;
+    }catch(e){
+      // 저장 실패 — 이번엔 접고 다음 접속 때 다시 묻는다
+      console.warn('[GON] 피드백 저장 실패:', (e && e.message) || e);
+    }
+    $('feedbackBackdrop').hidden = true;
+  });
 
   // 시작 시 세션 확인
   (async ()=>{
@@ -1639,6 +1842,15 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     $('startBtn').textContent = '상담 시작';
     updateProgress();
   });
+
+  /* ---------------------------------------------------------
+     관리자 도구 진입 — 우하단 톱니 → admin.html (비밀번호는 그 화면이 물어본다).
+     Gemini·service_role 키는 Edge Function 시크릿에만. admin.html 도 비번·이미지만 보냄.
+  --------------------------------------------------------- */
+  (function(){
+    const a = $('adminDot');
+    if(a){ a.href = 'admin.html'; a.target = '_blank'; a.rel = 'noopener'; }
+  })();
 
   /* ---------------------------------------------------------
      초기 렌더

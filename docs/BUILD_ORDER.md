@@ -12,33 +12,24 @@
   오버레이가 `data/seed.js` 위에 병합. `data.js`/`engine.js` 무수정.
 - **KOPIS 수집** — `data/kopis.js` (키 2개 LIST/DETAIL, `data/kopis.js "공연명" 연도 season_id`)
   → `data/kopis-import.sql`. ⚠ data.go.kr 키 활성화 대기 중(발급 다음 영업일).
-- **관리자 도구** — `supabase/functions/admin/` Edge Function. 모바일에서 할인 스크린샷
-  → Gemini 판독 → 검토 → `seasons.discounts` 저장. 배포: `supabase/functions/admin/DEPLOY.md`.
-  범위: 할인정보만 (좌석배치도 판독은 미구현).
+- **관리자 도구** — `admin.html`(화면) + `supabase/functions/admin/`(JSON API). 랜딩 우하단 ⚙ →
+  `admin.html` → 비밀번호(`ADMIN_PASSWORD`, 계정 없음) → **할인정보 / 좌석배치도** 이미지 → Gemini 판독
+  → 검토 → Supabase 저장 (`seasons.discounts` / `venues.base_geometry`+`restricted_seats`+`collected=true`).
+  배포는 CLI 필수(`--use-api --no-verify-jwt`). 좌석배치도 판독은 거칠어 손보정 전제. → `DEPLOY.md`
 - **로그인 + 상담기록** — `index.html` 로그인 게이트(Supabase Auth). `data/auth.js`(`GON_AUTH`),
   `data/supabase-config.js`, `data/consultations.sql`. 판정 후 `consult.html` 이 `consultations`
   테이블에 저장. 우상단 "이용내역" 목록.
+- **사후 피드백 모달** (PRD §3.6 · §10.1) — `index.html` 로그인 직후 `checkPendingFeedback()`:
+  `session_date < 오늘` + `outcome IS NULL` + `gon:snooze:<id>` 없는 상담 중 **가장 오래된 것 하나**만
+  `#feedbackBackdrop` 모달로 묻는다. 갔음→자리(+이벤트 있으면 증정) / 나눔→증정만 / 안 감→끝.
+  이벤트 유무는 `axis_scores.EVENT != null` 로 판정. "나중에"=localStorage 스킵.
+  저장은 `GON_AUTH.updateOutcome`. 이용내역에 결과/`관람 예정` 배지 추가.
+- **degraded 할인율 출력** — `engine.js agentCost` 정가는 있고 할인 목록 미수집일 때
+  "정가 X에서 Z% 할인받으셨습니다 (최선 여부는 판단 안 함)" 로 raw 할인율을 사실로 출력.
 
 ---
 
 ## 다음 작업
-
-### 2. 사후 피드백 모달 (PRD §3.6 · §10.1)
-
-관람일이 지난 상담에 대해, 다음 접속 때 모달로 결과를 묻는다.
-
-- 트리거: 로그인 후 `consultations` 중 `session_date < 오늘` 이고 `outcome IS NULL` 이고
-  "나중에" 로 미룬 적 없는 것. **한 번에 하나만**, 안 하면 다음에 (§10.3 — 자주 물으면 이탈).
-- 질문:
-  - `result`: **갔음 / 나눔 / 안 감**
-  - 갔음 → `seat_sat` (0~4: 최악/별로/보통/좋음/최고)
-    + 이벤트가 있었으면 `gift_sat` (0~4)
-  - 나눔 → `gift_sat` 만 (자리는 안 물음 — 데이터 오염, §3.6)
-  - 안 감 → 끝
-- 저장: `GON_AUTH.updateOutcome(id, { result, seat_sat, gift_sat })` (이미 `data/auth.js` 에 있음).
-- 관람일 안 지났으면 이용내역에 "관람 예정" 으로만 표시, 피드백 안 물음.
-- UI: `index.html` 로그인 직후 체크 → `.modal-backdrop` 재사용. "나중에" 는 localStorage
-  (`gon:snooze:<id>`) 로 이번 세션만 스킵.
 
 ### 3. 폴백 모달 — 등급 + 시야제한석
 
@@ -62,8 +53,8 @@
 이 공연 할인 목록이 아직 없어 최선이었는지는 판단하지 않았습니다." — 사실만.
 "더 큰 할인 받을 수 있었어요?" 같은 질문은 **안 물어본다** (사용자에게 할인 메뉴를
 묻는 건 서비스가 무의미). 진짜 해결은 관리자 도구로 `discounts` 수집.
-→ 현재 `engine.js agentCost` 가 이미 이렇게 동작하나, **raw 할인율을 문장으로 안 보여줌**.
-   degraded 모드에서도 "Z% 받으셨어요" 는 사실로 출력하도록 `agentCost` 몇 줄 수정 필요 (작업 2 또는 3에 끼워서).
+→ ✅ `engine.js agentCost` 가 degraded 모드에서 raw 할인율("정가 X에서 Z% 할인받으셨습니다")을
+   사실로 출력하도록 수정 완료 (2026-08-28).
 
 ---
 

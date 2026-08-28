@@ -629,8 +629,15 @@ window.GON = (function(){
         missing.push('등급별 정가 (예매처 미수집)');
         priceLine = '이 시즌의 정가 테이블이 아직 수집되지 않아 지불액이 자리에 비해 비싼지 싼지는 판단하지 않았습니다.';
       } else {
+        // degraded 모드 — 최선 대비 위치는 판단하지 않되, raw 할인율은 사실로 알려준다.
         missing.push('할인 목록 (예매처 미수집)');
-        priceLine = '이 시즌의 할인 목록이 아직 수집되지 않아 최선 대비 어느 위치인지는 판단하지 않았습니다.';
+        var rawRate = (rate == null)
+          ? '정가 ' + won(list) + '을 내셨습니다.'
+          : rate > 0  ? '정가 ' + won(list) + '에서 ' + rate + '% 할인받으셨습니다.'
+          : rate === 0 ? '정가 ' + won(list) + '을 그대로 내셨습니다.'
+                       : '정가 ' + won(list) + '보다 ' + Math.abs(rate) + '% 더 내셨습니다.';
+        priceLine = rawRate +
+          ' 다만 이 시즌 할인 목록이 아직 수집되지 않아 이게 최선이었는지는 판단하지 않았습니다.';
       }
     }
 

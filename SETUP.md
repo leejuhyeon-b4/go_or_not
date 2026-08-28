@@ -23,11 +23,14 @@ Authentication → **Providers → Email**
 상담 앱(`index.html`)은 이제 **로그인해야 상담 시작**이 된다.
 계정은 앱의 회원가입 화면에서 만들거나, Authentication → Users → Add user.
 
-## 3. 관리자 도구 (할인정보 스크린샷 → Gemini)
+## 3. 관리자 도구 (할인정보 / 좌석배치도 이미지 → Gemini)
 
 `supabase/functions/admin/DEPLOY.md` 참고. 요약:
-- Gemini 키 발급 → Edge Function `admin` 배포 → Verify JWT 끄기 → `GEMINI_API_KEY` 시크릿
-- 폰에서 `https://ewemqbatkrmvzevmlteo.supabase.co/functions/v1/admin`
+- Gemini 키 발급 → 시크릿 `ADMIN_PASSWORD` + `GEMINI_API_KEY` (별도 관리자 계정 없음)
+- **CLI 로 배포** (웹 에디터는 한글 깨짐):
+  `supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --no-verify-jwt`
+- 관리자 화면은 앱의 `admin.html` (함수는 JSON API 만 — Supabase 가 함수의 HTML 응답을 막음)
+- 진입: 랜딩페이지 우하단 **⚙** → `admin.html`. 키는 전부 함수 시크릿에만, 폰은 비번만.
 
 ## 4. KOPIS (공연 기본정보 자동 수집)
 
@@ -43,7 +46,7 @@ node data/kopis.js "엘리자벳" 2026 6elisabeth
 
 ```
 KOPIS ─(node data/kopis.js)→ SQL ─┐
-관리자도구 ─(할인 스크린샷)────────┼→ Supabase (venues/seasons)
+관리자도구 ─(할인/배치도 이미지)───┼→ Supabase (venues/seasons)
 수동 SQL ─────────────────────────┘
                                    │
               npm run pull  ───────┤  → data/seed.remote.js (브라우저가 읽음)
