@@ -50,23 +50,30 @@ window.GON_DB = (function(){
   function zoneSpecificity(z){
     return (z.row != null ? 2 : 0)
       + (z.row_from != null || z.row_to != null ? 1 : 0)
+      + (z.row_parity ? 1 : 0)
       + (z.seat_from != null || z.seat_to != null ? 2 : 0)
       + (z.numbers && z.numbers.length ? 3 : 0);
   }
 
-  // 구역 { floor?, row?|row_from?/row_to?, seat_from?/seat_to?, numbers?[] } 에 좌석이 드는가
+  // 구역 { floor?, row?|row_from?/row_to?, row_parity?('even'|'odd'), seat_from?/seat_to?, numbers?[] }
+  // 에 좌석이 드는가
   function seatInZone(z, seat, venue){
     if(z.floor != null && z.floor !== seat.floor) return false;
+    var rIdx = rowIndex(seat.row, venue);
     if(z.row != null){
       return String(z.row).toUpperCase() === String(seat.row).toUpperCase();
     }
     if(z.row_from != null || z.row_to != null){
-      var rIdx = rowIndex(seat.row, venue);
       if(rIdx == null) return false;
       var rf = z.row_from != null ? rowIndex(z.row_from, venue) : null;
       var rt = z.row_to   != null ? rowIndex(z.row_to, venue)   : null;
       if(rf != null && rIdx < rf) return false;
       if(rt != null && rIdx > rt) return false;
+    }
+    if(z.row_parity){
+      if(rIdx == null) return false;
+      if(z.row_parity === 'even' && rIdx % 2 !== 0) return false;
+      if(z.row_parity === 'odd'  && rIdx % 2 !== 1) return false;
     }
     if(z.numbers && z.numbers.length){
       return seat.number != null && z.numbers.indexOf(seat.number) > -1;

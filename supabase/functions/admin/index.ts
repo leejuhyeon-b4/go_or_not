@@ -74,11 +74,15 @@ type GradeZone = {
   floor: number;
   row_from: string | null;
   row_to: string | null;
+  row_parity: "even" | "odd" | null;
   seat_from: number | null;
   seat_to: number | null;
   grade: string;
   source: string;
 };
+function parityOf(v: unknown): "even" | "odd" | null {
+  return v === "even" || v === "odd" ? v : null;
+}
 
 // 등급 구역을 그대로(펼치지 않고) 정리한다. data.js resolveSeat 가 구역을 평가한다.
 //   { floor, row_from?, row_to?, seat_from?, seat_to?, grade }
@@ -88,7 +92,7 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
   const out: GradeZone[] = [];
   for (const z of zones) {
     const zz = z as {
-      floor?: unknown; from_row?: unknown; to_row?: unknown;
+      floor?: unknown; from_row?: unknown; to_row?: unknown; row_parity?: unknown;
       from_seat?: unknown; to_seat?: unknown; grade?: unknown;
     };
     const floor = Number(zz?.floor);
@@ -102,6 +106,7 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
       floor,
       row_from: rowFrom || null,
       row_to: rowTo || rowFrom || null,
+      row_parity: parityOf(zz?.row_parity),
       seat_from: Number.isFinite(sf) ? sf : null,
       seat_to: Number.isFinite(st) ? st : null,
       grade,
@@ -114,9 +119,9 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
 // [{floor, row_from?/from_row?, row_to?/to_row?, numbers:[...]}] 정리 (통로·시야제한 공용)
 function cleanNumberZones(zones: unknown) {
   if (!Array.isArray(zones)) return [];
-  const out: Array<{ floor: number; row_from: string | null; row_to: string | null; numbers: number[]; source: string }> = [];
+  const out: Array<{ floor: number; row_from: string | null; row_to: string | null; row_parity: "even" | "odd" | null; numbers: number[]; source: string }> = [];
   for (const z of zones) {
-    const zz = z as { floor?: unknown; row_from?: unknown; from_row?: unknown; row_to?: unknown; to_row?: unknown; numbers?: unknown };
+    const zz = z as { floor?: unknown; row_from?: unknown; from_row?: unknown; row_to?: unknown; to_row?: unknown; row_parity?: unknown; numbers?: unknown };
     const floor = Number(zz?.floor);
     if (!Number.isFinite(floor)) continue;
     const nums = Array.isArray(zz?.numbers)
@@ -125,7 +130,7 @@ function cleanNumberZones(zones: unknown) {
     if (!nums.length) continue;
     const rf = String((zz?.row_from ?? zz?.from_row) ?? "").trim().toUpperCase();
     const rt = String((zz?.row_to ?? zz?.to_row) ?? "").trim().toUpperCase();
-    out.push({ floor, row_from: rf || null, row_to: rt || rf || null, numbers: nums, source: "관리자 좌석배치도 판독" });
+    out.push({ floor, row_from: rf || null, row_to: rt || rf || null, row_parity: parityOf(zz?.row_parity), numbers: nums, source: "관리자 좌석배치도 판독" });
   }
   return out;
 }
@@ -416,21 +421,26 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
 // 색→등급, 통로 위치는 비전이 부정확하다. 관리자가 아래 형식으로 고쳐 다시 낸다.
 async function geminiExtractSeatmapMemo(b64: string, mime: string) {
   const prompt =
-`이 이미지는 한국 공연장의 좌석배치도다. 보이는 것만, 아래 형식의 줄로만 출력하라. 못 읽으면 그 줄은 생략. 설명·머리말 없이 줄만.
+`이 이미지는 한국 공연장의 좌석배치도다. 보이는 것만, 아래 형식의 줄로만 출력하라. 못 읽으면 그 줄은 생략. 설명·머리말 없이.
+한 줄 = 한 층·한 열컨텍스트. 층은 단독 줄로 "1층" 처럼.
 
-# 블록 (층별 좌/중/우 구역과 좌석번호 범위)
-<층>층 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
+# 블록
+블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
 
-# 등급 (열 범위 + 좌석번호 범위별 등급. 색·범례로 판단, 자신 없으면 대충)
-<층>층 <시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급>
+# 등급 (열범위 생략 = 전 열, 등급만 쓰면 그 열 전체)
+<시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급> / <등급>
 
-# 시야제한 (배치도에 표시돼 있을 때만)
-<층>층 <시작열>-<끝열>열 시야제한 <번호>,<번호>
+# 통로 / 시야제한 (그 열범위에서 통로 옆·시야제한인 좌석번호)
+<시작열>-<끝열>열 통로 <번호>,<번호>
+<시작열>-<끝열>열 시야제한 <번호>,<번호>
 
 예:
-1층 블록 좌 1-8 / 중 9-40 / 우 41-48
-1층 1-15열 9-14번 R / 15-34번 VIP / 35-40번 R
-2층 A-M열 S`;
+1층
+블록 좌 1-8 / 중 9-40 / 우 41-48
+1-15열 9-14번 R / 15-34번 VIP / 35-40번 R
+1-15열 통로 8,9,40,41
+2층
+A-M열 S`;
 
   const data = await geminiText(prompt, b64, mime);
   return { memo: String(data || "").trim() };

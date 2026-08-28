@@ -28,10 +28,10 @@
   .srow input, .srow select { padding:8px; font-size:14px; }
   .rrow { display:grid; grid-template-columns:40px 1fr 44px 52px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
   .rrow input { padding:8px; font-size:14px; }
-  .grow { display:grid; grid-template-columns:34px 1fr 1fr 46px 46px 52px 28px; gap:4px; align-items:center; margin-bottom:6px; }
-  .grow input { padding:7px 6px; font-size:13px; }
-  .nrow { display:grid; grid-template-columns:34px 1fr 1fr 1.4fr 28px; gap:4px; align-items:center; margin-bottom:6px; }
-  .nrow input { padding:7px 6px; font-size:13px; }
+  .grow { display:grid; grid-template-columns:30px 42px 1fr 1fr 42px 42px 48px 22px; gap:3px; align-items:center; margin-bottom:6px; }
+  .grow input, .grow select { padding:7px 4px; font-size:13px; }
+  .nrow { display:grid; grid-template-columns:30px 42px 1fr 1fr 1.5fr 22px; gap:3px; align-items:center; margin-bottom:6px; }
+  .nrow input, .nrow select { padding:7px 4px; font-size:13px; }
   textarea { min-height:auto; }
   .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
   .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
@@ -453,6 +453,10 @@ function addSBlock(b) {
 }
 $("saddBlock").onclick = () => addSBlock();
 
+function parityOpts(v) {
+  return [["", "전"], ["odd", "홀"], ["even", "짝"]]
+    .map(([o, t]) => '<option value="' + o + '"' + ((v || "") === o ? " selected" : "") + ">" + t + "</option>").join("");
+}
 function renderSGrades(list) { $("sgrades").innerHTML = ""; (list || []).forEach(addSGrade); }
 function addSGrade(z) {
   z = z || {};
@@ -461,6 +465,7 @@ function addSGrade(z) {
   div.className = "grow";
   div.innerHTML =
     '<input class="f" type="number" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<select class="par">' + parityOpts(z.row_parity) + '</select>' +
     '<input class="fr" placeholder="시작열" value="' + esc(g("from_row", "row_from")) + '">' +
     '<input class="tr" placeholder="끝열" value="' + esc(g("to_row", "row_to")) + '">' +
     '<input class="fs" type="number" placeholder="시작번" value="' + esc(String(g("from_seat", "seat_from"))) + '">' +
@@ -489,6 +494,7 @@ function addNumRow(box, z) {
   div.className = "nrow";
   div.innerHTML =
     '<input class="f" type="number" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<select class="par">' + parityOpts(z.row_parity) + '</select>' +
     '<input class="fr" placeholder="시작열" value="' + esc(rf) + '">' +
     '<input class="tr" placeholder="끝열" value="' + esc(rt) + '">' +
     '<input class="nm" placeholder="번호 (쉼표)" value="' + esc(nums) + '">' +
@@ -499,64 +505,77 @@ function addNumRow(box, z) {
 function readNumRows(box) {
   return [...box.querySelectorAll(".nrow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
+    row_parity: r.querySelector(".par").value || null,
     row_from: r.querySelector(".fr").value.trim(),
     row_to: r.querySelector(".tr").value.trim(),
     numbers: (r.querySelector(".nm").value || "").split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0),
   })).filter((z) => z.floor != null && z.numbers.length);
 }
 
-/* ---- 메모 파서 ---- */
-function seatRange(tok) { // "1-22" / "A-M" / "5"
-  const p = String(tok).replace(/[열번석]/g, "").split(/[-~–]/);
-  const from = (p[0] || "").trim();
-  const to = p.length > 1 ? ((p[1] || "").trim() || from) : from;
-  return [from, to];
-}
+/* ---- 메모 파서 ----
+   한 줄 = 한 층·한 열컨텍스트. 형식:
+     N층
+     블록 좌 1-8 / 중 9-40 / 우 41-48
+     A-B열 S-E번 등급 / S-E번 등급 / 등급        (열범위 생략 = 전 열, 등급만 = 전 좌석)
+     짝수열 S-E번 등급    /  홀수열 ...
+     A-B열 통로 8,9,40,41                        (통로석/통로)
+     A-B열 시야제한 1,2
+*/
 function parseSeatMemo(text) {
   const out = { blocks: [], grades: [], aisles: [], restr: [] };
   let floor = 1;
   String(text).split("\n").forEach((raw) => {
     let line = raw.trim();
     if (!line || line[0] === "#") return;
-    const fm = line.match(/(\d+)\s*층/);
-    if (fm) floor = parseInt(fm[1], 10) || floor;
-    let rest = line.replace(/^\s*\d+\s*층\s*/, "").trim();
 
-    if (/^블록/.test(rest)) {
-      rest.replace(/^블록\s*:?\s*/, "").split("/").forEach((seg) => {
+    // 층 (단독 줄이든 줄 앞이든)
+    const fm = line.match(/^(\d+)\s*층/);
+    if (fm) { floor = parseInt(fm[1], 10) || floor; line = line.slice(fm[0].length).trim(); }
+    if (!line) return;
+
+    // 블록
+    if (/^블록/.test(line)) {
+      line.replace(/^블록\s*:?\s*/, "").split("/").forEach((seg) => {
         const m = seg.trim().match(/^(\S+?)\s*(\d+)\s*[-~–]\s*(\d+)/);
         if (!m) return;
-        const nm = m[1];
-        const side = /좌|왼|L/i.test(nm) ? "left" : /우|오른|R/i.test(nm) ? "right" : "center";
-        out.blocks.push({ floor, name: nm, side, seat_min: +m[2], seat_max: +m[3] });
+        const side = /좌|왼|L/i.test(m[1]) ? "left" : /우|오른|R/i.test(m[1]) ? "right" : "center";
+        out.blocks.push({ floor, name: m[1], side, seat_min: +m[2], seat_max: +m[3] });
       });
       return;
     }
 
-    // 열범위 (있으면)
-    let rf = "", rt = "";
-    const rm = rest.match(/^([A-Za-z0-9가-힣]+(?:\s*[-~–]\s*[A-Za-z0-9가-힣]+)?)\s*열/);
-    if (rm) { [rf, rt] = seatRange(rm[1]); rest = rest.slice(rm[0].length).trim(); }
+    // 열 컨텍스트: 짝수열 / 홀수열 / A-B열 / A열
+    let rf = "", rt = "", parity = null, m;
+    if ((m = line.match(/^(짝수|홀수)\s*열\s*/))) { parity = m[1] === "짝수" ? "even" : "odd"; line = line.slice(m[0].length).trim(); }
+    else if ((m = line.match(/^([A-Za-z0-9가-힣]+)\s*[-~–]\s*([A-Za-z0-9가-힣]+)\s*열\s*/))) { rf = m[1]; rt = m[2]; line = line.slice(m[0].length).trim(); }
+    else if ((m = line.match(/^([A-Za-z0-9가-힣]+)\s*열\s*/))) { rf = rt = m[1]; line = line.slice(m[0].length).trim(); }
 
-    if (/^통로/.test(rest)) {
-      const nums = (rest.match(/\d+/g) || []).map(Number);
-      if (nums.length) out.aisles.push({ floor, row_from: rf, row_to: rt, numbers: nums });
+    if (/^통로석?/.test(line)) {
+      const nums = (line.match(/\d+/g) || []).map(Number);
+      if (nums.length) out.aisles.push({ floor, row_from: rf, row_to: rt, row_parity: parity, numbers: nums });
       return;
     }
-    if (/^(시야제한|시제|제한)/.test(rest)) {
-      const nums = (rest.match(/\d+/g) || []).map(Number);
-      if (nums.length) out.restr.push({ floor, row_from: rf, row_to: rt, numbers: nums });
+    if (/^(시야제한|시제|제한)/.test(line)) {
+      const nums = (line.match(/\d+/g) || []).map(Number);
+      if (nums.length) out.restr.push({ floor, row_from: rf, row_to: rt, row_parity: parity, numbers: nums });
       return;
     }
-    // 등급: "9-14번 R / 15-34번 VIP"
-    rest.split("/").forEach((seg) => {
-      seg = seg.trim();
-      const m = seg.match(/(\d+(?:\s*[-~–]\s*\d+)?)\s*번?\s*([A-Za-z가-힣]+)/);
-      if (!m) return;
-      const [fs, ts] = seatRange(m[1]);
-      const grade = m[2].replace(/석$/, "").toUpperCase();
-      if (grade) out.grades.push({ floor, from_row: rf, to_row: rt, from_seat: +fs, to_seat: +ts, grade });
-    });
+
+    // 등급: "8-11번 R 12-37번 VIP 38-41번 R"  또는  "/" 구분  또는  등급만
+    const bare = line.match(/^([A-Za-z가-힣]+)\s*$/);
+    if (bare) {
+      const g = bare[1].replace(/석$/, "").toUpperCase();
+      if (g) out.grades.push({ floor, from_row: rf, to_row: rt, row_parity: parity, from_seat: null, to_seat: null, grade: g });
+      return;
+    }
+    const segRe = /(\d+)\s*[-~–]\s*(\d+)\s*번?\s*([A-Za-z가-힣]+)|(\d+)\s*번\s*([A-Za-z가-힣]+)/g;
+    let mm;
+    while ((mm = segRe.exec(line))) {
+      const fs = mm[1] != null ? +mm[1] : +mm[4];
+      const ts = mm[2] != null ? +mm[2] : +mm[4];
+      const g = (mm[3] || mm[5] || "").replace(/석$/, "").toUpperCase();
+      if (g) out.grades.push({ floor, from_row: rf, to_row: rt, row_parity: parity, from_seat: fs, to_seat: ts, grade: g });
+    }
   });
   return out;
 }
@@ -589,6 +608,7 @@ $("ssaveBtn").onclick = async () => {
   });
   const grade_zones = [...document.querySelectorAll("#sgrades .grow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
+    row_parity: r.querySelector(".par").value || null,
     from_row: r.querySelector(".fr").value.trim(),
     to_row: r.querySelector(".tr").value.trim(),
     from_seat: r.querySelector(".fs").value ? Number(r.querySelector(".fs").value) : null,

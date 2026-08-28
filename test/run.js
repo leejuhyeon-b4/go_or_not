@@ -107,6 +107,15 @@ eq(rs.grade, null, 'resolveSeat 등급 미수집 → null (false 아님)');
 const asz = { venue_id: 'yes24-stage-1', aisle_seats: [{ floor: 1, row_from: 'A', row_to: 'Z', numbers: [11, 12] }] };
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 11 }).is_aisle, true, 'aisle_seats 매칭 → true');
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 15 }).is_aisle, false, 'aisle_seats 명단 있으면 false 도 확정');
+
+// 짝수열/홀수열 — 통로 번호가 열 홀짝에 따라 1 밀리는 극장
+const par = { venue_id: 'yes24-stage-1', aisle_seats: [
+  { floor: 1, row_parity: 'even', numbers: [16, 32] },
+  { floor: 1, row_parity: 'odd', numbers: [15, 31] },
+] };
+eq(DB.resolveSeat(par, { floor: 1, row: 'B', number: 16 }).is_aisle, true, '짝수열(B=2) 16번 → 통로');
+eq(DB.resolveSeat(par, { floor: 1, row: 'B', number: 15 }).is_aisle, false, '짝수열 15번 → 통로 아님');
+eq(DB.resolveSeat(par, { floor: 1, row: 'C', number: 15 }).is_aisle, true, '홀수열(C=3) 15번 → 통로');
 ok(rs.unknown.includes('좌석 등급 (좌석배치도 미수집)'), 'resolveSeat unknown 에 등급 누락');
 
 // 회차 제한 할인 (applies_to) → 기준선 필터
