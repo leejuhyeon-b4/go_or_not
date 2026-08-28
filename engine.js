@@ -489,22 +489,35 @@ window.GON = (function(){
     };
     const where = whereFull || '이 자리';
 
+    // 좌석배치도로 아직 못 채운 것만 골라 한 문장으로. 채워졌으면 아무 말 안 한다.
+    const gaps = [];
+    if(paidGrade == null)            gaps.push('좌석 등급');
+    if(sideZone == null && b.seat.side_block == null) gaps.push('블럭 경계');
+    const dataCaveat = gaps.length
+      ? ' ' + gaps.join('과 ') + ' 정보는 이 공연 좌석배치도에 아직 없어 그 부분은 판단에 넣지 않았습니다.'
+      : '';
+
     let placard, detail;
     if(tier >= 2){
       placard = place(', 좋아요');
-      detail = where + ' 자리입니다. 연뮤덕 기준으로 보면 무대와의 거리도, 전체를 한 번에 담는 폭도 무리가 없는 구간입니다. 오늘 고르신 선호 좌석과도 크게 어긋나지 않습니다. 등급 정보는 좌석배치도가 없어 확인하지 못했습니다.' + glassNote;
+      detail = where + ' 자리입니다. 연뮤덕 기준으로 보면 무대와의 거리도, 전체를 한 번에 담는 폭도 무리가 없는 구간이고, 오늘 고르신 선호 좌석과도 크게 어긋나지 않습니다. 시야 축에서는 좋은 쪽으로 봅니다.' + glassNote + dataCaveat;
     } else if(tier === 1){
       placard = place(', 무난해요');
-      detail = where + ' 자리입니다. 오늘 목적에 크게 어긋나지 않는 위치이고, 아쉬운 부분이 있더라도 관람 자체를 방해할 정도는 아닙니다. 시야 축에서는 무난한 쪽으로 봅니다.' + glassNote + ' 좌석배치도 데이터가 없어 확실하지는 않습니다.';
+      detail = where + ' 자리입니다. 오늘 목적에 크게 어긋나지 않는 위치이고, 아쉬운 부분이 있더라도 관람 자체를 방해할 정도는 아닙니다. 시야 축에서는 무난한 쪽으로 봅니다.' + glassNote + dataCaveat;
     } else if(tier === 0){
       placard = place('입니다');
-      detail = where + ' 자리입니다. 시야 축에서 특별히 좋다고도 나쁘다고도 말하기 어려운 구간이라 중립으로 두었습니다. 좌우 어느 블럭이 유리한지는 오늘 연출에 달린 문제라 판단하지 않았고, 블럭 경계는 이 공연 좌석배치도가 없어 극장 기본 배치로 추정했습니다.' + glassNote;
+      detail = where + ' 자리입니다. 시야 축에서 특별히 좋다고도 나쁘다고도 말하기 어려운 구간이라 중립으로 두었습니다. 좌우 어느 블럭이 유리한지는 오늘 연출에 달린 문제라 판단하지 않았습니다.' + glassNote + dataCaveat;
     } else if(tier === -1){
       placard = place(', 조금 멀어요');
-      detail = where + ' 자리입니다. 무대와 거리가 있어 표정 단위의 관찰은 어려운 구간이고, 오늘 고르신 선호와도 조금 어긋납니다. 다만 어느 쪽 블럭이 유리한지는 오늘 연출을 모르므로 판단하지 않았습니다.' + glassNote;
+      detail = where + ' 자리입니다. 무대와 거리가 있어 표정 단위의 관찰은 어려운 구간이고, 오늘 고르신 선호와도 조금 어긋납니다. 다만 어느 쪽 블럭이 유리한지는 오늘 연출을 모르므로 판단하지 않았습니다.' + glassNote + dataCaveat;
     } else {
       placard = place(', 각도 아쉬워요');
-      detail = where + ' 자리입니다. 거리보다 내려다보는 각도가 이 자리의 성격을 결정하는 구간입니다. 시야 축에서는 오늘 목적과 가장 멀다고 봅니다.' + glassNote + ' 이 자리가 오늘 연출과 어떻게 맞물리는지는 확인된 정보가 없습니다.';
+      detail = where + ' 자리입니다. 거리보다 내려다보는 각도가 이 자리의 성격을 결정하는 구간이고, 시야 축에서는 오늘 목적과 가장 멀다고 봅니다. 이 자리가 오늘 연출과 어떻게 맞물리는지까지는 판단하지 않았습니다.' + glassNote + dataCaveat;
+    }
+
+    // 좌석 데이터가 다 채워져 캐비앗이 없으면 서술이 짧아진다 — 100자 계약을 맞춘다
+    if(Array.from(detail).length < 102){
+      detail += ' 무대와의 거리, 객석 폭, 오늘 고르신 선호 좌석 세 가지를 함께 보고 이 등급으로 정했습니다.';
     }
 
     // 사이드 감점 서술을 붙인다 (180자 계약 — 넘치면 끝 문장 하나를 뺀다)
@@ -615,10 +628,8 @@ window.GON = (function(){
 
     if(valueScore != null){
       const bn = b.payment.baseline_name;
-      const bnote = b.payment.baseline_note;
       const bestPhrase = baseline > 0
-        ? '오늘 받으실 수 있었던 최선은 ' + (bn ? bn + ' ' : '') + baseline + '%' +
-          (bnote ? ' (' + bnote + ')' : '') + '였습니다.'
+        ? '오늘 받으실 수 있었던 최선은 ' + (bn ? bn + ' ' : '') + baseline + '%였습니다.'
         : '오늘은 더 받을 수 있는 할인이 없었습니다.';
       priceLine = (b.payment.list_price_grade ? b.payment.list_price_grade + '석 ' : '') +
                   '정가 ' + won(list) +
@@ -713,6 +724,13 @@ window.GON = (function(){
       detail += ' ' + cancel.reason + '.';
     }
     if(extra) detail += ' 기타란의 부대비용 ' + won(extra) + '도 함께 나갑니다.';
+
+    // 100~180자 계약 — 넘치면 뒤 문장부터 뺀다 (앞 = 지불·정가, 뒤 = 손실·수수료)
+    if(Array.from(detail).length > 180){
+      const parts = detail.split('. ');
+      while(parts.length > 2 && Array.from(parts.join('. ') + '.').length > 180) parts.pop();
+      detail = parts.join('. ').replace(/\.?$/, '.');
+    }
 
     // 정가·사다리·등급이 모두 DB에서 왔으면 확신을 올린다
     const solid = list != null && b.payment.list_price_verified !== false &&
