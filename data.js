@@ -12,9 +12,15 @@
 window.GON_DB = (function(){
   "use strict";
 
-  const VENUES   = window.GON_VENUES   || {};
-  const SEASONS  = window.GON_SEASONS  || [];
-  const SEATMAPS = window.GON_SEATMAPS || {};
+  // window.GON_* 는 seed.js(폴백) → seed.remote.js(빌드) → seed.live.js(런타임) 순으로 쌓인다.
+  // seed.live.js 가 런타임에 덮으면 GON_DB.reload() 로 다시 읽는다.
+  let VENUES, SEASONS, SEATMAPS;
+  function _loadData(){
+    VENUES   = window.GON_VENUES   || {};
+    SEASONS  = window.GON_SEASONS  || [];
+    SEATMAPS = window.GON_SEATMAPS || {};
+  }
+  _loadData();
 
   const HANGUL_ROWS = '가나다라마바사아자차카타파하';
 
@@ -562,7 +568,8 @@ window.GON_DB = (function(){
     seasonProgress: seasonProgress,
     cancellationPolicy: cancellationPolicy,
     coverage: coverage,
-    VENUES: VENUES,
-    SEASONS: SEASONS
+    reload: _loadData,          // seed.live.js 가 런타임 오버레이 후 호출
+    get VENUES(){ return VENUES; },
+    get SEASONS(){ return SEASONS; }
   };
 })();

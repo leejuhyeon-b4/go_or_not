@@ -46,12 +46,17 @@ node data/kopis.js "엘리자벳" 2026 6elisabeth
 
 ```
 KOPIS ─(node data/kopis.js)→ SQL ─┐
-관리자도구 ─(할인/배치도 이미지)───┼→ Supabase (venues/seasons)
+관리자도구 ─(할인/배치도 메모)─────┼→ Supabase (venues/seasons)
 수동 SQL ─────────────────────────┘
                                    │
-              npm run pull  ───────┤  → data/seed.remote.js (브라우저가 읽음)
+          ┌────────────────────────┤
+   상담 앱 로드 시 data/seed.live.js 가 Supabase 직접 조회 (항상 최신, 터미널 불필요)
+   npm run pull (선택) → data/seed.remote.js  (오프라인·커밋 스냅샷용)
                                    │
 상담(index.html, 로그인) → consult.html → consultations 테이블
 ```
+
+관리자 도구에서 저장하면 상담 앱을 **새로고침만** 하면 반영된다. `npm run pull` 은
+오프라인 스냅샷이 필요할 때만.
 
 `.env` 값은 `.env.example` 참고. 브라우저용 공개 설정은 `data/supabase-config.js` (커밋됨).

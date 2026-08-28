@@ -999,13 +999,14 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="data/supabase-config.js"></script>
 
-<!-- 1회성 수집 데이터 (PRD §9.2) — 상담 시점에는 크롤링하지 않고 조회만 한다 -->
+<!-- 수집 데이터 (PRD §9.2) — 예매처 크롤링은 안 하고, 우리 Supabase 조회만 한다.
+     seed.js(폴백) → seed.remote.js('npm run pull' 로 빌드, 선택) → data.js
+     → seed.live.js(로드 시 Supabase 직접 조회, 항상 최신). -->
 <script src="data/seed.js"></script>
-<!-- Supabase 오버레이 (있으면 seed.js 위에 덮음). 'npm run pull' 이 생성.
-     아직 안 만들었으면 file:// 콘솔에 404 하나 뜰 뿐 동작엔 영향 없다. -->
 <script src="data/seed.remote.js"></script>
 <script src="data.js"></script>
 <script src="data/auth.js"></script>
+<script src="data/seed.live.js"></script>
 
 <script>
 (function(){
@@ -1476,6 +1477,14 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 
   fillDiscountButtons();
   syncSeatGrade();
+
+  // Supabase 라이브 데이터가 늦게 도착하면(seed.live.js) 폼을 다시 그린다
+  window.addEventListener('gon:data', ()=>{
+    fillDiscountButtons();
+    syncSeatGrade();
+    syncTicketFields();
+    updateProgress();
+  });
 
   /* ---------------------------------------------------------
      완성도 계산 (필수 9항목) → 스포트라이트 반영
