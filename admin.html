@@ -26,7 +26,7 @@
   .drow .lim { display:flex; align-items:center; gap:3px; font-size:12px; color:var(--mut); }
   .drow .lim input { width:auto; padding:0; }
   .drow input, .drow select { padding:8px; font-size:14px; }
-  .srow { display:grid; grid-template-columns:44px 1fr 48px 56px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
+  .srow { display:grid; grid-template-columns:30px 1fr 40px 40px 42px 46px 46px 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .srow input, .srow select { padding:8px; font-size:14px; }
   .rrow { display:grid; grid-template-columns:40px 1fr 44px 52px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
   .rrow input { padding:8px; font-size:14px; }
@@ -113,12 +113,12 @@
     </div>
     <div class="card">
       <label for="seatMemo">배치도 메모 — 한 줄에 하나. Gemini 초안이 채워지면 직접 수정</label>
-      <textarea id="seatMemo" rows="9" placeholder="1층 블록 좌 1-8 / 중 9-40 / 우 41-48&#10;1층 1-22열 9-14번 R / 15-34번 VIP / 35-40번 R&#10;1층 1-22열 통로 8,9,40,41&#10;2층 A-M열 S&#10;1층 1-3열 시야제한 1,2"></textarea>
+      <textarea id="seatMemo" rows="10" placeholder="1층&#10;1-3열 블록 좌 8-13 / 중 14-35 / 우 36-41&#10;7-22열 블록 좌 1-8 / 중 9-40 / 우 41-48&#10;1-3열 8-13번 R / 14-35번 VIP / 36-41번 R&#10;홀수열 통로 15,31&#10;1-3열 시야제한 1,2"></textarea>
       <button id="seatMemoParse">↓ 이 메모대로 아래 표 채우기</button>
-      <div class="hint">블록줄 <code>N층 블록 좌 1-8 / 중 9-40 / 우 41-48</code> ·
-        등급줄 <code>N층 A-B열 S-E번 등급 / S-E번 등급</code> ·
-        통로줄 <code>N층 A-B열 통로 8,9,40,41</code> ·
-        시야제한줄 <code>N층 A-B열 시야제한 1,2</code>. 열범위 생략 = 전 열.</div>
+      <div class="hint">
+        블록 <code>[A-B열] 블록 좌 1-8 / 중 9-40 / 우 41-48</code> — 앞열이 좁으면 열범위별로 여러 줄<br>
+        등급 <code>A-B열 8-13번 R / 14-35번 VIP / 36-41번 R</code> (좌석범위 없이 등급만 = 그 열 전체)<br>
+        통로 <code>A-B열 통로 8,9,40,41</code> · 시야제한 <code>A-B열 시야제한 1,2</code> · <code>짝수열</code>/<code>홀수열</code> 지원. 열범위 생략 = 전 열.</div>
       <div id="seatMemoMsg" class="msg hidden"></div>
     </div>
     <div id="seditCard" class="card hidden">
@@ -436,12 +436,14 @@ function renderSBlocks(list) {
   (list || []).forEach(addSBlock);
 }
 function addSBlock(b) {
-  b = b || { floor: 1, name: "", side: "center", seat_min: "", seat_max: "" };
+  b = b || {};
   const div = document.createElement("div");
   div.className = "srow";
   div.innerHTML =
     '<input class="f" type="number" placeholder="층" value="' + (b.floor != null ? b.floor : "") + '">' +
     '<input class="n" placeholder="블록명" value="' + esc(b.name || "") + '">' +
+    '<input class="fr" placeholder="열~" value="' + esc(b.row_from || "") + '">' +
+    '<input class="tr" placeholder="~열" value="' + esc(b.row_to || "") + '">' +
     '<select class="sd">' +
       [["left", "좌"], ["center", "중"], ["right", "우"]].map(([v, t]) =>
         '<option value="' + v + '"' + (b.side === v ? " selected" : "") + ">" + t + "</option>").join("") +
@@ -534,22 +536,22 @@ function parseSeatMemo(text) {
     if (fm) { floor = parseInt(fm[1], 10) || floor; line = line.slice(fm[0].length).trim(); }
     if (!line) return;
 
-    // 블록
-    if (/^블록/.test(line)) {
-      line.replace(/^블록\s*:?\s*/, "").split("/").forEach((seg) => {
-        const m = seg.trim().match(/^(\S+?)\s*(\d+)\s*[-~–]\s*(\d+)/);
-        if (!m) return;
-        const side = /좌|왼|L/i.test(m[1]) ? "left" : /우|오른|R/i.test(m[1]) ? "right" : "center";
-        out.blocks.push({ floor, name: m[1], side, seat_min: +m[2], seat_max: +m[3] });
-      });
-      return;
-    }
-
-    // 열 컨텍스트: 짝수열 / 홀수열 / A-B열 / A열
+    // 열 컨텍스트: 짝수열 / 홀수열 / A-B열 / A열 (블록줄도 앞에 열범위 올 수 있음)
     let rf = "", rt = "", parity = null, m;
     if ((m = line.match(/^(짝수|홀수)\s*열\s*/))) { parity = m[1] === "짝수" ? "even" : "odd"; line = line.slice(m[0].length).trim(); }
     else if ((m = line.match(/^([A-Za-z0-9가-힣]+)\s*[-~–]\s*([A-Za-z0-9가-힣]+)\s*열\s*/))) { rf = m[1]; rt = m[2]; line = line.slice(m[0].length).trim(); }
     else if ((m = line.match(/^([A-Za-z0-9가-힣]+)\s*열\s*/))) { rf = rt = m[1]; line = line.slice(m[0].length).trim(); }
+
+    // 블록 — "블록 좌 8-13 / 중 14-35 / 우 36-41" (앞에 열범위 있으면 그 열에만 적용)
+    if (/^블록/.test(line)) {
+      line.replace(/^블록\s*:?\s*/, "").split("/").forEach((seg) => {
+        const bm = seg.trim().match(/^(\S+?)\s*(\d+)\s*[-~–]\s*(\d+)/);
+        if (!bm) return;
+        const side = /좌|왼|L/i.test(bm[1]) ? "left" : /우|오른|R/i.test(bm[1]) ? "right" : "center";
+        out.blocks.push({ floor, name: bm[1], side, seat_min: +bm[2], seat_max: +bm[3], row_from: rf, row_to: rt });
+      });
+      return;
+    }
 
     if (/^통로석?/.test(line)) {
       const nums = (line.match(/\d+/g) || []).map(Number);
@@ -605,6 +607,8 @@ $("ssaveBtn").onclick = async () => {
       name, side: r.querySelector(".sd").value,
       seat_min: Number(r.querySelector(".mn").value),
       seat_max: Number(r.querySelector(".mx").value),
+      row_from: r.querySelector(".fr").value.trim(),
+      row_to: r.querySelector(".tr").value.trim(),
     });
   });
   const grade_zones = [...document.querySelectorAll("#sgrades .grow")].map((r) => ({

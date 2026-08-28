@@ -183,6 +183,22 @@ window.GON_DB = (function(){
       return out;
     }
 
+    // 열 범위별 블럭 세트를 쓰는 극장(앞열이 좁은 부채꼴) — 이 좌석 열에 맞는 세트만
+    if(blocks.some(function(bk){ return bk.row_from != null || bk.row_to != null; })){
+      var rIdx = rowIndex(seat.row, venue);
+      var scoped = blocks.filter(function(bk){
+        if(bk.row_from == null && bk.row_to == null) return false;
+        if(rIdx == null) return true;
+        var rf = bk.row_from != null ? rowIndex(bk.row_from, venue) : null;
+        var rt = bk.row_to   != null ? rowIndex(bk.row_to, venue)   : null;
+        if(rf != null && rIdx < rf) return false;
+        if(rt != null && rIdx > rt) return false;
+        return true;
+      });
+      if(scoped.length) blocks = scoped;
+      else blocks = blocks.filter(function(bk){ return bk.row_from == null && bk.row_to == null; });
+    }
+
     // ② 블럭 매칭 — 표기(zone/block) 우선, 실패 시 좌석번호가 드는 범위
     let blk = null;
     if(hint){

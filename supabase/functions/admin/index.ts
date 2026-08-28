@@ -285,8 +285,10 @@ Deno.serve(async (req) => {
               ? (b as { side: string }).side
               : "center";
             const d = blockDefaults(side);
-            const bb = b as { name?: string; seat_min?: unknown; seat_max?: unknown };
-            return {
+            const bb = b as { name?: string; seat_min?: unknown; seat_max?: unknown; row_from?: unknown; row_to?: unknown };
+            const rf = String(bb?.row_from ?? "").trim().toUpperCase();
+            const rt = String(bb?.row_to ?? "").trim().toUpperCase();
+            const row: Record<string, unknown> = {
               name: String(bb?.name ?? "").trim(),
               side,
               seat_min: Number(bb?.seat_min),
@@ -295,6 +297,9 @@ Deno.serve(async (req) => {
               wall_end: d.wall_end,
               aliases: aliasesFor(String(bb?.name ?? ""), side, fk),
             };
+            if (rf) row.row_from = rf;
+            if (rt || rf) row.row_to = rt || rf;
+            return row;
           })
           .filter((b) => b.name && Number.isFinite(b.seat_min) && Number.isFinite(b.seat_max));
         if (arr.length) cleanFloors[fk] = arr;
@@ -429,8 +434,9 @@ async function geminiExtractSeatmapMemo(b64: string, mime: string) {
 `이 이미지는 한국 공연장의 좌석배치도다. 보이는 것만, 아래 형식의 줄로만 출력하라. 못 읽으면 그 줄은 생략. 설명·머리말 없이.
 한 줄 = 한 층·한 열컨텍스트. 층은 단독 줄로 "1층" 처럼.
 
-# 블록
+# 블록 (앞열이 좁은 부채꼴이면 열범위별로 여러 줄)
 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
+<시작열>-<끝열>열 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
 
 # 등급 (열범위 생략 = 전 열, 등급만 쓰면 그 열 전체)
 <시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급> / <등급>
