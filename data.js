@@ -45,6 +45,14 @@ window.GON_DB = (function(){
     return venueId ? (VENUES[venueId] || null) : null;
   }
 
+  // seat_grades 구역이 얼마나 구체적인가 — 좁은 구역이 넓은 구역을 이긴다
+  // (예: "양끝 R" 이 "이 열은 VIP" 보다 우선)
+  function zoneSpecificity(z){
+    return (z.row != null ? 2 : 0)
+      + (z.row_from != null || z.row_to != null ? 1 : 0)
+      + (z.seat_from != null || z.seat_to != null ? 2 : 0);
+  }
+
   /* ---------------------------------------------------------
      열 표기 해석 — 극장마다 체계가 다르다
   --------------------------------------------------------- */
@@ -194,10 +202,31 @@ window.GON_DB = (function(){
     const venue = season ? findVenue(season.venue_id) : null;
 
     // ① 좌석 → 등급 (season_seat_grades)
+    //   구역(zone)은 { floor, row_from?, row_to?, seat_from?, seat_to?, grade } 형태.
+    //   같은 열에서도 가운데 VIP·양끝 R 처럼 좌석번호로 갈리는 극장이 있어 seat 범위까지 본다.
+    //   구식 { floor, row, grade } (열 단위) 도 그대로 지원.
     if(season && season.seat_grades && season.seat_grades.length){
-      const g = season.seat_grades.find(x =>
-        x.floor === seat.floor && String(x.row).toUpperCase() === String(seat.row).toUpperCase());
-      if(g){ out.grade = g.grade; out.sources.push(g.source); }
+      const rIdx = rowIndex(seat.row, venue);
+      const zones = season.seat_grades.slice().sort((a, b) => zoneSpecificity(b) - zoneSpecificity(a));
+      const g = zones.find(function(z){
+        if(z.floor != null && z.floor !== seat.floor) return false;
+        if(z.row != null){
+          if(String(z.row).toUpperCase() !== String(seat.row).toUpperCase()) return false;
+        } else if(z.row_from != null || z.row_to != null){
+          if(rIdx == null) return false;
+          var rf = z.row_from != null ? rowIndex(z.row_from, venue) : null;
+          var rt = z.row_to   != null ? rowIndex(z.row_to, venue)   : null;
+          if(rf != null && rIdx < rf) return false;
+          if(rt != null && rIdx > rt) return false;
+        }
+        if(z.seat_from != null || z.seat_to != null){
+          if(seat.number == null) return false;
+          if(z.seat_from != null && seat.number < z.seat_from) return false;
+          if(z.seat_to   != null && seat.number > z.seat_to) return false;
+        }
+        return true;
+      });
+      if(g){ out.grade = g.grade; if(g.source) out.sources.push(g.source); }
     }
     if(out.grade == null) out.unknown.push('좌석 등급 (좌석배치도 미수집)');
 

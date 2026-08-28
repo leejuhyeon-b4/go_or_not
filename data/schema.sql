@@ -45,7 +45,8 @@ create table if not exists seasons (
   discounts_verified    boolean default false,
   discounts_updated_at  timestamptz,                    -- 관리자 도구가 할인 목록 저장한 시각 (UI 표시용)
   discount_proof_policy text,                           -- FULL_PRICE | GRADE_CHANGE | UNKNOWN
-  seat_grades           jsonb   default '[]'::jsonb,    -- [{floor,row,grade,source}] · 관리자 좌석배치도 판독이 등급 구역(열 범위)을 열별로 펼쳐 채움
+  seat_grades           jsonb   default '[]'::jsonb,    -- 등급 구역: [{floor, row_from?, row_to?, seat_from?, seat_to?, grade, source}]
+                                                        --   같은 열 가운데 VIP·양끝 R 같은 경우를 seat 범위로. 구식 {floor,row,grade} 도 지원. 좁은 구역 우선
   cancellation_policy   jsonb,
   source                text,
   created_at            timestamptz default now()

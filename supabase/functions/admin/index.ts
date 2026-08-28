@@ -70,58 +70,43 @@ function blockDefaults(side: string) {
   if (side === "right") return { aisle_end: "min", wall_end: "max" };
   return { aisle_end: null, wall_end: null };
 }
-// "A"~"M" / "1"~"20" / "가"~"바" 사이의 열 라벨을 펼친다. data.js seat_grades 매칭이
-// 열 단위 정확 일치라, 등급 구역(열 범위)을 여기서 열별로 풀어 저장한다.
-const HANGUL_ROWS = ["가", "나", "다", "라", "마", "바", "사", "아", "자", "차", "카", "타", "파", "하"];
-function alphaIdx(s: string) {
-  let n = 0;
-  for (const c of s) n = n * 26 + (c.charCodeAt(0) - 64);
-  return n;
-}
-function alphaLabel(n: number) {
-  let s = "";
-  while (n > 0) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
-  return s;
-}
-function rowLabelsBetween(from: string, to: string): string[] {
-  const f = String(from ?? "").trim();
-  const t = String(to ?? "").trim();
-  if (!f) return [];
-  if (!t || t === f) return [f.toUpperCase()];
-  if (/^\d+$/.test(f) && /^\d+$/.test(t)) {
-    const a = +f, b = +t, out: string[] = [];
-    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.push(String(i));
-    return out;
-  }
-  const fu = f.toUpperCase(), tu = t.toUpperCase();
-  if (/^[A-Z]+$/.test(fu) && /^[A-Z]+$/.test(tu)) {
-    const a = alphaIdx(fu), b = alphaIdx(tu), out: string[] = [];
-    for (let i = Math.min(a, b); i <= Math.max(a, b); i++) out.push(alphaLabel(i));
-    return out;
-  }
-  if (HANGUL_ROWS.includes(f) && HANGUL_ROWS.includes(t)) {
-    const a = HANGUL_ROWS.indexOf(f), b = HANGUL_ROWS.indexOf(t);
-    return HANGUL_ROWS.slice(Math.min(a, b), Math.max(a, b) + 1);
-  }
-  return [fu]; // 못 펼치면 시작 열만
-}
+type GradeZone = {
+  floor: number;
+  row_from: string | null;
+  row_to: string | null;
+  seat_from: number | null;
+  seat_to: number | null;
+  grade: string;
+  source: string;
+};
 
-// [{floor, from_row, to_row, grade}] → [{floor, row, grade, source}] (열별)
-function expandGradeZones(zones: unknown): Array<{ floor: number; row: string; grade: string; source: string }> {
+// 등급 구역을 그대로(펼치지 않고) 정리한다. data.js resolveSeat 가 구역을 평가한다.
+//   { floor, row_from?, row_to?, seat_from?, seat_to?, grade }
+//   같은 열에서도 가운데 VIP·양끝 R 처럼 좌석번호로 갈리는 경우를 담기 위해 seat 범위도 받는다.
+function cleanGradeZones(zones: unknown): GradeZone[] {
   if (!Array.isArray(zones)) return [];
-  const out: Array<{ floor: number; row: string; grade: string; source: string }> = [];
-  const seen = new Set<string>();
+  const out: GradeZone[] = [];
   for (const z of zones) {
-    const zz = z as { floor?: unknown; from_row?: unknown; to_row?: unknown; grade?: unknown };
+    const zz = z as {
+      floor?: unknown; from_row?: unknown; to_row?: unknown;
+      from_seat?: unknown; to_seat?: unknown; grade?: unknown;
+    };
     const floor = Number(zz?.floor);
     const grade = String(zz?.grade ?? "").trim().toUpperCase();
     if (!Number.isFinite(floor) || !grade) continue;
-    for (const row of rowLabelsBetween(String(zz?.from_row ?? ""), String(zz?.to_row ?? ""))) {
-      const key = floor + "|" + row;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push({ floor, row, grade, source: "관리자 좌석배치도 판독" });
-    }
+    const rowFrom = String(zz?.from_row ?? "").trim().toUpperCase();
+    const rowTo = String(zz?.to_row ?? "").trim().toUpperCase();
+    const sf = Number(zz?.from_seat);
+    const st = Number(zz?.to_seat);
+    out.push({
+      floor,
+      row_from: rowFrom || null,
+      row_to: rowTo || rowFrom || null,
+      seat_from: Number.isFinite(sf) ? sf : null,
+      seat_to: Number.isFinite(st) ? st : null,
+      grade,
+      source: "관리자 좌석배치도 판독",
+    });
   }
   return out;
 }
@@ -327,8 +312,8 @@ Deno.serve(async (req) => {
       if (error) throw new HttpError(500, error.message);
       if (!data?.length) throw new HttpError(404, `'${venue_id}' 극장 저장 실패.`);
 
-      // 등급 구역 → 열별 seat_grades → 시즌에 저장 (등급은 공연마다 다름)
-      const seatGrades = expandGradeZones(grade_zones);
+      // 등급 구역 → 시즌 seat_grades 에 저장 (등급 레이아웃은 공연마다 다름)
+      const seatGrades = cleanGradeZones(grade_zones);
       if (seatGrades.length) {
         const { error: sgErr } = await admin
           .from("seasons")
@@ -418,11 +403,13 @@ async function geminiExtractSeatmap(b64: string, mime: string) {
   - name: 배치도에 표기된 구역명 그대로 (예 "OP", "A블록", "1층 중앙")
   - side: 무대에서 객석을 봤을 때 "left" | "center" | "right"
   - seat_min, seat_max: 그 블록의 좌석 번호 범위 (정수). 범위를 못 읽으면 그 블록은 넣지 마라.
-- grade_zones: 좌석 등급(색상/범례로 구분됨)이 열 범위로 표시되면:
+- grade_zones: 좌석 등급(색상/범례로 구분)을 구역으로. 각 구역:
   - floor: 층 번호
-  - from_row, to_row: 그 등급이 시작·끝나는 열 라벨 그대로 (예 "A"~"M", "1"~"12", "가"~"바"). 한 열뿐이면 둘을 같게.
+  - from_row, to_row: 그 등급 구역의 열 범위 라벨 그대로 (예 "A"~"M", "1"~"12"). 전 열이면 비운다.
+  - from_seat, to_seat: **같은 열에서도 좌석번호로 등급이 갈리면** 그 번호 범위 (예 가운데 3~18 = VIP,
+    양끝 1~2·19~20 = R). 좌석번호 제한이 없으면 비운다.
   - grade: 등급 코드 (VIP / R / S / A / B). 범례에서 색→등급을 읽어라.
-  같은 층에서 앞줄이 R, 뒷줄이 S 처럼 나뉘면 각각 항목. 등급 정보가 없으면 빈 배열.
+  나뉘는 방식이 여러 개면(앞뒤로도 나뉘고 좌우로도 나뉨) 구역을 여러 개로 쪼개라. 등급 정보 없으면 빈 배열.
 - restricted_seats: 배치도에 '시야제한', '시야제한석', '제한관람', 'restricted' 등으로 표시된 좌석/구역:
   - floor, block(구역명), row(열), numbers(해당 열의 좌석번호 배열), reason. 행·번호가 특정되지 않으면 block 만 채운다.`;
 
@@ -460,9 +447,11 @@ async function geminiExtractSeatmap(b64: string, mime: string) {
                 floor: { type: "INTEGER" },
                 from_row: { type: "STRING" },
                 to_row: { type: "STRING" },
+                from_seat: { type: "INTEGER" },
+                to_seat: { type: "INTEGER" },
                 grade: { type: "STRING" },
               },
-              required: ["floor", "from_row", "to_row", "grade"],
+              required: ["floor", "grade"],
             },
           },
           restricted_seats: {

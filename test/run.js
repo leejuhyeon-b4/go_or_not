@@ -80,6 +80,24 @@ eq(lp && lp.price, 70000, 'listPrice 해몽가 R = 70000');
 eq(DB.listPrice(haemong, 'ZZZ').price, 70000, 'listPrice 단일 등급 시즌 → 폴백');
 eq(DB.listPrice(null, 'R'), null, 'listPrice 시즌 없음 → null');
 
+// seat_grades 구역 매칭 — 열범위 + 좌석번호범위, 좁은 구역 우선
+const gz = {
+  season_id: 'gz-test', work_title: 'GZ', venue_id: 'yes24-stage-1',
+  prices: { VIP: 180000, R: 150000 },
+  seat_grades: [
+    { floor: 1, row_from: 'A', row_to: 'V', grade: 'VIP' },           // 넓은 구역
+    { floor: 1, row_from: 'A', row_to: 'V', seat_from: 1, seat_to: 2, grade: 'R' },   // 양끝
+    { floor: 1, row_from: 'A', row_to: 'V', seat_from: 19, seat_to: 20, grade: 'R' },
+  ],
+};
+eq(DB.resolveSeat(gz, { floor: 1, row: 'C', number: 10 }).grade, 'VIP', 'seat_grades 가운데 → VIP');
+eq(DB.resolveSeat(gz, { floor: 1, row: 'C', number: 1 }).grade, 'R', 'seat_grades 왼쪽 끝 → R (좁은 구역 우선)');
+eq(DB.resolveSeat(gz, { floor: 1, row: 'C', number: 20 }).grade, 'R', 'seat_grades 오른쪽 끝 → R');
+eq(DB.resolveSeat(gz, { floor: 1, row: 'C', number: null }).grade, 'VIP', '번호 없으면 열 구역만 → VIP');
+eq(DB.resolveSeat(gz, { floor: 2, row: 'C', number: 1 }).grade, null, '다른 층 → 구역 없음');
+eq(DB.resolveSeat({ seat_grades: [{ floor: 1, row: 'B', grade: 'S' }] }, { floor: 1, row: 'b', number: 3 }).grade,
+   'S', '구식 {floor,row,grade} 형태도 매칭');
+
 // resolveSeat — 통로/등급/시야제한 + 사이드
 const rs = DB.resolveSeat(haemong, { floor: 1, row: 'B', number: 16 });
 eq(rs.is_aisle, true, 'resolveSeat B16 통로석 (verified_seats)');

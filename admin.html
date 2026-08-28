@@ -28,6 +28,8 @@
   .srow input, .srow select { padding:8px; font-size:14px; }
   .rrow { display:grid; grid-template-columns:40px 1fr 44px 52px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
   .rrow input { padding:8px; font-size:14px; }
+  .grow { display:grid; grid-template-columns:34px 1fr 1fr 46px 46px 52px 28px; gap:4px; align-items:center; margin-bottom:6px; }
+  .grow input { padding:7px 6px; font-size:13px; }
   .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
   .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
   .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
@@ -108,9 +110,11 @@
       <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
         <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
       <div id="sblocks"></div>
-      <div class="between" style="margin-top:14px"><label>등급 구역 — 층 / 시작열 / 끝열 / 등급</label>
+      <div class="between" style="margin-top:14px"><label>등급 구역 — 층 / 열범위 / 좌석번호범위 / 등급</label>
         <button id="saddGrade" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="sgrades"></div>
+      <div class="hint" style="margin-top:2px">열범위·번호범위 비우면 제한 없음. 같은 열에서 가운데 VIP·양끝 R 이면
+        행 2개: (열1~22, 번3~18, VIP) + (열1~22, 번1~2, R) + (열1~22, 번19~20, R). 좁은 구역이 우선.</div>
       <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
         <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="srestr"></div>
@@ -395,7 +399,7 @@ $("sparseBtn").onclick = async () => {
       (restricted_seats || []).forEach((x) => restr.push(x));
     }
     const mBlocks = dedupeByKey(blocks, (b) => b.floor + "|" + String(b.name || "").trim().toLowerCase());
-    const mZones = dedupeByKey(zones, (z) => z.floor + "|" + String(z.from_row).toUpperCase() + "|" + String(z.to_row).toUpperCase() + "|" + String(z.grade).toUpperCase());
+    const mZones = dedupeByKey(zones, (z) => [z.floor, z.from_row, z.to_row, z.from_seat, z.to_seat, z.grade].join("|").toUpperCase());
     setMsg($("sparseMsg"),
       files.length + "장 → 블록 " + mBlocks.length + " · 등급구역 " + mZones.length + " · 시야제한 " + restr.length + ". 반드시 확인하세요.", "ok");
     renderSBlocks(mBlocks);
@@ -437,14 +441,17 @@ function renderSGrades(list) {
   (list || []).forEach(addSGrade);
 }
 function addSGrade(z) {
-  z = z || { floor: 1, from_row: "", to_row: "", grade: "" };
+  z = z || {};
+  const g = (a, b) => (z[a] != null && z[a] !== "" ? z[a] : (z[b] != null && z[b] !== "" ? z[b] : ""));
   const div = document.createElement("div");
-  div.className = "srow";
+  div.className = "grow";
   div.innerHTML =
-    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
-    '<input class="fr" placeholder="시작열" value="' + esc(z.from_row || "") + '">' +
-    '<input class="tr" placeholder="끝열" value="' + esc(z.to_row || "") + '">' +
-    '<input class="gd" placeholder="등급 (R/S…)" value="' + esc(z.grade || "") + '" style="grid-column:span 2">' +
+    '<input class="f" type="number" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<input class="fr" placeholder="시작열" value="' + esc(g("from_row", "row_from")) + '">' +
+    '<input class="tr" placeholder="끝열" value="' + esc(g("to_row", "row_to")) + '">' +
+    '<input class="fs" type="number" placeholder="시작번" value="' + esc(String(g("from_seat", "seat_from"))) + '">' +
+    '<input class="ts" type="number" placeholder="끝번" value="' + esc(String(g("to_seat", "seat_to"))) + '">' +
+    '<input class="gd" placeholder="등급" value="' + esc(z.grade || "") + '">' +
     '<button class="del">×</button>';
   div.querySelector(".del").onclick = () => div.remove();
   $("sgrades").appendChild(div);
@@ -486,12 +493,14 @@ $("ssaveBtn").onclick = async () => {
       seat_max: Number(r.querySelector(".mx").value),
     });
   });
-  const grade_zones = [...document.querySelectorAll("#sgrades .srow")].map((r) => ({
+  const grade_zones = [...document.querySelectorAll("#sgrades .grow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
     from_row: r.querySelector(".fr").value.trim(),
-    to_row: r.querySelector(".tr").value.trim() || r.querySelector(".fr").value.trim(),
+    to_row: r.querySelector(".tr").value.trim(),
+    from_seat: r.querySelector(".fs").value ? Number(r.querySelector(".fs").value) : null,
+    to_seat: r.querySelector(".ts").value ? Number(r.querySelector(".ts").value) : null,
     grade: r.querySelector(".gd").value.trim().toUpperCase(),
-  })).filter((z) => z.floor != null && z.from_row && z.grade);
+  })).filter((z) => z.floor != null && z.grade);
   const restricted_seats = [...document.querySelectorAll("#srestr .rrow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
     block: r.querySelector(".b").value.trim() || null,
