@@ -44,11 +44,15 @@
   --gel-blue:  rgba(120,172,255,.38);
   --gel-rose:  rgba(230,120,175,.36);
 
-  /* 무대장비·소품 — 골목 양옆에 쌓인 플라이트케이스 */
-  --case:      #2A231D;
-  --case-hi:   #453A2F;
-  --case-edge: #171310;
-  --case-latch:#8C7A4A;
+  /* 백스테이지 — 골목 뒤편의 무대 뒤. 전부 눈에 겨우 걸리는 대비로 깐다.
+     여기 값이 3~5%를 넘어가면 배경이 건물 그림 앞으로 나선다 */
+  --wall-joint: rgba(238,224,204,.013);   /* 콘크리트 블록 줄눈 */
+  --drape:      #100C0E;                  /* 막(벨벳) 바탕 — 검정에 붉은 기 */
+  --drape-fold: rgba(255,236,214,.045);   /* 주름에 걸린 빛 */
+  --rope:       #4E4133;                  /* 삼줄 로프 */
+  --sandbag:    #2A2219;
+  --flat-face:  #1D1917;                  /* 세트 플랫 캔버스 면 */
+  --flat-frame: #3D3125;                  /* 플랫 각재 프레임 */
 
   /* 회색 보도블록 — ref/angle.jpg처럼 하이앵글 대각선에서 본 아이소메트릭 타일.
      윗면 한 색 + 옆면 두 색(왼쪽이 더 밝고 오른쪽이 그늘)으로 입체를 낸다 */
@@ -112,6 +116,20 @@
   z-index:0;
   -webkit-mask-image:linear-gradient(180deg, #000 62%, transparent 97%);
           mask-image:linear-gradient(180deg, #000 62%, transparent 97%);
+}
+/* 보더막 — 조명 바를 객석 시야에서 가리는 검은 막. 무대에서 조명 바가
+   안 보이는 건 이 막 때문이다. 우리는 무대 뒤에서 보고 있으므로 막이 바보다
+   뒤에 오고(먼저 그려지고), 바가 그 위에 겹친다 — 그래야 "뒤에서 본 무대"다 */
+.truss-border{
+  position:absolute;
+  left:-4%; right:-4%; top:0;
+  height:25px;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.34) 0 3px, transparent 3px 10px,
+      var(--drape-fold) 10px 12px, transparent 12px 21px),
+    linear-gradient(180deg, #171214 0 52%, #0A0708 100%);
+  box-shadow:0 4px 9px rgba(0,0,0,.55);
 }
 .truss-pipe{
   position:absolute;
@@ -212,58 +230,221 @@
   mix-blend-mode:screen;
 }
 
-/* 무대장비·소품 — 골목 양옆에 쌓아 둔 플라이트케이스와 그 앞 바닥 모니터
-   스피커. .room 바깥 여백에만 놓여서 부스 그림과 겹치지 않는다 (이미지 0장) */
-.stage-prop{
-  position:absolute;
-  bottom:clamp(6px, 1.5vh, 16px);
-  width:clamp(48px, 6.2vw, 96px);
-  height:clamp(70px, 12.5vh, 150px);
-  display:flex;
-  flex-direction:column;
-  gap:7%;
+/* ============================================================
+   백스테이지 (공연 시작 전 무대 뒤)
+   콘크리트 블록 벽 · 좌우 다리막 · 벽에 기대 둔 세트 플랫 ·
+   퍼렐 로프와 샌드백 · 사이드 붐 조명. 전부 CSS 도형이라 이미지 0장이다.
+
+   두 가지 규칙만 지킨다.
+   1) 대비를 3~6%로 눌러 둔다 — 배경이 건물 그림보다 앞에 나서면 실패다.
+   2) 좌우를 대칭으로 만들지 않는다 — 로프·샌드백은 왼쪽, 세트 플랫은
+      오른쪽에만 둔다. 무대 뒤는 정리된 공간이 아니라서, 좌우가 딱 맞으면
+      오히려 만들어 붙인 티가 난다.
+   viewport 고정이라 내용이 넘쳐 스크롤해도 무대는 제자리에 있는다.
+   ============================================================ */
+.backstage{
+  position:fixed;
+  inset:0;
+  overflow:hidden;
   pointer-events:none;
-  z-index:0;
-  filter:drop-shadow(0 8px 12px rgba(0,0,0,.45));
+  /* z-index를 주지 않는다 — 주면 .room도 맞서 올려야 하고, 그 순간 .room이
+     쌓임 맥락이 되어 핀 조명 빔(mix-blend-mode:screen)이 배경과 못 섞인다.
+     문서 순서상 첫 형제라 그냥 두면 알아서 맨 뒤에 깔린다 */
 }
-/* 케이스 본체 — 각진 사각 몸통에 이중 테두리(리브)와 네 모서리 금속 코너,
-   가운데 손잡이 홈을 얹는다. 원형 요소를 다 빼서 드럼통처럼 안 보이게 한다 */
-.stage-prop i{
-  display:block;
-  position:relative;
-  border-radius:3px;
+
+/* ---- 뒷벽 — 콘크리트 블록. 극장 뒷벽은 대개 검게 칠한 블록조다.
+        아래로 갈수록 바닥 조명 웅덩이에 묻히도록 마스크로 지운다 ---- */
+.bs-wall{
+  position:absolute; inset:0;
   background:
-    linear-gradient(var(--case-latch), var(--case-latch)) 6% 12% / 22% 16% no-repeat,
-    linear-gradient(var(--case-latch), var(--case-latch)) 72% 12% / 22% 16% no-repeat,
-    linear-gradient(var(--case-latch), var(--case-latch)) 6% 74% / 22% 16% no-repeat,
-    linear-gradient(var(--case-latch), var(--case-latch)) 72% 74% / 22% 16% no-repeat,
-    var(--case);
-  box-shadow:
-    inset 0 0 0 3px var(--case-hi),
-    inset 0 0 0 5px var(--case-edge);
+    repeating-linear-gradient(90deg, transparent 0 116px, var(--wall-joint) 116px 118px),
+    repeating-linear-gradient(180deg, transparent 0 56px, var(--wall-joint) 56px 58px);
+  /* 화면 전체에 격자를 깔면 벽이 아니라 모눈종이가 된다 — 가운데 위쪽만
+     남기고 가장자리와 아래는 지운다. 무대 뒤 벽은 조명이 닿는 데만 보인다 */
+  -webkit-mask-image:radial-gradient(126% 88% at 50% 18%, #000 0 38%, rgba(0,0,0,.3) 72%, transparent 94%);
+          mask-image:radial-gradient(126% 88% at 50% 18%, #000 0 38%, rgba(0,0,0,.3) 72%, transparent 94%);
 }
-.stage-prop i:first-child{ flex:1.2; }
-.stage-prop i:last-child{ flex:1; }
-.stage-prop i::before{
+
+/* ---- 다리막(leg) — 무대 좌우를 세로로 막는 검은 막. 골목 양옆을 눌러
+        가운데 건물들로 시선을 모은다. 안쪽 가장자리는 마스크로 흐려
+        칼로 자른 듯한 선이 남지 않게 한다 ---- */
+.bs-leg{
+  position:absolute;
+  top:0; bottom:0;
+  width:clamp(52px, 11vw, 170px);
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(0,0,0,.32) 0 4px, transparent 4px 13px,
+      var(--drape-fold) 13px 15px, transparent 15px 27px),
+    linear-gradient(180deg, #120D10 0%, var(--drape) 44%, #080607 100%);
+}
+/* 막을 매단 파이프 + 일정 간격의 끈 */
+.bs-leg::before{
   content:'';
   position:absolute;
-  left:22%; right:22%; top:42%;
-  height:15%;
-  background:var(--case-edge);
-  border-radius:2px;
-  box-shadow:inset 0 1px 1px rgba(0,0,0,.6);
+  left:0; right:0; top:0;
+  height:5px;
+  background:
+    repeating-linear-gradient(90deg,
+      var(--truss-hi) 0 3px, transparent 3px 26px),
+    linear-gradient(180deg, var(--truss), var(--truss-dark));
+  opacity:.5;
 }
-.stage-prop--left{ left:clamp(6px, 2.4vw, 34px); }
-.stage-prop--right{ right:clamp(6px, 2.4vw, 34px); }
-/* 케이스 발치의 바닥 모니터 스피커 — 사다리꼴 웨지 한 장으로 충분하다 */
-.stage-prop::after{
+.bs-leg--l{
+  left:0;
+  -webkit-mask-image:linear-gradient(90deg, #000 0 58%, transparent 100%);
+          mask-image:linear-gradient(90deg, #000 0 58%, transparent 100%);
+}
+.bs-leg--r{
+  right:0;
+  -webkit-mask-image:linear-gradient(270deg, #000 0 58%, transparent 100%);
+          mask-image:linear-gradient(270deg, #000 0 58%, transparent 100%);
+}
+
+/* ---- 세트 플랫 — 벽에 비스듬히 기대 세워 둔 무대 벽체. 뒤판의 각재
+        프레임(테두리 + 가로 중간대 + 대각 브레이스)이 보이게 뒤집어
+        세워 둔 상태다. 두 장이 조금씩 다른 각도로 겹쳐 서 있다 ---- */
+.bs-flat{
+  position:absolute;
+  bottom:clamp(2px, .8vh, 12px);
+  overflow:hidden;
+  background:linear-gradient(100deg, var(--flat-face) 0 42%, #16120F 100%);
+  box-shadow:inset 0 0 0 2px var(--flat-frame), 0 12px 20px rgba(0,0,0,.5);
+}
+/* 가로 중간대 두 줄 */
+.bs-flat::before{
+  content:'';
+  position:absolute; left:0; right:0; top:34%;
+  height:2px;
+  background:var(--flat-frame);
+  box-shadow:0 clamp(38px, 9vh, 92px) 0 var(--flat-frame);
+}
+/* 대각 브레이스 한 줄 */
+.bs-flat::after{
+  content:'';
+  position:absolute; left:-40%; right:-40%; top:50%;
+  height:2px;
+  background:var(--flat-frame);
+  transform:rotate(62deg);
+}
+.bs-flat--a{
+  right:clamp(38px, 8.2vw, 126px);
+  width:clamp(52px, 6vw, 92px);
+  height:clamp(140px, 32vh, 320px);
+  transform:rotate(-2.5deg);
+  transform-origin:50% 100%;
+}
+.bs-flat--b{
+  right:clamp(86px, 13vw, 200px);
+  width:clamp(44px, 5vw, 76px);
+  height:clamp(120px, 27vh, 268px);
+  transform:rotate(3deg);
+  transform-origin:50% 100%;
+  opacity:.7;
+}
+
+/* ---- 퍼렐 로프 — 막과 배튼을 올리고 내리는 삼줄. 벽면 클리트 레일에
+        묶여 있고, 균형추로 쓰는 샌드백이 한 줄에 매달려 있다.
+        무대 뒤를 한 컷으로 설명하는 물건이라 왼쪽에만 둔다 ---- */
+.bs-rope{
+  position:absolute;
+  top:0; bottom:clamp(2px, .8vh, 12px);
+  left:clamp(44px, 9.6vw, 152px);
+  width:34px;
+}
+.bs-rope i{
+  position:absolute;
+  top:0;
+  width:2px;
+  background:linear-gradient(180deg, transparent 0 3%, var(--rope) 11%, var(--rope) 100%);
+  opacity:.55;
+}
+.bs-line--a{ left:0;    bottom:24%; }
+.bs-line--b{ left:13px; bottom:0;   opacity:.42; }
+.bs-line--c{ left:27px; bottom:38%; opacity:.34; }
+/* 클리트 레일 — 로프를 8자로 감아 묶는 쇠뿔 두 개 */
+.bs-cleat{
+  position:absolute;
+  left:-6px; top:64%;
+  width:46px; height:7px;
+  background:linear-gradient(180deg, var(--truss-hi), var(--truss-dark));
+  border-radius:1px;
+  opacity:.62;
+}
+.bs-cleat::before, .bs-cleat::after{
+  content:'';
+  position:absolute; top:-6px;
+  width:4px; height:19px;
+  background:var(--truss);
+  border-radius:1px;
+}
+.bs-cleat::before{ left:7px; }
+.bs-cleat::after{ right:7px; }
+/* 샌드백 — 위를 로프로 묶은 캔버스 자루. 아래가 무거워 살짝 불룩하다 */
+.bs-sandbag{
+  position:absolute;
+  left:-5px; top:41%;
+  width:25px; height:52px;
+  border-radius:4px 4px 8px 8px / 5px 5px 12px 12px;
+  background:linear-gradient(96deg, #392F24 0 36%, var(--sandbag) 56% 100%);
+  box-shadow:inset 0 -7px 9px rgba(0,0,0,.5), 0 5px 9px rgba(0,0,0,.45);
+  opacity:.85;
+}
+.bs-sandbag::before{
+  content:'';
+  position:absolute; left:14%; right:14%; top:13%;
+  height:2px;
+  background:var(--rope);
+  opacity:.8;
+}
+
+/* ---- 사이드 붐 — 무대 옆에 세우는 조명 스탠드. 위 트러스의 핀 조명과
+        같은 기구를 옆에서 쏘는 배치라, 트러스 팔레트를 그대로 쓴다.
+        오른쪽 한 대만 호박색으로 약하게 들어와 있다 ---- */
+.bs-boom{
+  position:absolute;
+  bottom:clamp(2px, .8vh, 12px);
+  width:32px;
+  height:clamp(170px, 44vh, 440px);
+  opacity:.7;
+}
+.bs-boom--l{ left:clamp(76px, 14.5vw, 226px); height:clamp(140px, 37vh, 370px); }
+.bs-boom--r{ right:clamp(70px, 13.5vw, 212px); }
+/* 파이프 + 밑판 */
+.bs-boom i{
+  position:absolute;
+  left:15px; top:0; bottom:8px;
+  width:4px;
+  background:linear-gradient(90deg, var(--truss-hi), var(--truss) 55%, var(--truss-dark));
+}
+.bs-boom i::after{
   content:'';
   position:absolute;
-  left:0; right:0; bottom:-11%;
-  height:20%;
-  clip-path:polygon(9% 100%, 27% 0, 73% 0, 91% 100%);
-  background:linear-gradient(180deg, var(--fixture-hi), var(--fixture) 72%);
-  box-shadow:0 4px 7px rgba(0,0,0,.4);
+  left:-13px; right:-13px; bottom:-8px;
+  height:7px;
+  border-radius:1px;
+  background:linear-gradient(180deg, var(--truss), var(--truss-dark));
+}
+/* 붐에 매단 기구 두 대 — 짧은 팔 + 각진 배럴 */
+.bs-boom b{
+  position:absolute;
+  left:0;
+  width:31px; height:20px;
+  background:linear-gradient(100deg, var(--fixture-hi) 0 24%, var(--fixture) 32% 100%);
+  border-radius:1.5px;
+  box-shadow:inset 0 -3px 4px rgba(0,0,0,.5);
+}
+/* 파이프에 무는 요크 — 이게 있어야 막대에 붙인 상자가 아니라 조명으로 읽힌다 */
+.bs-boom b::after{
+  content:'';
+  position:absolute; top:35%; right:-6px;
+  width:8px; height:5px;
+  background:var(--truss);
+}
+.bs-boom b:nth-of-type(1){ top:26%; }
+.bs-boom b:nth-of-type(2){ top:52%; }
+.bs-boom--r b:nth-of-type(1){
+  box-shadow:inset 0 -2px 3px rgba(0,0,0,.5), -4px 0 8px 1px rgba(255,176,96,.22);
 }
 
 .room{
@@ -519,7 +700,7 @@
    나중에 assets/agents/에 들어와도 애니메이션은 그대로 붙는다. */
 .rise-stage{
   position:absolute;
-  top:calc(clamp(6px, 13%, 30px) + 16.7%); right:12%; bottom:32.1%; left:12%;
+  top:calc(clamp(6px, 13%, 30px) + var(--stage-gap, 16.7%)); right:12%; bottom:32.1%; left:12%;
   display:flex;
   align-items:flex-end;
   justify-content:center;
@@ -550,6 +731,14 @@
   bottom:33%;
   transform: rotate(3deg);
 }
+/* 비용·시야·이벤트는 원본 삽화(ref/front.png)가 세로로 긴 정면 건물이라,
+   가로로 넓은 덕심 상가와 같은 박스에 넣으면 눈에 띄게 작아 보인다.
+   그림은 박스 높이에 맞춰 들어가므로(object-fit:contain, 가로는 남는다)
+   발치(bottom:32.1%)는 그대로 두고 윗선만 올려 12% 키운다 — 발이 보도블록에
+   붙은 채로 위로만 자란다. 말풍선(top:0~13%)까지 12.1%가 남아 파고들지 않는다. */
+.booth[data-agent="COST"] .rise-stage,
+.booth[data-agent="SIYA"] .rise-stage,
+.booth[data-agent="EVENT"] .rise-stage{ --stage-gap: 12.1%; }
 .rise-stage > *{
   width:100%;
   height:100%;
@@ -612,6 +801,9 @@
   line-height:1.3;
   letter-spacing:var(--ui-ls);
   text-align:center;
+  /* 한글은 글자 단위로 끊을 수 있어서, 좁은 칸에서 "겹쳐요"가 "겹 / 쳐요"로
+     쪼개져 마지막 한 글자만 다음 줄에 남는다. 어절 단위로만 끊게 막는다 */
+  word-break:keep-all;
   padding:10px 14px;
   box-shadow:0 10px 22px -8px rgba(20,10,20,.55), 0 2px 5px rgba(20,10,20,.22);
   animation: speechPop 260ms cubic-bezier(.34,1.56,.64,1) both;
@@ -821,13 +1013,18 @@
   .speech.long{ font-size:12px; }
   #lowBooth .speech{ font-size:15px; }
   #lowBooth .speech.long{ font-size:12px; }
-  /* .room이 .stage 대부분을 차지해 옆 여백이 없어지면 소품이 부스와 겹친다 */
-  .stage-prop{ display:none; }
+  /* .room이 .stage 대부분을 차지해 옆 여백이 없어지면 무대 뒤 물건이
+     부스와 겹친다 — 벽·다리막·보더막만 남기면 공간감은 그대로 살고,
+     부피 있는 물건(플랫·붐·로프)만 빠진다 */
+  .bs-flat, .bs-boom, .bs-rope{ display:none; }
+  .bs-leg{ width:clamp(30px, 6vw, 74px); }
 }
 
 /* ---- 모바일 ---- */
 @media (max-width:767px){
   .stage{ padding:6px 6px 0; }
+  /* 화면 폭이 곧 골목 폭이라, 다리막은 가장자리에 흔적만 남긴다 */
+  .bs-leg{ width:clamp(20px, 5vw, 44px); }
   .room{ gap:6px; }
   .booth, .lead-bar{ padding:6px; }
 
@@ -887,8 +1084,23 @@
 <body>
 
 <div class="stage">
-  <div class="stage-prop stage-prop--left" aria-hidden="true"><i></i><i></i></div>
-  <div class="stage-prop stage-prop--right" aria-hidden="true"><i></i><i></i></div>
+
+  <!-- 무대 뒤 — 벽, 다리막, 세트 플랫, 로프·샌드백, 사이드 붐.
+       전부 장식이라 스크린리더에서 감추고 클릭도 통과시킨다 (CSS 도형, 이미지 0장) -->
+  <div class="backstage" aria-hidden="true">
+    <div class="bs-wall"></div>
+    <div class="bs-flat bs-flat--b"></div>
+    <div class="bs-flat bs-flat--a"></div>
+    <div class="bs-boom bs-boom--l"><i></i><b></b><b></b></div>
+    <div class="bs-boom bs-boom--r"><i></i><b></b><b></b></div>
+    <div class="bs-leg bs-leg--l"></div>
+    <div class="bs-leg bs-leg--r"></div>
+    <div class="bs-rope">
+      <i class="bs-line--a"></i><i class="bs-line--b"></i><i class="bs-line--c"></i>
+      <span class="bs-cleat"></span><span class="bs-sandbag"></span>
+    </div>
+  </div>
+
   <div class="room" id="room">
 
     <header class="room-top">
@@ -900,6 +1112,7 @@
     <!-- 조명 레일 — 기본정보 줄(.room-top) 아래, 에이전트 골목 위. 흐름 요소로
          한 줄을 차지한다 (예전엔 .stage에 absolute로 걸려 기본정보와 겹쳤다) -->
     <div class="truss-rig" aria-hidden="true">
+      <div class="truss-border"></div>
       <div class="truss-pipe"></div>
       <div class="truss-lights">
         <span class="pinspot"><i class="pinspot-clamp"></i><i class="pinspot-rig"><i class="pinspot-arm pinspot-arm--l"></i><i class="pinspot-arm pinspot-arm--r"></i><i class="pinspot-body"></i><i class="pinspot-lens"></i><i class="pinspot-beam"></i></i></span>
