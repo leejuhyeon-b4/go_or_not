@@ -42,12 +42,17 @@
 
 ---
 
-- **좌석배치도 탭 = 공연 선택** — 블록·시야제한만 Gemini 자동. **등급은 이미지로 못 읽어서
-  텍스트로 직접 입력** ("1층 1-22열 12-37번 VIP" 식 줄 → 표 파싱). `seasons.seat_grades` 에
-  구역 그대로 저장 `{floor,row_from?,row_to?,seat_from?,seat_to?,grade}`. 등급만 저장 가능(블록 없이).
-  안 채우면 상담 때 R-3b 로 사용자에게 물음.
-- **통로 개념 삭제** — 어느 좌석이 통로 옆인지 확정 불가. 선호좌석 '통로석' 옵션·engine AISLE·
-  is_aisle 전부 제거. 시야축은 사이드/중앙/엣지(블록 기반)만.
+- **좌석배치도 = 문단 메모 방식** — 좌석배치도 탭(공연 선택). Gemini 는 이미지 보고 **초안 문단**만
+  (`parse-seatmap` → `{memo}`). 관리자가 메모를 형식대로 고침 → "표 채우기"(`parseSeatMemo`) → 4개 표
+  (블록/등급/통로/시야제한) → 저장. 형식:
+  `N층 블록 좌 1-8 / 중 9-40 / 우 41-48` · `N층 A-B열 S-E번 등급 / ...` ·
+  `N층 A-B열 통로 8,9,40,41` · `N층 A-B열 시야제한 1,2`
+- 저장: 블록→`venues.base_geometry`, 등급→`seasons.seat_grades`,
+  **통로→`seasons.aisle_seats`**(신규), 시야제한→`seasons.restricted_seats`(신규, venue 것보다 우선).
+  전부 `{floor,row_from?,row_to?,...}` 구역. data.js `seatInZone` 이 평가.
+- **통로 되살림** — 관리자가 배치도 보고 통로 좌석번호를 넣으면 `is_aisle` 판정. 선호좌석 '통로석' 복원.
+  명단이 있으면 `false` 도 확정. 없으면 종전대로 "모름".
+- 새 컬럼: `alter table seasons add column if not exists aisle_seats jsonb default '[]'::jsonb, add column if not exists restricted_seats jsonb default '[]'::jsonb;`
 
 ---
 

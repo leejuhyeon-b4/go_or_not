@@ -395,6 +395,12 @@ window.GON = (function(){
                   (side === 'CENTER' && /중|센터|C/i.test(blk))) f = 1;
           break;
         }
+        case 'AISLE':
+          // 통로 인접 여부는 관리자가 배치도 보고 적은 것만 쓴다. 추측하지 않는다.
+          if(b.seat.is_aisle === true){ f = 1; drivers.push('SEAT_QUALITY'); }
+          else if(b.seat.is_aisle === false) f = -0.5;
+          else missing.push('통로 인접 여부 (좌석배치도 미수집)');
+          break;
         case 'VALUE':
           break;   // 아래에서 상대 위치 해석으로 처리
       }
@@ -532,9 +538,10 @@ window.GON = (function(){
       primary_drivers: Array.from(new Set(drivers)),
       // 좌석배치도에서 확정된 사실이 많을수록 확신이 올라간다
       confidence: (ft.seat.concern ? 0.9 : 1) *
-                  (0.5 + (paidGrade != null ? 0.15 : 0)
+                  (0.4 + (b.seat.is_aisle !== null ? 0.15 : 0)
+                      + (paidGrade != null ? 0.15 : 0)
                       + (b.seat.zone ? 0.1 : 0)
-                      + (b.seat.side_zone && !b.seat.side_estimate ? 0.15 : 0)),
+                      + (b.seat.side_zone && !b.seat.side_estimate ? 0.1 : 0)),
       placard: placard,
       detail: detail,
       missing_info: Array.from(new Set(missing)),
@@ -1072,6 +1079,7 @@ window.GON = (function(){
                now:'2026-07-13T11:00:00' },
     seat: { floor:1, block:'중앙', row:'6', number:7,
             grade:null,                 // 좌석→등급 매핑 미수집
+            is_aisle:true,              // 관리자가 배치도에서 확인 (CASE 1)
             is_restricted:null, zone:null, row_index:6, row_index_in_floor:6,
             side_zone:null, side_block:'C', side_source:'venue', side_estimate:true,
             notes:[], sources:['test_cases.md CASE 1'],
@@ -1092,12 +1100,12 @@ window.GON = (function(){
     season_progress: 0.14,      // 개막 2주차 — 시즌 초반 (v2.1 §3.2)
     coverage: { has_season:true, has_venue:true, has_price:true, price_verified:false,
                 has_discounts:true, discounts_verified:false,
-                has_grade:false, seat_map_collected:false },
+                has_grade:false, has_aisle:true, seat_map_collected:false },
     disposal_options: ['NO_TRANSFER'],
     casting: { has_favorite_actor:true },
     first_watch: true,
     work_affinity: null,        // 자첫이라 작품 선호도를 물을 수 없다
-    seat_preference: { first:'FRONT', second:'CENTER', actor_path_side:null },
+    seat_preference: { first:'FRONT', second:'AISLE', actor_path_side:null },
     opera_glass: false,
     events: [{ type:'GIFT', label:'증정', item:'쿠폰팩', distribution:'ALL', point_multiplier:null,
                participating_actors:null, photo_allowed:false, is_actor_mediated:false,

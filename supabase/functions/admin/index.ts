@@ -111,6 +111,25 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
   return out;
 }
 
+// [{floor, row_from?/from_row?, row_to?/to_row?, numbers:[...]}] 정리 (통로·시야제한 공용)
+function cleanNumberZones(zones: unknown) {
+  if (!Array.isArray(zones)) return [];
+  const out: Array<{ floor: number; row_from: string | null; row_to: string | null; numbers: number[]; source: string }> = [];
+  for (const z of zones) {
+    const zz = z as { floor?: unknown; row_from?: unknown; from_row?: unknown; row_to?: unknown; to_row?: unknown; numbers?: unknown };
+    const floor = Number(zz?.floor);
+    if (!Number.isFinite(floor)) continue;
+    const nums = Array.isArray(zz?.numbers)
+      ? [...new Set((zz.numbers as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n) && n > 0))]
+      : [];
+    if (!nums.length) continue;
+    const rf = String((zz?.row_from ?? zz?.from_row) ?? "").trim().toUpperCase();
+    const rt = String((zz?.row_to ?? zz?.to_row) ?? "").trim().toUpperCase();
+    out.push({ floor, row_from: rf || null, row_to: rt || rf || null, numbers: nums, source: "관리자 좌석배치도 판독" });
+  }
+  return out;
+}
+
 function aliasesFor(name: string, side: string, floor: string) {
   const n = String(name).toLowerCase().trim();
   const bySide: Record<string, string[]> = {
@@ -149,7 +168,7 @@ Deno.serve(async (req) => {
     if (action === "seasons") {
       const { data, error } = await admin
         .from("seasons")
-        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades")
+        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, aisle_seats, restricted_seats")
         .order("work_title");
       if (error) throw new HttpError(500, error.message);
       return json({ seasons: data });
@@ -215,18 +234,18 @@ Deno.serve(async (req) => {
       return json({ ok: true, season_id, saved: clean });
     }
 
-    // ---- 좌석배치도 판독 (저장 X) ----
+    // ---- 좌석배치도 판독 (저장 X) — 사람이 고칠 초안 문단을 준다 ----
     if (action === "parse-seatmap") {
       if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
       const { image_base64, mime_type } = await req.json();
       if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
-      const result = await geminiExtractSeatmap(image_base64, mime_type ?? "image/jpeg");
+      const result = await geminiExtractSeatmapMemo(image_base64, mime_type ?? "image/jpeg");
       return json(result);
     }
 
-    // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급은 시즌) ----
+    // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
     if (action === "save-seatmap") {
-      const { season_id, floors, grade_zones, restricted_seats } = await req.json();
+      const { season_id, floors, grade_zones, aisle_seats, restricted_zones } = await req.json();
       if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
       const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
@@ -265,29 +284,7 @@ Deno.serve(async (req) => {
       }
       const hasGeometry = Object.keys(cleanFloors).length > 0;
 
-      // data.js 는 restricted_seats 를 { floor, row, numbers:[...] } 로 매칭한다.
-      // block/reason 은 부가정보로만 남긴다 (소비 계층은 무시).
-      const cleanRestricted = Array.isArray(restricted_seats)
-        ? restricted_seats
-            .map((r) => {
-              const rr = r as
-                { floor?: unknown; block?: unknown; row?: unknown; number?: unknown; numbers?: unknown; reason?: unknown };
-              const nums = Array.isArray(rr?.numbers)
-                ? rr.numbers
-                : (rr?.number != null ? [rr.number] : []);
-              return {
-                floor: Number.isFinite(Number(rr?.floor)) ? Number(rr.floor) : null,
-                block: rr?.block ? String(rr.block).trim() : null,
-                row: rr?.row ? String(rr.row).trim().toUpperCase() : null,
-                numbers: (nums as unknown[]).map((n) => Number(n)).filter((n) => Number.isFinite(n)),
-                reason: rr?.reason ? String(rr.reason).trim() : null,
-                source: "관리자 좌석배치도 판독",
-              };
-            })
-            .filter((r) => r.floor != null || r.block)
-        : [];
-
-      // 블록(기하)이 있을 때만 극장 정보를 갱신한다. 등급만 넣을 수도 있다.
+      // 블록(기하)이 있을 때만 극장 정보를 갱신한다.
       if (hasGeometry) {
         const { data: cur, error: curErr } = await admin
           .from("venues")
@@ -305,29 +302,33 @@ Deno.serve(async (req) => {
 
         const { error } = await admin
           .from("venues")
-          .update({ base_geometry: bg, restricted_seats: cleanRestricted, collected: true })
+          .update({ base_geometry: bg, collected: true })
           .eq("venue_id", venue_id);
         if (error) throw new HttpError(500, error.message);
       }
 
-      // 등급 구역 → 시즌 seat_grades. grade_zones 를 명시적으로 보냈으면(빈 배열 포함) 그대로 반영.
+      // 등급·통로·시야제한 → 시즌. 배열을 명시적으로 보냈으면(빈 배열 포함) 그대로 반영.
+      const seasonUpdate: Record<string, unknown> = {};
       const seatGrades = cleanGradeZones(grade_zones);
-      if (Array.isArray(grade_zones)) {
-        const { error: sgErr } = await admin
-          .from("seasons")
-          .update({ seat_grades: seatGrades })
-          .eq("season_id", season_id);
-        if (sgErr) throw new HttpError(500, sgErr.message);
+      if (Array.isArray(grade_zones)) seasonUpdate.seat_grades = seatGrades;
+      const aisleZones = cleanNumberZones(aisle_seats);
+      if (Array.isArray(aisle_seats)) seasonUpdate.aisle_seats = aisleZones;
+      const restrZones = cleanNumberZones(restricted_zones);
+      if (Array.isArray(restricted_zones)) seasonUpdate.restricted_seats = restrZones;
+
+      if (Object.keys(seasonUpdate).length) {
+        const { error: seuErr } = await admin
+          .from("seasons").update(seasonUpdate).eq("season_id", season_id);
+        if (seuErr) throw new HttpError(500, seuErr.message);
       }
 
-      if (!hasGeometry && !Array.isArray(grade_zones)) {
-        throw new HttpError(400, "저장할 블록도 등급도 없습니다.");
+      if (!hasGeometry && !Object.keys(seasonUpdate).length) {
+        throw new HttpError(400, "저장할 내용이 없습니다.");
       }
 
       return json({
         ok: true, season_id, venue_id,
-        floors: cleanFloors, restricted_seats: cleanRestricted,
-        seat_grades: seatGrades.length,
+        seat_grades: seatGrades.length, aisle_seats: aisleZones.length, restricted: restrZones.length,
       });
     }
 
@@ -396,92 +397,28 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
   return Array.isArray(arr) ? arr : [];
 }
 
-// ---- Gemini 비전: 좌석배치도 → {floors:[...], restricted_seats:[...]} ------
-async function geminiExtractSeatmap(b64: string, mime: string) {
+// ---- Gemini 비전: 좌석배치도 → 사람이 고칠 초안 문단 (구조화 X) --------------
+// 색→등급, 통로 위치는 비전이 부정확하다. 관리자가 아래 형식으로 고쳐 다시 낸다.
+async function geminiExtractSeatmapMemo(b64: string, mime: string) {
   const prompt =
-`이 이미지는 한국 공연장의 좌석배치도다. 배치도에 실제로 보이는 정보만 추출하라. 못 읽으면 비운다. 추측 금지.
-- floors: 층·블록 목록. 각 항목:
-  - floor: 층 번호 (1, 2, 3)
-  - name: 배치도에 표기된 구역명 그대로 (예 "OP", "A블록", "1층 중앙")
-  - side: 무대에서 객석을 봤을 때 "left" | "center" | "right"
-  - seat_min, seat_max: 그 블록의 좌석 번호 범위 (정수). 범위를 못 읽으면 그 블록은 넣지 마라.
-- grade_zones: 좌석 등급(색상/범례로 구분)을 구역으로. 각 구역:
-  - floor: 층 번호
-  - from_row, to_row: 그 등급 구역의 열 범위 라벨 그대로 (예 "A"~"M", "1"~"12"). 전 열이면 비운다.
-  - from_seat, to_seat: **같은 열에서도 좌석번호로 등급이 갈리면** 그 번호 범위 (예 가운데 3~18 = VIP,
-    양끝 1~2·19~20 = R). 좌석번호 제한이 없으면 비운다.
-  - grade: 등급 코드 (VIP / R / S / A / B). 범례에서 색→등급을 읽어라.
-  나뉘는 방식이 여러 개면(앞뒤로도 나뉘고 좌우로도 나뉨) 구역을 여러 개로 쪼개라. 등급 정보 없으면 빈 배열.
-- restricted_seats: 배치도에 '시야제한', '시야제한석', '제한관람', 'restricted' 등으로 표시된 좌석/구역:
-  - floor, block(구역명), row(열), numbers(해당 열의 좌석번호 배열), reason. 행·번호가 특정되지 않으면 block 만 채운다.`;
+`이 이미지는 한국 공연장의 좌석배치도다. 보이는 것만, 아래 형식의 줄로만 출력하라. 못 읽으면 그 줄은 생략. 설명·머리말 없이 줄만.
 
-  const body = {
-    contents: [{
-      parts: [
-        { inline_data: { mime_type: mime, data: b64 } },
-        { text: prompt },
-      ],
-    }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          floors: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                floor: { type: "INTEGER" },
-                name: { type: "STRING" },
-                side: { type: "STRING", enum: ["left", "center", "right"] },
-                seat_min: { type: "INTEGER" },
-                seat_max: { type: "INTEGER" },
-              },
-              required: ["floor", "name", "side", "seat_min", "seat_max"],
-            },
-          },
-          grade_zones: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                floor: { type: "INTEGER" },
-                from_row: { type: "STRING" },
-                to_row: { type: "STRING" },
-                from_seat: { type: "INTEGER" },
-                to_seat: { type: "INTEGER" },
-                grade: { type: "STRING" },
-              },
-              required: ["floor", "grade"],
-            },
-          },
-          restricted_seats: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                floor: { type: "INTEGER" },
-                block: { type: "STRING" },
-                row: { type: "STRING" },
-                numbers: { type: "ARRAY", items: { type: "INTEGER" } },
-                reason: { type: "STRING" },
-              },
-              required: ["floor"],
-            },
-          },
-        },
-        required: ["floors", "grade_zones", "restricted_seats"],
-      },
-    },
-  };
+# 블록 (층별 좌/중/우 구역과 좌석번호 범위)
+<층>층 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
 
-  const obj = await geminiJson(body);
-  return {
-    floors: Array.isArray(obj?.floors) ? obj.floors : [],
-    grade_zones: Array.isArray(obj?.grade_zones) ? obj.grade_zones : [],
-    restricted_seats: Array.isArray(obj?.restricted_seats) ? obj.restricted_seats : [],
-  };
+# 등급 (열 범위 + 좌석번호 범위별 등급. 색·범례로 판단, 자신 없으면 대충)
+<층>층 <시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급>
+
+# 시야제한 (배치도에 표시돼 있을 때만)
+<층>층 <시작열>-<끝열>열 시야제한 <번호>,<번호>
+
+예:
+1층 블록 좌 1-8 / 중 9-40 / 우 41-48
+1층 1-15열 9-14번 R / 15-34번 VIP / 35-40번 R
+2층 A-M열 S`;
+
+  const data = await geminiText(prompt, b64, mime);
+  return { memo: String(data || "").trim() };
 }
 
 // deno-lint-ignore no-explicit-any
@@ -500,4 +437,22 @@ async function geminiJson(body: unknown): Promise<any> {
   } catch {
     throw new HttpError(502, "Gemini 응답을 해석하지 못했어요. 다시 시도해보세요.");
   }
+}
+
+// 이미지 + 프롬프트 → 평문 텍스트
+async function geminiText(prompt: string, b64: string, mime: string): Promise<string> {
+  const body = {
+    contents: [{
+      parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: prompt }],
+    }],
+  };
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_KEY}`,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+  );
+  if (!res.ok) {
+    throw new HttpError(502, `Gemini 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }

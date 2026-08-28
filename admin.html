@@ -30,6 +30,9 @@
   .rrow input { padding:8px; font-size:14px; }
   .grow { display:grid; grid-template-columns:34px 1fr 1fr 46px 46px 52px 28px; gap:4px; align-items:center; margin-bottom:6px; }
   .grow input { padding:7px 6px; font-size:13px; }
+  .nrow { display:grid; grid-template-columns:34px 1fr 1fr 1.4fr 28px; gap:4px; align-items:center; margin-bottom:6px; }
+  .nrow input { padding:7px 6px; font-size:13px; }
+  textarea { min-height:auto; }
   .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
   .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
   .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
@@ -99,30 +102,38 @@
       <div id="vcurInfo" class="hint"></div>
     </div>
     <div class="card">
-      <label for="sfile">좌석배치도 이미지 (여러 장 가능)</label>
+      <label for="sfile">좌석배치도 이미지 (여러 장 가능 — 초안만 받는 용도)</label>
       <input id="sfile" type="file" accept="image/*" multiple>
       <div id="spreview" class="previews"></div>
-      <button id="sparseBtn" disabled>Gemini 로 판독</button>
-      <div class="hint">예매처 좌석배치도(등급 색상 있는 것)를 올리세요. 층·블록·좌석범위 + 등급 구역 + 시야제한석을 뽑습니다. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
+      <button id="sparseBtn" disabled>Gemini 로 초안 받기</button>
+      <div class="hint">이미지는 <b>초안 문단</b>을 뽑는 데만 씁니다. 아래 메모를 직접 고쳐서 저장하세요.</div>
       <div id="sparseMsg" class="msg hidden"></div>
     </div>
+    <div class="card">
+      <label for="seatMemo">배치도 메모 — 한 줄에 하나. Gemini 초안이 채워지면 직접 수정</label>
+      <textarea id="seatMemo" rows="9" placeholder="1층 블록 좌 1-8 / 중 9-40 / 우 41-48&#10;1층 1-22열 9-14번 R / 15-34번 VIP / 35-40번 R&#10;1층 1-22열 통로 8,9,40,41&#10;2층 A-M열 S&#10;1층 1-3열 시야제한 1,2"></textarea>
+      <button id="seatMemoParse">↓ 이 메모대로 아래 표 채우기</button>
+      <div class="hint">블록줄 <code>N층 블록 좌 1-8 / 중 9-40 / 우 41-48</code> ·
+        등급줄 <code>N층 A-B열 S-E번 등급 / S-E번 등급</code> ·
+        통로줄 <code>N층 A-B열 통로 8,9,40,41</code> ·
+        시야제한줄 <code>N층 A-B열 시야제한 1,2</code>. 열범위 생략 = 전 열.</div>
+      <div id="seatMemoMsg" class="msg hidden"></div>
+    </div>
     <div id="seditCard" class="card hidden">
-      <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
-        <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
+      <div class="between"><label>블록 (층/이름/위치/좌석범위)</label>
+        <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="sblocks"></div>
-      <div style="margin-top:14px"><label>등급 (선택 — 배치도 이미지로는 못 읽어서 직접 타이핑)</label>
-        <textarea id="sgradeText" rows="4" placeholder="한 줄에 하나. 예:&#10;1층 1-22열 12-37번 VIP&#10;1층 1-22열 1-11번 R&#10;1층 1-22열 38-48번 R&#10;2층 A-M열 S"></textarea>
-        <button id="sgradeParse" class="ghost" style="width:auto;padding:6px 12px;margin-top:6px;font-size:12px">↓ 아래 표에 넣기</button>
-      </div>
-      <div class="between" style="margin-top:8px"><label>등급 구역 표</label>
+      <div class="between" style="margin-top:12px"><label>등급 구역 (층/열범위/좌석번호범위/등급)</label>
         <button id="saddGrade" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="sgrades"></div>
-      <div class="hint" style="margin-top:2px">열범위·번호범위 비우면 제한 없음. 같은 열에서 가운데 VIP·양끝 R 이면 행 3개.
-        좁은 구역이 우선. 비워두면 상담 때 앱이 사용자에게 등급을 물어봅니다.</div>
-      <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
+      <div class="between" style="margin-top:12px"><label>통로석 (층/열범위/좌석번호)</label>
+        <button id="saddAisle" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
+      <div id="saisles"></div>
+      <div class="between" style="margin-top:12px"><label>시야제한 (층/열범위/좌석번호)</label>
         <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="srestr"></div>
-      <div class="hint">통로/벽·별칭은 위치에서 자동. 저장하면 극장 기하는 venues 에, 등급 구역은 이 공연(seasons.seat_grades)에 열별로 펼쳐 저장됩니다.</div>
+      <div class="hint" style="margin-top:6px">좁은 등급 구역이 우선. 등급 비우면 상담 때 앱이 사용자에게 물음.
+        저장: 블록→venues, 등급·통로·시야제한→이 공연(seasons).</div>
       <button id="ssaveBtn">이 공연 배치도로 저장</button>
       <div id="ssaveMsg" class="msg hidden"></div>
     </div>
@@ -377,15 +388,20 @@ function renderCurSeatSeason() {
   const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
   if (!s) return;
   const zg = Array.isArray(s.seat_grades) ? s.seat_grades : [];
-  $("vcurInfo").textContent = "현재 등급 구역 " + zg.length + "개" + (zg.length ? "" : " — 비면 상담 때 사용자에게 물음");
-  setMsg($("sparseMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
+  const ai = Array.isArray(s.aisle_seats) ? s.aisle_seats : [];
+  const rs = Array.isArray(s.restricted_seats) ? s.restricted_seats : [];
+  $("vcurInfo").textContent = "현재 — 등급 " + zg.length + " · 통로 " + ai.length + " · 시야제한 " + rs.length +
+    (zg.length ? "" : " (등급 비면 상담 때 사용자에게 물음)");
+  setMsg($("sparseMsg"), "", ""); setMsg($("seatMemoMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
+  renderSBlocks([]);
   renderSGrades(zg);
+  renderSAisle(ai);
+  renderSRestr(rs);
   show($("seditCard"), true);
 }
 
 $("sfile").onchange = () => {
   const files = $("sfile").files;
-  show($("seditCard"), false);
   setMsg($("sparseMsg"), "", "");
   renderPreviews(files, $("spreview"));
   $("sparseBtn").disabled = !files.length;
@@ -396,23 +412,16 @@ $("sparseBtn").onclick = async () => {
   if (!files.length) return;
   $("sparseBtn").disabled = true;
   try {
-    const blocks = [], zones = [], restr = [];
+    const memos = [];
     for (let i = 0; i < files.length; i++) {
-      setMsg($("sparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
+      setMsg($("sparseMsg"), "초안 받는 중… (" + (i + 1) + "/" + files.length + ")", "");
       const b64 = await fileToB64(files[i]);
-      const { floors, grade_zones, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
-      (floors || []).forEach((x) => blocks.push(x));
-      (grade_zones || []).forEach((x) => zones.push(x));
-      (restricted_seats || []).forEach((x) => restr.push(x));
+      const { memo } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
+      if (memo) memos.push(memo);
     }
-    const mBlocks = dedupeByKey(blocks, (b) => b.floor + "|" + String(b.name || "").trim().toLowerCase());
-    setMsg($("sparseMsg"),
-      files.length + "장 → 블록 " + mBlocks.length + " · 시야제한 " + restr.length + ". 반드시 확인하세요.", "ok");
-    renderSBlocks(mBlocks);
-    renderSRestr(restr);
-    // 등급 구역은 Gemini 판독이 부정확해 자동 채우지 않는다.
-    // 앱이 상담 때 사용자에게 등급을 물어본다 (R-3b). 여기 직접 넣고 싶을 때만.
-    show($("seditCard"), true);
+    const cur = $("seatMemo").value.trim();
+    $("seatMemo").value = (cur ? cur + "\n" : "") + memos.join("\n");
+    setMsg($("sparseMsg"), "초안을 메모에 넣었어요. 직접 고친 뒤 '표 채우기'.", "ok");
   } catch (e) {
     setMsg($("sparseMsg"), e.message, "err");
   } finally {
@@ -420,36 +429,34 @@ $("sparseBtn").onclick = async () => {
   }
 };
 
+/* ---- 표 렌더 ---- */
 function renderSBlocks(list) {
   $("sblocks").innerHTML = "";
-  (list && list.length ? list : [{ floor: 1, name: "", side: "center", seat_min: "", seat_max: "" }]).forEach(addSBlock);
+  (list || []).forEach(addSBlock);
 }
 function addSBlock(b) {
   b = b || { floor: 1, name: "", side: "center", seat_min: "", seat_max: "" };
   const div = document.createElement("div");
   div.className = "srow";
   div.innerHTML =
-    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (b.floor != null ? b.floor : "") + '">' +
+    '<input class="f" type="number" placeholder="층" value="' + (b.floor != null ? b.floor : "") + '">' +
     '<input class="n" placeholder="블록명" value="' + esc(b.name || "") + '">' +
     '<select class="sd">' +
-      [["left","좌"],["center","중"],["right","우"]].map(([v,t]) =>
+      [["left", "좌"], ["center", "중"], ["right", "우"]].map(([v, t]) =>
         '<option value="' + v + '"' + (b.side === v ? " selected" : "") + ">" + t + "</option>").join("") +
     "</select>" +
-    '<input class="mn" type="number" inputmode="numeric" placeholder="min" value="' + (b.seat_min != null ? b.seat_min : "") + '">' +
-    '<input class="mx" type="number" inputmode="numeric" placeholder="max" value="' + (b.seat_max != null ? b.seat_max : "") + '">' +
+    '<input class="mn" type="number" placeholder="min" value="' + (b.seat_min != null ? b.seat_min : "") + '">' +
+    '<input class="mx" type="number" placeholder="max" value="' + (b.seat_max != null ? b.seat_max : "") + '">' +
     '<button class="del">×</button>';
   div.querySelector(".del").onclick = () => div.remove();
   $("sblocks").appendChild(div);
 }
 $("saddBlock").onclick = () => addSBlock();
 
-function renderSGrades(list) {
-  $("sgrades").innerHTML = "";
-  (list || []).forEach(addSGrade);
-}
+function renderSGrades(list) { $("sgrades").innerHTML = ""; (list || []).forEach(addSGrade); }
 function addSGrade(z) {
   z = z || {};
-  const g = (a, b) => (z[a] != null && z[a] !== "" ? z[a] : (z[b] != null && z[b] !== "" ? z[b] : ""));
+  const g = (a, b) => { const v = z[a] != null && z[a] !== "" ? z[a] : (z[b] != null && z[b] !== "" ? z[b] : ""); return v; };
   const div = document.createElement("div");
   div.className = "grow";
   div.innerHTML =
@@ -465,58 +472,107 @@ function addSGrade(z) {
 }
 $("saddGrade").onclick = () => addSGrade();
 
-// "1층 1-22열 12-37번 VIP" 같은 줄들을 구역 객체로
-function parseGradeLine(line) {
-  const toks = String(line).trim().split(/\s+/).filter(Boolean);
-  if (!toks.length) return null;
-  let floor = 1, from_row = "", to_row = "", from_seat = null, to_seat = null, grade = "";
-  toks.forEach((t) => {
-    if (/층$/.test(t)) { floor = parseInt(t, 10) || 1; return; }
-    if (/열$/.test(t)) {
-      const p = t.replace(/[열석]/g, "").split(/[-~–]/);
-      from_row = (p[0] || "").trim();
-      to_row = p.length > 1 ? ((p[1] || "").trim() || from_row) : from_row;
-      return;
-    }
-    if (/번$/.test(t)) {
-      const p = t.replace(/[번석]/g, "").split(/[-~–]/);
-      from_seat = p[0] ? Number(p[0]) : null;
-      to_seat = p.length > 1 ? (p[1] ? Number(p[1]) : null) : from_seat;
-      return;
-    }
-    grade = t.replace(/석$/, "").toUpperCase();
-  });
-  if (!grade) return null;
-  return { floor, from_row, to_row, from_seat, to_seat, grade };
-}
-$("sgradeParse").onclick = () => {
-  const lines = ($("sgradeText").value || "").split("\n");
-  let n = 0;
-  lines.forEach((l) => { const z = parseGradeLine(l); if (z) { addSGrade(z); n++; } });
-  if (n) { $("sgradeText").value = ""; show($("seditCard"), true); }
-  setMsg($("sparseMsg"), n ? n + "개 등급 구역을 표에 넣었어요. 확인 후 저장." : "해석할 줄이 없어요.", n ? "ok" : "err");
-};
+function renderSAisle(list) { $("saisles").innerHTML = ""; (list || []).forEach(addSAisle); }
+function addSAisle(z) { addNumRow($("saisles"), z); }
+$("saddAisle").onclick = () => addNumRow($("saisles"), null);
 
-function renderSRestr(list) {
-  $("srestr").innerHTML = "";
-  (list || []).forEach(addSRestr);
-}
-function addSRestr(r) {
-  r = r || { floor: 1, block: "", row: "", numbers: [], reason: "" };
-  const nums = Array.isArray(r.numbers) ? r.numbers.join(",") : (r.number != null ? String(r.number) : "");
+function renderSRestr(list) { $("srestr").innerHTML = ""; (list || []).forEach(addSRestr); }
+function addSRestr(z) { addNumRow($("srestr"), z); }
+$("saddRestr").onclick = () => addNumRow($("srestr"), null);
+
+function addNumRow(box, z) {
+  z = z || {};
+  const nums = Array.isArray(z.numbers) ? z.numbers.join(",") : "";
+  const rf = z.row_from != null ? z.row_from : (z.from_row != null ? z.from_row : "");
+  const rt = z.row_to != null ? z.row_to : (z.to_row != null ? z.to_row : "");
   const div = document.createElement("div");
-  div.className = "rrow";
+  div.className = "nrow";
   div.innerHTML =
-    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (r.floor != null ? r.floor : "") + '">' +
-    '<input class="b" placeholder="블록" value="' + esc(r.block || "") + '">' +
-    '<input class="rw" placeholder="열" value="' + esc(r.row || "") + '">' +
-    '<input class="nm" placeholder="번(쉼표)" value="' + esc(nums) + '">' +
-    '<input class="rs" placeholder="사유" value="' + esc(r.reason || "") + '">' +
+    '<input class="f" type="number" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<input class="fr" placeholder="시작열" value="' + esc(rf) + '">' +
+    '<input class="tr" placeholder="끝열" value="' + esc(rt) + '">' +
+    '<input class="nm" placeholder="번호 (쉼표)" value="' + esc(nums) + '">' +
     '<button class="del">×</button>';
   div.querySelector(".del").onclick = () => div.remove();
-  $("srestr").appendChild(div);
+  box.appendChild(div);
 }
-$("saddRestr").onclick = () => addSRestr();
+function readNumRows(box) {
+  return [...box.querySelectorAll(".nrow")].map((r) => ({
+    floor: parseInt(r.querySelector(".f").value, 10) || null,
+    row_from: r.querySelector(".fr").value.trim(),
+    row_to: r.querySelector(".tr").value.trim(),
+    numbers: (r.querySelector(".nm").value || "").split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0),
+  })).filter((z) => z.floor != null && z.numbers.length);
+}
+
+/* ---- 메모 파서 ---- */
+function seatRange(tok) { // "1-22" / "A-M" / "5"
+  const p = String(tok).replace(/[열번석]/g, "").split(/[-~–]/);
+  const from = (p[0] || "").trim();
+  const to = p.length > 1 ? ((p[1] || "").trim() || from) : from;
+  return [from, to];
+}
+function parseSeatMemo(text) {
+  const out = { blocks: [], grades: [], aisles: [], restr: [] };
+  let floor = 1;
+  String(text).split("\n").forEach((raw) => {
+    let line = raw.trim();
+    if (!line || line[0] === "#") return;
+    const fm = line.match(/(\d+)\s*층/);
+    if (fm) floor = parseInt(fm[1], 10) || floor;
+    let rest = line.replace(/^\s*\d+\s*층\s*/, "").trim();
+
+    if (/^블록/.test(rest)) {
+      rest.replace(/^블록\s*:?\s*/, "").split("/").forEach((seg) => {
+        const m = seg.trim().match(/^(\S+?)\s*(\d+)\s*[-~–]\s*(\d+)/);
+        if (!m) return;
+        const nm = m[1];
+        const side = /좌|왼|L/i.test(nm) ? "left" : /우|오른|R/i.test(nm) ? "right" : "center";
+        out.blocks.push({ floor, name: nm, side, seat_min: +m[2], seat_max: +m[3] });
+      });
+      return;
+    }
+
+    // 열범위 (있으면)
+    let rf = "", rt = "";
+    const rm = rest.match(/^([A-Za-z0-9가-힣]+(?:\s*[-~–]\s*[A-Za-z0-9가-힣]+)?)\s*열/);
+    if (rm) { [rf, rt] = seatRange(rm[1]); rest = rest.slice(rm[0].length).trim(); }
+
+    if (/^통로/.test(rest)) {
+      const nums = (rest.match(/\d+/g) || []).map(Number);
+      if (nums.length) out.aisles.push({ floor, row_from: rf, row_to: rt, numbers: nums });
+      return;
+    }
+    if (/^(시야제한|시제|제한)/.test(rest)) {
+      const nums = (rest.match(/\d+/g) || []).map(Number);
+      if (nums.length) out.restr.push({ floor, row_from: rf, row_to: rt, numbers: nums });
+      return;
+    }
+    // 등급: "9-14번 R / 15-34번 VIP"
+    rest.split("/").forEach((seg) => {
+      seg = seg.trim();
+      const m = seg.match(/(\d+(?:\s*[-~–]\s*\d+)?)\s*번?\s*([A-Za-z가-힣]+)/);
+      if (!m) return;
+      const [fs, ts] = seatRange(m[1]);
+      const grade = m[2].replace(/석$/, "").toUpperCase();
+      if (grade) out.grades.push({ floor, from_row: rf, to_row: rt, from_seat: +fs, to_seat: +ts, grade });
+    });
+  });
+  return out;
+}
+
+$("seatMemoParse").onclick = () => {
+  const p = parseSeatMemo($("seatMemo").value);
+  renderSBlocks(p.blocks);
+  renderSGrades(p.grades);
+  renderSAisle(p.aisles);
+  renderSRestr(p.restr);
+  show($("seditCard"), true);
+  const total = p.blocks.length + p.grades.length + p.aisles.length + p.restr.length;
+  setMsg($("seatMemoMsg"),
+    total ? "블록 " + p.blocks.length + " · 등급 " + p.grades.length + " · 통로 " + p.aisles.length + " · 시야제한 " + p.restr.length + " → 표 확인 후 저장" : "해석된 줄이 없어요.",
+    total ? "ok" : "err");
+};
 
 $("ssaveBtn").onclick = async () => {
   const season_id = $("seatSeason").value;
@@ -526,8 +582,7 @@ $("ssaveBtn").onclick = async () => {
     const name = r.querySelector(".n").value.trim();
     if (!f || !name) return;
     (floors[f] = floors[f] || []).push({
-      name,
-      side: r.querySelector(".sd").value,
+      name, side: r.querySelector(".sd").value,
       seat_min: Number(r.querySelector(".mn").value),
       seat_max: Number(r.querySelector(".mx").value),
     });
@@ -540,25 +595,20 @@ $("ssaveBtn").onclick = async () => {
     to_seat: r.querySelector(".ts").value ? Number(r.querySelector(".ts").value) : null,
     grade: r.querySelector(".gd").value.trim().toUpperCase(),
   })).filter((z) => z.floor != null && z.grade);
-  const restricted_seats = [...document.querySelectorAll("#srestr .rrow")].map((r) => ({
-    floor: parseInt(r.querySelector(".f").value, 10) || null,
-    block: r.querySelector(".b").value.trim() || null,
-    row: r.querySelector(".rw").value.trim() || null,
-    numbers: (r.querySelector(".nm").value || "").split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0),
-    reason: r.querySelector(".rs").value.trim() || null,
-  })).filter((r) => r.floor != null || r.block);
+  const aisle_seats = readNumRows($("saisles"));
+  const restricted_zones = readNumRows($("srestr"));
 
-  if (!Object.keys(floors).length && !grade_zones.length) {
-    setMsg($("ssaveMsg"), "블록이나 등급 구역 중 하나는 넣어주세요.", "err"); return;
-  }
+  const nothing = !Object.keys(floors).length && !grade_zones.length && !aisle_seats.length && !restricted_zones.length;
+  if (nothing) { setMsg($("ssaveMsg"), "저장할 내용이 없어요. 메모를 채우고 '표 채우기' 하세요.", "err"); return; }
+
   $("ssaveBtn").disabled = true;
   setMsg($("ssaveMsg"), "저장 중…", "");
   try {
-    const payload = { season_id, grade_zones, restricted_seats };
-    if (Object.keys(floors).length) payload.floors = floors;   // 블록 없으면 극장 기하는 안 건드림
+    const payload = { season_id, grade_zones, aisle_seats, restricted_zones };
+    if (Object.keys(floors).length) payload.floors = floors;
     const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
-      "저장 완료 (등급 구역 " + (res.seat_grades || 0) + "개). 데스크탑에서 'npm run pull'.", "ok");
+      "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + ". 데스크탑 'npm run pull'.", "ok");
     await loadSeasons();
     $("seatSeason").value = season_id;
     renderCurSeatSeason();

@@ -50,7 +50,33 @@ window.GON_DB = (function(){
   function zoneSpecificity(z){
     return (z.row != null ? 2 : 0)
       + (z.row_from != null || z.row_to != null ? 1 : 0)
-      + (z.seat_from != null || z.seat_to != null ? 2 : 0);
+      + (z.seat_from != null || z.seat_to != null ? 2 : 0)
+      + (z.numbers && z.numbers.length ? 3 : 0);
+  }
+
+  // 구역 { floor?, row?|row_from?/row_to?, seat_from?/seat_to?, numbers?[] } 에 좌석이 드는가
+  function seatInZone(z, seat, venue){
+    if(z.floor != null && z.floor !== seat.floor) return false;
+    if(z.row != null){
+      return String(z.row).toUpperCase() === String(seat.row).toUpperCase();
+    }
+    if(z.row_from != null || z.row_to != null){
+      var rIdx = rowIndex(seat.row, venue);
+      if(rIdx == null) return false;
+      var rf = z.row_from != null ? rowIndex(z.row_from, venue) : null;
+      var rt = z.row_to   != null ? rowIndex(z.row_to, venue)   : null;
+      if(rf != null && rIdx < rf) return false;
+      if(rt != null && rIdx > rt) return false;
+    }
+    if(z.numbers && z.numbers.length){
+      return seat.number != null && z.numbers.indexOf(seat.number) > -1;
+    }
+    if(z.seat_from != null || z.seat_to != null){
+      if(seat.number == null) return false;
+      if(z.seat_from != null && seat.number < z.seat_from) return false;
+      if(z.seat_to   != null && seat.number > z.seat_to) return false;
+    }
+    return true;
   }
 
   /* ---------------------------------------------------------
@@ -186,6 +212,7 @@ window.GON_DB = (function(){
   function resolveSeat(season, seat){
     const out = {
       grade: null,
+      is_aisle: null,
       is_restricted: null,
       zone: null,
       side_zone: null,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
@@ -205,51 +232,43 @@ window.GON_DB = (function(){
     //   같은 열에서도 가운데 VIP·양끝 R 처럼 좌석번호로 갈리는 극장이 있어 seat 범위까지 본다.
     //   구식 { floor, row, grade } (열 단위) 도 그대로 지원.
     if(season && season.seat_grades && season.seat_grades.length){
-      const rIdx = rowIndex(seat.row, venue);
       const zones = season.seat_grades.slice().sort((a, b) => zoneSpecificity(b) - zoneSpecificity(a));
-      const g = zones.find(function(z){
-        if(z.floor != null && z.floor !== seat.floor) return false;
-        if(z.row != null){
-          if(String(z.row).toUpperCase() !== String(seat.row).toUpperCase()) return false;
-        } else if(z.row_from != null || z.row_to != null){
-          if(rIdx == null) return false;
-          var rf = z.row_from != null ? rowIndex(z.row_from, venue) : null;
-          var rt = z.row_to   != null ? rowIndex(z.row_to, venue)   : null;
-          if(rf != null && rIdx < rf) return false;
-          if(rt != null && rIdx > rt) return false;
-        }
-        if(z.seat_from != null || z.seat_to != null){
-          if(seat.number == null) return false;
-          if(z.seat_from != null && seat.number < z.seat_from) return false;
-          if(z.seat_to   != null && seat.number > z.seat_to) return false;
-        }
-        return true;
-      });
+      const g = zones.find(function(z){ return seatInZone(z, seat, venue); });
       if(g){ out.grade = g.grade; if(g.source) out.sources.push(g.source); }
     }
     if(out.grade == null) out.unknown.push('좌석 등급 (좌석배치도 미수집)');
 
-    // ② 확인된 좌석의 실측 메모 (zone·각도·시야). 통로 인접 여부는 다루지 않는다
-    //    — 어느 좌석이 통로 옆인지 배치도로 확정할 수 없어 판단하지 않기로 함.
+    // ② 통로 인접 — 관리자가 배치도 보고 적은 좌석번호 (season.aisle_seats).
+    //    명단이 있으면 false 도 확정. verified_seats 가 있으면 그게 우선.
+    if(season && season.aisle_seats && season.aisle_seats.length){
+      out.is_aisle = season.aisle_seats.some(function(z){ return seatInZone(z, seat, venue); });
+    }
     if(venue && venue.verified_seats){
       const v = venue.verified_seats.find(x =>
         x.floor === seat.floor &&
         String(x.row).toUpperCase() === String(seat.row).toUpperCase() &&
         x.number === seat.number);
       if(v){
+        if(typeof v.is_aisle === 'boolean') out.is_aisle = v.is_aisle;
         if(v.zone) out.zone = v.zone;
         if(v.angle_note) out.notes.push(v.angle_note);
         if(v.sightline_note) out.notes.push(v.sightline_note);
         out.sources.push(v.source);
       }
     }
+    if(out.is_aisle == null) out.unknown.push('통로 인접 여부 (좌석배치도 미수집)');
 
-    // ③ 시야제한석 — 명단을 수집한 극장에서만 false 라고 말할 수 있다
-    if(venue && venue.collected){
-      out.is_restricted = (venue.restricted_seats || []).some(x =>
-        x.floor === seat.floor &&
-        String(x.row).toUpperCase() === String(seat.row).toUpperCase() &&
-        (x.numbers || []).indexOf(seat.number) > -1);
+    // ③ 시야제한석 — 공연/극장 명단이 있으면 false 도 확정할 수 있다
+    const restrList = (season && season.restricted_seats && season.restricted_seats.length)
+      ? season.restricted_seats
+      : ((venue && venue.collected) ? (venue.restricted_seats || []) : null);
+    if(restrList){
+      out.is_restricted = restrList.some(function(z){
+        if(z.row_from != null || z.row_to != null) return seatInZone(z, seat, venue);
+        return z.floor === seat.floor &&
+          String(z.row).toUpperCase() === String(seat.row).toUpperCase() &&
+          (z.numbers || []).indexOf(seat.number) > -1;
+      });
     } else {
       out.unknown.push('시야제한석 명단 (미수집)');
     }
@@ -506,6 +525,7 @@ window.GON_DB = (function(){
       has_discounts: !!(season && season.discounts),
       discounts_verified: !!(season && season.discounts_verified),
       has_grade: !!(seatInfo && seatInfo.grade),
+      has_aisle: !!(seatInfo && seatInfo.is_aisle !== null),
       seat_map_collected: !!(venue && venue.collected),
       side_source: seatInfo ? seatInfo.side_source : null   // 'season' | 'venue' | null
     };

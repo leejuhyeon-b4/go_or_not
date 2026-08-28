@@ -98,10 +98,15 @@ eq(DB.resolveSeat(gz, { floor: 2, row: 'C', number: 1 }).grade, null, '다른 �
 eq(DB.resolveSeat({ seat_grades: [{ floor: 1, row: 'B', grade: 'S' }] }, { floor: 1, row: 'b', number: 3 }).grade,
    'S', '구식 {floor,row,grade} 형태도 매칭');
 
-// resolveSeat — 등급/시야제한 + 사이드
+// resolveSeat — 등급/통로/시야제한 + 사이드
 const rs = DB.resolveSeat(haemong, { floor: 1, row: 'B', number: 16 });
-ok(!('is_aisle' in rs), 'resolveSeat 는 통로 인접 여부를 다루지 않는다');
+eq(rs.is_aisle, true, 'resolveSeat B16 통로석 (verified_seats)');
 eq(rs.grade, null, 'resolveSeat 등급 미수집 → null (false 아님)');
+
+// season.aisle_seats — 관리자가 배치도 보고 적은 통로 좌석
+const asz = { venue_id: 'yes24-stage-1', aisle_seats: [{ floor: 1, row_from: 'A', row_to: 'Z', numbers: [11, 12] }] };
+eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 11 }).is_aisle, true, 'aisle_seats 매칭 → true');
+eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 15 }).is_aisle, false, 'aisle_seats 명단 있으면 false 도 확정');
 ok(rs.unknown.includes('좌석 등급 (좌석배치도 미수집)'), 'resolveSeat unknown 에 등급 누락');
 
 // 회차 제한 할인 (applies_to) → 기준선 필터
