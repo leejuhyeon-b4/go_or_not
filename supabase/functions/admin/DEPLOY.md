@@ -52,7 +52,9 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 → 비밀번호 입력 → 탭 선택
 
 - **할인정보** — 공연 선택 → '할인정보' 화면 캡처 업로드 → **Gemini 로 판독** → 표 확인·수정 → 저장
-- **좌석배치도** — 극장 선택 → 배치도 이미지 업로드 → **판독** → 블록/시야제한 확인·수정 → 저장
+- **좌석배치도** — 공연 선택 → 배치도 이미지(등급 색상 있는 것) 업로드 → **판독** →
+  블록 / **등급 구역(열 범위)** / 시야제한 확인·수정 → 저장.
+  극장 기하는 `venues`, 등급 매핑은 `seasons.seat_grades` 에 열별로 펼쳐 저장.
 
 `admin.html` 은 `data/supabase-config.js` 에서 함수 URL 을 읽는다. 폰에서 쓰려면 앱이
 어딘가 호스팅돼 있어야 한다(`file://` 는 폰 접근 불가). 데스크탑은 `file://` 로도 됨.
@@ -79,11 +81,12 @@ npm run pull
 - 저장하면 `discounts_verified = true`.
 
 ### 좌석배치도 — 거칠다. 검토 필수
-- Gemini 가 뽑는 건 **층 / 블록명 / 위치(좌·중·우) / 좌석번호 범위** + 시야제한 구역.
+- Gemini 가 뽑는 건 **층 / 블록명 / 위치 / 좌석번호 범위** + **등급 구역(열 범위)** + 시야제한 구역.
 - 통로·벽 위치와 별칭은 위치값에서 **자동 생성**된다 (좌블=번호 큰 쪽이 통로 …).
-- 좌석번호 범위를 못 읽은 블록은 저장 시 버려진다. 손으로 채워 넣어도 된다.
-- 저장하면 해당 `venues` 행의 `base_geometry.floors` 가 덮이고 `is_estimate=false`,
-  `collected=true` 가 된다. 세부(specs·verified_seats)는 그대로.
+- 등급 구역은 `{층, 시작열, 끝열, 등급}` — 저장 시 열별로 펼쳐 `seasons.seat_grades` 에 들어간다
+  (예 1층 A~M열 R석 → A,B,…,M 13행). 색↔등급은 범례를 읽는다. 틀리면 행을 고치면 됨.
+- 좌석번호 범위를 못 읽은 블록, 등급 없는 zone 은 저장 시 버려진다. 손으로 채워도 된다.
+- `venues.base_geometry.floors` 덮임 + `is_estimate=false` + `collected=true`. 세부(specs·verified_seats)는 그대로.
 - 미묘한 값은 데스크탑에서 `data/seed.js` 를 직접 손보는 게 낫다.
 
 ## 재배포 (코드 고쳤을 때)

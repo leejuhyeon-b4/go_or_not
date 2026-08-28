@@ -92,8 +92,8 @@
   <!-- ============ 좌석배치도 ============ -->
   <section id="tab-seat" class="hidden">
     <div class="card">
-      <label for="venue">극장</label>
-      <select id="venue"></select>
+      <label for="seatSeason">공연 (시즌)</label>
+      <select id="seatSeason"></select>
       <div id="vcurInfo" class="hint"></div>
     </div>
     <div class="card">
@@ -101,18 +101,21 @@
       <input id="sfile" type="file" accept="image/*" multiple>
       <div id="spreview" class="previews"></div>
       <button id="sparseBtn" disabled>Gemini 로 판독</button>
-      <div class="hint">배치도 전체가 선명하게 나오게. 층별로 나뉘면 여러 장 골라도 됩니다. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
+      <div class="hint">예매처 좌석배치도(등급 색상 있는 것)를 올리세요. 층·블록·좌석범위 + 등급 구역 + 시야제한석을 뽑습니다. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
       <div id="sparseMsg" class="msg hidden"></div>
     </div>
     <div id="seditCard" class="card hidden">
       <div class="between"><label>블록 — 층 / 이름 / 위치 / 좌석범위</label>
         <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 블록</button></div>
       <div id="sblocks"></div>
+      <div class="between" style="margin-top:14px"><label>등급 구역 — 층 / 시작열 / 끝열 / 등급</label>
+        <button id="saddGrade" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
+      <div id="sgrades"></div>
       <div class="between" style="margin-top:14px"><label>시야제한 구역 (있으면)</label>
         <button id="saddRestr" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="srestr"></div>
-      <div class="hint">통로/벽 위치와 별칭은 위치(left/center/right)에서 자동 생성됩니다. 저장하면 collected = true.</div>
-      <button id="ssaveBtn">이 극장 배치도로 저장</button>
+      <div class="hint">통로/벽·별칭은 위치에서 자동. 저장하면 극장 기하는 venues 에, 등급 구역은 이 공연(seasons.seat_grades)에 열별로 펼쳐 저장됩니다.</div>
+      <button id="ssaveBtn">이 공연 배치도로 저장</button>
       <div id="ssaveMsg" class="msg hidden"></div>
     </div>
   </section>
@@ -206,16 +209,18 @@ document.querySelectorAll(".tabs [data-tab]").forEach((b) => {
 async function enterApp() {
   show($("loginCard"), false);
   show($("app"), true);
-  await Promise.all([loadSeasons(), loadVenues()]);
+  await loadSeasons();
 }
 
 /* ---------------- 할인정보 ---------------- */
 async function loadSeasons() {
   try {
     const { seasons } = await api("seasons");
+    const list = seasons || [];
+
     const sel = $("season");
     sel.innerHTML = "";
-    (seasons || []).forEach((s) => {
+    list.forEach((s) => {
       const o = document.createElement("option");
       o.value = s.season_id;
       const mark = s.discounts_verified ? " ✓" : (s.discounts ? " (임시)" : "");
@@ -225,6 +230,19 @@ async function loadSeasons() {
     });
     sel.onchange = renderCurSeason;
     renderCurSeason();
+
+    const vsel = $("seatSeason");
+    vsel.innerHTML = "";
+    list.forEach((s) => {
+      const o = document.createElement("option");
+      o.value = s.season_id;
+      const n = Array.isArray(s.seat_grades) ? s.seat_grades.length : 0;
+      o.textContent = s.work_title + " " + (s.season_label || "") + (n ? " ✓등급" : " (등급 미수집)");
+      o._s = s;
+      vsel.appendChild(o);
+    });
+    vsel.onchange = renderCurSeatSeason;
+    renderCurSeatSeason();
   } catch (e) {
     setMsg($("dparseMsg"), e.message, "err");
   }
@@ -347,20 +365,11 @@ $("dsaveBtn").onclick = async () => {
 };
 
 /* ---------------- 좌석배치도 ---------------- */
-async function loadVenues() {
-  try {
-    const { venues } = await api("venues");
-    const sel = $("venue");
-    sel.innerHTML = "";
-    (venues || []).forEach((v) => {
-      const o = document.createElement("option");
-      o.value = v.venue_id;
-      o.textContent = v.name + (v.collected ? " ✓" : " (미수집)");
-      sel.appendChild(o);
-    });
-  } catch (e) {
-    setMsg($("sparseMsg"), e.message, "err");
-  }
+function renderCurSeatSeason() {
+  const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
+  if (!s) return;
+  const n = Array.isArray(s.seat_grades) ? s.seat_grades.length : 0;
+  $("vcurInfo").textContent = "현재 등급 매핑 " + n + "행" + (n ? " (검증됨)" : " — 미수집");
 }
 
 $("sfile").onchange = () => {
@@ -376,17 +385,21 @@ $("sparseBtn").onclick = async () => {
   if (!files.length) return;
   $("sparseBtn").disabled = true;
   try {
-    const blocks = [], restr = [];
+    const blocks = [], zones = [], restr = [];
     for (let i = 0; i < files.length; i++) {
       setMsg($("sparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
       const b64 = await fileToB64(files[i]);
-      const { floors, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
+      const { floors, grade_zones, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
       (floors || []).forEach((x) => blocks.push(x));
+      (grade_zones || []).forEach((x) => zones.push(x));
       (restricted_seats || []).forEach((x) => restr.push(x));
     }
     const mBlocks = dedupeByKey(blocks, (b) => b.floor + "|" + String(b.name || "").trim().toLowerCase());
-    setMsg($("sparseMsg"), files.length + "장에서 블록 " + mBlocks.length + "개 · 시야제한 " + restr.length + "개. 반드시 확인하세요.", "ok");
+    const mZones = dedupeByKey(zones, (z) => z.floor + "|" + String(z.from_row).toUpperCase() + "|" + String(z.to_row).toUpperCase() + "|" + String(z.grade).toUpperCase());
+    setMsg($("sparseMsg"),
+      files.length + "장 → 블록 " + mBlocks.length + " · 등급구역 " + mZones.length + " · 시야제한 " + restr.length + ". 반드시 확인하세요.", "ok");
     renderSBlocks(mBlocks);
+    renderSGrades(mZones);
     renderSRestr(restr);
     show($("seditCard"), true);
   } catch (e) {
@@ -419,6 +432,25 @@ function addSBlock(b) {
 }
 $("saddBlock").onclick = () => addSBlock();
 
+function renderSGrades(list) {
+  $("sgrades").innerHTML = "";
+  (list || []).forEach(addSGrade);
+}
+function addSGrade(z) {
+  z = z || { floor: 1, from_row: "", to_row: "", grade: "" };
+  const div = document.createElement("div");
+  div.className = "srow";
+  div.innerHTML =
+    '<input class="f" type="number" inputmode="numeric" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<input class="fr" placeholder="시작열" value="' + esc(z.from_row || "") + '">' +
+    '<input class="tr" placeholder="끝열" value="' + esc(z.to_row || "") + '">' +
+    '<input class="gd" placeholder="등급 (R/S…)" value="' + esc(z.grade || "") + '" style="grid-column:span 2">' +
+    '<button class="del">×</button>';
+  div.querySelector(".del").onclick = () => div.remove();
+  $("sgrades").appendChild(div);
+}
+$("saddGrade").onclick = () => addSGrade();
+
 function renderSRestr(list) {
   $("srestr").innerHTML = "";
   (list || []).forEach(addSRestr);
@@ -441,7 +473,7 @@ function addSRestr(r) {
 $("saddRestr").onclick = () => addSRestr();
 
 $("ssaveBtn").onclick = async () => {
-  const venue_id = $("venue").value;
+  const season_id = $("seatSeason").value;
   const floors = {};
   [...document.querySelectorAll("#sblocks .srow")].forEach((r) => {
     const f = String(parseInt(r.querySelector(".f").value, 10) || "");
@@ -454,6 +486,12 @@ $("ssaveBtn").onclick = async () => {
       seat_max: Number(r.querySelector(".mx").value),
     });
   });
+  const grade_zones = [...document.querySelectorAll("#sgrades .srow")].map((r) => ({
+    floor: parseInt(r.querySelector(".f").value, 10) || null,
+    from_row: r.querySelector(".fr").value.trim(),
+    to_row: r.querySelector(".tr").value.trim() || r.querySelector(".fr").value.trim(),
+    grade: r.querySelector(".gd").value.trim().toUpperCase(),
+  })).filter((z) => z.floor != null && z.from_row && z.grade);
   const restricted_seats = [...document.querySelectorAll("#srestr .rrow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
     block: r.querySelector(".b").value.trim() || null,
@@ -466,9 +504,12 @@ $("ssaveBtn").onclick = async () => {
   $("ssaveBtn").disabled = true;
   setMsg($("ssaveMsg"), "저장 중…", "");
   try {
-    await api("save-seatmap", { venue_id, floors, restricted_seats });
-    setMsg($("ssaveMsg"), "저장 완료. 데스크탑에서 'npm run pull' 후, seed 값은 필요하면 손보세요.", "ok");
-    await loadVenues();
+    const res = await api("save-seatmap", { season_id, floors, grade_zones, restricted_seats });
+    setMsg($("ssaveMsg"),
+      "저장 완료 (등급 매핑 " + (res.seat_grades || 0) + "행). 데스크탑에서 'npm run pull'.", "ok");
+    await loadSeasons();
+    $("seatSeason").value = season_id;
+    renderCurSeatSeason();
   } catch (e) {
     setMsg($("ssaveMsg"), e.message, "err");
   } finally {
