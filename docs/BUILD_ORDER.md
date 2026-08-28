@@ -42,9 +42,12 @@
 
 ---
 
-- **좌석배치도 → seat_grades** — 좌석배치도 탭이 공연 선택으로 바뀜. Gemini 가 등급 구역
-  `{floor,from_row,to_row,grade}` 도 판독 → save 가 열별로 펼쳐 `seasons.seat_grades` 저장.
-  이제 R-3b 폴백은 배치도에 등급 정보가 없을 때만 뜬다.
+- **좌석배치도 탭 = 공연 선택** — 블록·시야제한만 Gemini 자동. **등급은 이미지로 못 읽어서
+  텍스트로 직접 입력** ("1층 1-22열 12-37번 VIP" 식 줄 → 표 파싱). `seasons.seat_grades` 에
+  구역 그대로 저장 `{floor,row_from?,row_to?,seat_from?,seat_to?,grade}`. 등급만 저장 가능(블록 없이).
+  안 채우면 상담 때 R-3b 로 사용자에게 물음.
+- **통로 개념 삭제** — 어느 좌석이 통로 옆인지 확정 불가. 선호좌석 '통로석' 옵션·engine AISLE·
+  is_aisle 전부 제거. 시야축은 사이드/중앙/엣지(블록 기반)만.
 
 ---
 
