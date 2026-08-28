@@ -22,7 +22,7 @@
   button:disabled { opacity:.5; }
   .drow { border:1px solid var(--line); border-radius:10px; padding:8px; margin-bottom:8px; }
   .drow .l1 { display:grid; grid-template-columns:1fr 54px 120px 32px; gap:5px; align-items:center; }
-  .drow .l2 { display:grid; grid-template-columns:104px 1fr; gap:5px; margin-top:5px; }
+  .drow .l2 { display:grid; grid-template-columns:92px 78px 1fr; gap:5px; margin-top:5px; }
   .drow input, .drow select { padding:8px; font-size:14px; }
   .srow { display:grid; grid-template-columns:44px 1fr 48px 56px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
   .srow input, .srow select { padding:8px; font-size:14px; }
@@ -80,7 +80,8 @@
         <button id="daddRow" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="drows"></div>
       <div class="hint">rate = 정수 %. type: STANDING(누구나) / ELIGIBILITY(자격증빙) / LOYALTY(재관람전용).
-        적용회차 = 낮공/밤공 전용이면 지정 (엔진 기준선에 반영). 조건란은 참고용 기록.</div>
+        회차 = 낮공/밤공 전용이면 지정. 등급 = 특정 좌석등급만이면 쉼표로 (예 R,S / 비우면 전체).
+        회차·등급은 엔진 기준선에 반영, 조건란은 참고용. 대상별 할인율·등급이 다르면 행을 나누세요.</div>
       <button id="dsaveBtn">이 공연 할인으로 저장</button>
       <div id="dsaveMsg" class="msg hidden"></div>
     </div>
@@ -268,16 +269,17 @@ $("dparseBtn").onclick = async () => {
 
 function renderDRows(list) {
   $("drows").innerHTML = "";
-  (list && list.length ? list : [{ name: "", rate: 0, type: "STANDING", applies_to: "ALL", note: "" }]).forEach(addDRow);
+  (list && list.length ? list : [{ name: "", rate: 0, type: "STANDING", applies_to: "ALL", grades: [], note: "" }]).forEach(addDRow);
 }
 function addDRow(d) {
-  d = d || { name: "", rate: 0, type: "STANDING", applies_to: "ALL", note: "" };
+  d = d || { name: "", rate: 0, type: "STANDING", applies_to: "ALL", grades: [], note: "" };
   const div = document.createElement("div");
   div.className = "drow";
   const typeOpts = ["STANDING", "ELIGIBILITY", "LOYALTY"]
     .map((t) => '<option ' + (d.type === t ? "selected" : "") + ">" + t + "</option>").join("");
   const atOpts = [["ALL", "전체 회차"], ["MATINEE", "낮공 전용"], ["EVENING", "밤공 전용"]]
     .map(([v, t]) => '<option value="' + v + '"' + ((d.applies_to || "ALL") === v ? " selected" : "") + ">" + t + "</option>").join("");
+  const grStr = Array.isArray(d.grades) ? d.grades.join(",") : "";
   div.innerHTML =
     '<div class="l1">' +
       '<input class="n" placeholder="할인명" value="' + esc(d.name || "") + '">' +
@@ -287,6 +289,7 @@ function addDRow(d) {
     '</div>' +
     '<div class="l2">' +
       '<select class="at">' + atOpts + '</select>' +
+      '<input class="gr" placeholder="등급" value="' + esc(grStr) + '">' +
       '<input class="nt" placeholder="적용기간·조건 (선택)" value="' + esc(d.note || "") + '">' +
     '</div>';
   div.querySelector(".del").onclick = () => div.remove();
@@ -301,6 +304,7 @@ $("dsaveBtn").onclick = async () => {
     rate: Number(r.querySelector(".r").value),
     type: r.querySelector(".t").value,
     applies_to: r.querySelector(".at").value,
+    grades: (r.querySelector(".gr").value || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean),
     note: r.querySelector(".nt").value.trim(),
   })).filter((d) => d.name);
   if (!discounts.length) { setMsg($("dsaveMsg"), "저장할 행이 없어요.", "err"); return; }

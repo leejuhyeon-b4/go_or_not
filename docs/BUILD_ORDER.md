@@ -26,9 +26,10 @@
   저장은 `GON_AUTH.updateOutcome`. 이용내역에 결과/`관람 예정` 배지 추가.
 - **degraded 할인율 출력** — `engine.js agentCost` 정가는 있고 할인 목록 미수집일 때
   "정가 X에서 Z% 할인받으셨습니다 (최선 여부는 판단 안 함)" 로 raw 할인율을 사실로 출력.
-- **할인 회차 제한 (`applies_to`)** — 할인 항목에 `applies_to`(ALL/MATINEE/EVENING)+`note` 추가.
-  `data.js baselineRate` 가 밤공 상담에서 마티네 전용 할인을 기준선에서 제외 (회차 모르면 포함).
-  관리자 도구가 Gemini 로 판독·검토·저장. `note` 는 저장만 (changelog §1.2 개정).
+- **할인 회차·등급 제한** — 할인 항목에 `applies_to`(ALL/MATINEE/EVENING) + `grades`(["R","S"]…) + `note`.
+  `data.js baselineRate` 가 안 맞는 회차·좌석등급 할인을 기준선에서 제외 (모르면 보수적 포함).
+  대상별 율·등급 다르면(대학생/초중고) 별도 항목. 관리자 도구가 Gemini 판독·검토·저장, `note` 는 저장만.
+  R-4 "어떤 할인" 드롭다운 → **버튼**(이 시즌 실제 할인 + 정가 + 목록에 없는 할인). changelog §1.2 개정.
 
 ---
 

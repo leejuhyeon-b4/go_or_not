@@ -143,13 +143,17 @@ Deno.serve(async (req) => {
         .map((d) => {
           const at = ["ALL", "MATINEE", "EVENING"].includes(d?.applies_to) ? d.applies_to : "ALL";
           const note = String(d?.note ?? "").trim();
+          const grades = Array.isArray(d?.grades)
+            ? [...new Set(d.grades.map((g: unknown) => String(g).trim().toUpperCase()).filter(Boolean))]
+            : [];
           const row: Record<string, unknown> = {
             name: String(d?.name ?? "").trim(),
             rate: Number(d?.rate),
             type: ["STANDING", "ELIGIBILITY", "LOYALTY"].includes(d?.type) ? d.type : "STANDING",
           };
-          // 기본값은 저장하지 않는다 — seed 와 모양을 맞춤 (없으면 ALL 로 읽힘)
+          // 기본값은 저장하지 않는다 — seed 와 모양을 맞춤 (없으면 ALL / 전체등급으로 읽힘)
           if (at !== "ALL") row.applies_to = at;
+          if (grades.length) row.grades = grades;
           if (note) row.note = note;
           return row;
         })
@@ -277,8 +281,10 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
   - MATINEE   낮공(마티네) 전용
   - EVENING   밤공 전용
   - ALL       회차 제한 없음 (대부분)
-- note: 적용 기간·조건이 적혀 있으면 그 문구를 짧게 그대로 (예 "2/28까지", "월·수 공연", "A·B석 제외"). 없으면 빈 문자열.
-- 애매하면 type=STANDING, applies_to=ALL. 이미지에 없는 항목은 만들지 마라.`;
+- grades: 특정 좌석등급에만 적용되면 그 등급 코드 배열 (예 ["R","S"]). 전 좌석이면 빈 배열 [].
+- note: 적용 기간·조건이 적혀 있으면 그 문구를 짧게 그대로 (예 "2/28까지", "월·수 공연", "학생증 지참"). 없으면 빈 문자열.
+- **대상별로 할인율이나 적용 좌석등급이 다르면 (예: 대학생 R·S 20% / 초·중·고 전석 50%) 별도 항목으로 나눠서 각각 추출하라.**
+- 애매하면 type=STANDING, applies_to=ALL, grades=[]. 이미지에 없는 항목은 만들지 마라.`;
 
   const body = {
     contents: [{
@@ -298,9 +304,10 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
             rate: { type: "INTEGER" },
             type: { type: "STRING", enum: ["STANDING", "ELIGIBILITY", "LOYALTY"] },
             applies_to: { type: "STRING", enum: ["ALL", "MATINEE", "EVENING"] },
+            grades: { type: "ARRAY", items: { type: "STRING" } },
             note: { type: "STRING" },
           },
-          required: ["name", "rate", "type", "applies_to", "note"],
+          required: ["name", "rate", "type", "applies_to", "grades", "note"],
         },
       },
     },

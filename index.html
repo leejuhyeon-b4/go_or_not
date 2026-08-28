@@ -362,6 +362,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   padding:6px 10px;
 }
 .pill.active{ border-color:var(--accent); color:var(--text); background:#3f341c; }
+#discountBtns .pill{ cursor:pointer; }
+.disc-empty{ font-size:12px; color:var(--text-dis); }
 
 .scale-group{ display:flex; gap:6px; flex-wrap:wrap; }
 .scale-btn{
@@ -688,8 +690,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
              질문이 안 뜨는 게 오히려 틀렸다. -->
         <div class="row">
           <div class="field">
-            <label class="field-label" for="discountSelect">어떤 할인을 받으셨나요?<span class="req">*</span></label>
-            <select id="discountSelect"></select>
+            <label class="field-label">어떤 할인을 받으셨나요?<span class="req">*</span></label>
+            <div class="pill-group" id="discountBtns"></div>
           </div>
           <div class="field mid">
             <label class="field-label" for="paidAmount">결제한 금액(원)<span class="req">*</span></label>
@@ -1003,7 +1005,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     loggedIn:false,
     matinee:null,
     // R-4 할인 사다리 (v2.1 §1.5)
-    // discountSelect 의 값을 그대로 담는다: '' 미답 | 'NONE' 정가 | 'OTHER' 목록에 없음 | 권종명
+    // 할인 버튼의 값을 담는다: '' 미답 | 'NONE' 정가 | 'OTHER' 목록에 없음 | 권종명
     selectedDiscount:'',
     proofStatus:null,      // NOT_REQUIRED | AVAILABLE | UNAVAILABLE
     altGradeName:null,     // 증빙 불가 + GRADE_CHANGE 일 때 고른 대체 권종
@@ -1151,31 +1153,46 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     return GON_DB.listPrice(season, seatInfo.grade);
   }
 
-  // 크롤링한 목록을 그대로 표시한다. 사다리가 없으면 조용히 잠근다 —
+  // 수집한 할인 목록을 버튼으로 편다. 목록이 없으면 안내만 —
   // 사용자는 "지금 모르는 게 있다"만 알면 되고 왜 모르는지는 알 필요가 없다.
-  function fillDiscountSelect(){
-    const sel = $('discountSelect');
+  function discountBtnLabel(d){
+    return d.name.replace(/\s*할인$/,'') + ' ' + d.rate + '%';
+  }
+  function fillDiscountButtons(){
+    const box = $('discountBtns');
     const ds  = GON_DB.discounts(currentSeason());
     const prev = state.selectedDiscount;
-    sel.innerHTML = '';
+    box.innerHTML = '';
 
     if(!ds || !ds.length){
-      sel.appendChild(new Option('이 시즌의 할인 정보가 아직 없어요', ''));
-      sel.disabled = true;
+      box.innerHTML = '<span class="disc-empty">이 시즌의 할인 정보가 아직 없어요</span>';
       state.selectedDiscount = '';
       return;
     }
 
-    sel.disabled = false;
-    sel.appendChild(new Option('선택해주세요', ''));
-    sel.appendChild(new Option('없음 (정가)', 'NONE'));
-    ds.forEach(d=> sel.appendChild(new Option(d.name + ' ' + d.rate + '%', d.name)));
-    sel.appendChild(new Option('목록에 없는 할인', 'OTHER'));   // 타임세일·쿠폰팩 등
+    const opts = [{ v:'NONE', label:'정가' }]
+      .concat(ds.map(d=> ({ v:d.name, label:discountBtnLabel(d) })))
+      .concat([{ v:'OTHER', label:'목록에 없는 할인' }]);   // 타임세일·쿠폰팩 등
 
     // 공연을 바꿔도 같은 이름의 권종이 있으면 선택을 유지한다
-    const keep = Array.from(sel.options).some(o=> o.value === prev) ? prev : '';
-    sel.value = keep;
+    const keep = opts.some(o=> o.v === prev) ? prev : '';
     state.selectedDiscount = keep;
+
+    opts.forEach(o=>{
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'pill';
+      b.dataset.value = o.v;
+      b.textContent = o.label;
+      if(o.v === keep) b.classList.add('active');
+      b.addEventListener('click', ()=>{
+        state.selectedDiscount = o.v;
+        box.querySelectorAll('.pill').forEach(x=> x.classList.toggle('active', x === b));
+        syncTicketFields();
+        updateProgress();
+      });
+      box.appendChild(b);
+    });
   }
 
   function fillAltGradeSelect(){
@@ -1268,11 +1285,6 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     renderFactLine();
   }
 
-  $('discountSelect').addEventListener('change', ()=>{
-    state.selectedDiscount = $('discountSelect').value;
-    syncTicketFields();
-    updateProgress();
-  });
   $('altGradeSelect').addEventListener('change', ()=>{
     state.altGradeName = $('altGradeSelect').value || null;
     renderFactLine();
@@ -1334,12 +1346,12 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 
   // 공연·날짜가 바뀌면 사다리가 통째로 바뀌고, 좌석·금액이 바뀌면 계산이 바뀐다
   ['workTitle','sessionDate'].forEach(id=>
-    $(id).addEventListener('input', ()=>{ fillDiscountSelect(); syncTicketFields(); }));
+    $(id).addEventListener('input', ()=>{ fillDiscountButtons(); syncTicketFields(); }));
   ['seatFloor','seatRowInput','seatNumber','paidAmount'].forEach(id=>
     $(id).addEventListener('input', renderFactLine));
   $('seatFloor').addEventListener('change', renderFactLine);
 
-  fillDiscountSelect();
+  fillDiscountButtons();
 
   /* ---------------------------------------------------------
      완성도 계산 (필수 9항목) → 스포트라이트 반영
@@ -1350,7 +1362,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
     // 사다리가 아직 없는 시즌이면 권종을 물을 수 없으므로 금액만 본다 (v2.1 §5.4)
     ()=> Number($('paidAmount').value)>0
-         && ($('discountSelect').disabled || state.selectedDiscount !== '')
+         && (state.selectedDiscount !== '' || !GON_DB.discounts(currentSeason()))
          && (!needsProof() || state.proofStatus !== null),
     ()=> state.casting!==null,
     ()=> state.firstWatch!==null && (state.firstWatch==='YES' || state.workAffinity!==null),

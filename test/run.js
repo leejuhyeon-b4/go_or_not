@@ -98,6 +98,17 @@ eq(DB.baselineRate(seasonMat, {}), 30, 'baseline 회차 모름 → 보수적으�
 eq(DB.baselineRate({ discounts: [{ name: 'x', rate: 25, type: 'STANDING' }] }, { matinee: 'EVENING' }),
    25, 'baseline applies_to 없으면 회차 무관 25');
 
+// 좌석등급 제한 할인 (grades) → 기준선 필터
+const seasonGr = { discounts: [
+  { name: '조기예매', rate: 20, type: 'STANDING' },
+  { name: '대학생',   rate: 30, type: 'ELIGIBILITY', grades: ['R', 'S'] },
+] };
+eq(DB.baselineRate(seasonGr, { selected: seasonGr.discounts[1], grade: 'R' }), 30, 'baseline R석 → 대학생 30');
+eq(DB.baselineRate(seasonGr, { selected: seasonGr.discounts[1], grade: 'A' }), 20, 'baseline A석 → 대학생 제외, 20');
+eq(DB.baselineRate(seasonGr, { selected: seasonGr.discounts[1] }), 30, 'baseline 등급 모름 → 보수적 30');
+eq(DB.baselineRate({ discounts: [{ name: 's', rate: 40, type: 'STANDING', grades: ['VIP'] }] }, { grade: 'R' }),
+   0, 'baseline STANDING 이라도 등급 안 맞으면 0');
+
 /* ============================================================
    2. 사이드 구간 분류 (PRD §5.2)
    ============================================================ */
