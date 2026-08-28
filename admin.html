@@ -376,7 +376,7 @@ $("dsaveBtn").onclick = async () => {
     await loadSeasons();
     $("season").value = season_id;   // 방금 저장한 시즌 유지
     renderCurSeason();
-    setMsg($("dsaveMsg"), discounts.length + "개 저장 완료. 데스크탑에서 'npm run pull' 하면 앱에 반영돼요.", "ok");
+    setMsg($("dsaveMsg"), discounts.length + "개 저장 완료. 상담 앱을 새로고침하면 반영돼요.", "ok");
   } catch (e) {
     setMsg($("dsaveMsg"), e.message, "err");
   } finally {
@@ -629,7 +629,7 @@ $("ssaveBtn").onclick = async () => {
     if (Object.keys(floors).length) payload.floors = floors;
     const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
-      "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + ". 데스크탑 'npm run pull'.", "ok");
+      "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + ". 상담 앱 새로고침하면 반영.", "ok");
     await loadSeasons();
     $("seatSeason").value = season_id;
     renderCurSeatSeason();

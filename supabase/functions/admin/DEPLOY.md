@@ -62,14 +62,9 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 
 ## 6. 앱에 반영
 
-저장은 Supabase 에 바로 들어간다. 상담 앱(`index.html`)은 프리페치 방식이라,
-데스크탑에서 한 번:
-
-```
-npm run pull
-```
-
-하면 `data/seed.remote.js` 가 갱신되고 반영된다.
+저장은 Supabase 에 바로 들어가고, 상담 앱은 **새로고침만** 하면 반영된다
+(`data/seed.live.js` 가 로드 시 Supabase 를 직접 읽음). `npm run pull` 은
+오프라인 스냅샷(`data/seed.remote.js`)이 필요할 때만.
 
 ---
 
