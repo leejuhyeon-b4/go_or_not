@@ -216,7 +216,9 @@ Deno.serve(async (req) => {
       }
       const clean = discounts
         .map((d) => {
-          const at = ["ALL", "MATINEE", "EVENING", "LIMITED"].includes(d?.applies_to) ? d.applies_to : "ALL";
+          const at = ["ALL", "LIMITED"].includes(d?.applies_to) ? d.applies_to
+            : (d?.applies_to === "MATINEE" || d?.applies_to === "EVENING") ? d.applies_to  // 레거시 보존
+            : "ALL";
           const note = String(d?.note ?? "").trim();
           const grades = Array.isArray(d?.grades)
             ? [...new Set(d.grades.map((g: unknown) => String(g).trim().toUpperCase()).filter(Boolean))]
@@ -374,11 +376,8 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
   - STANDING     조건 없이 누구나·상시 (조기예매/조조/문화가있는날/마티네/멤버십)
   - ELIGIBILITY  자격 증빙 필요 (청소년/대학생/경로/장애인/국가유공자/다자녀)
   - LOYALTY      재관람자 전용 (재관람 할인/도장/쿠폰팩)
-- applies_to: 회차 제한.
-  - MATINEE   낮공(마티네) 전용
-  - EVENING   밤공 전용
-  - LIMITED   프리뷰 / 문화가있는날 / "N회차에 한해" 등 특정 회차·날짜만 (note 에 조건이 있으면 대개 LIMITED)
-  - ALL       회차 제한 없음 (대부분)
+- applies_to: "LIMITED" (프리뷰 / 문화가있는날 / "N회차에 한해" / 수·금 낮공 등 특정 회차·날짜만.
+  note 에 회차 조건이 있으면 대개 LIMITED) 또는 "ALL" (제한 없음, 대부분).
 - grades: 특정 좌석등급에만 적용되면 그 등급 코드 배열 (예 ["R","S"], ["S","A"]). 전 좌석이면 빈 배열 [].
 - note: 적용 기간·조건이 적혀 있으면 그 문구를 짧게 그대로 (예 "2/28까지", "월·수 공연", "학생증 지참"). 없으면 빈 문자열.
 
@@ -409,7 +408,7 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
             name: { type: "STRING" },
             rate: { type: "INTEGER" },
             type: { type: "STRING", enum: ["STANDING", "ELIGIBILITY", "LOYALTY"] },
-            applies_to: { type: "STRING", enum: ["ALL", "MATINEE", "EVENING", "LIMITED"] },
+            applies_to: { type: "STRING", enum: ["ALL", "LIMITED"] },
             grades: { type: "ARRAY", items: { type: "STRING" } },
             note: { type: "STRING" },
           },
