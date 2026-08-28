@@ -78,10 +78,12 @@ window.GON_DB = (function(){
     if(z.numbers && z.numbers.length){
       return seat.number != null && z.numbers.indexOf(seat.number) > -1;
     }
-    if(z.seat_from != null || z.seat_to != null){
+    var sf = (z.seat_from != null && z.seat_from > 0) ? z.seat_from : null;
+    var st = (z.seat_to   != null && z.seat_to   > 0) ? z.seat_to   : null;
+    if(sf != null || st != null){
       if(seat.number == null) return false;
-      if(z.seat_from != null && seat.number < z.seat_from) return false;
-      if(z.seat_to   != null && seat.number > z.seat_to) return false;
+      if(sf != null && seat.number < sf) return false;
+      if(st != null && seat.number > st) return false;
     }
     return true;
   }

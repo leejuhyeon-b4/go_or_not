@@ -100,15 +100,18 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
     if (!Number.isFinite(floor) || !grade) continue;
     const rowFrom = String(zz?.from_row ?? "").trim().toUpperCase();
     const rowTo = String(zz?.to_row ?? "").trim().toUpperCase();
-    const sf = Number(zz?.from_seat);
-    const st = Number(zz?.to_seat);
+    const posInt = (v: unknown) => {
+      if (v == null || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
     out.push({
       floor,
       row_from: rowFrom || null,
       row_to: rowTo || rowFrom || null,
       row_parity: parityOf(zz?.row_parity),
-      seat_from: Number.isFinite(sf) ? sf : null,
-      seat_to: Number.isFinite(st) ? st : null,
+      seat_from: posInt(zz?.from_seat),
+      seat_to: posInt(zz?.to_seat),
       grade,
       source: "관리자 좌석배치도 판독",
     });
