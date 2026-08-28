@@ -76,12 +76,14 @@
       <div id="dparseMsg" class="msg hidden"></div>
     </div>
     <div id="deditCard" class="card hidden">
-      <div class="between"><label>판독 결과 — 확인·수정 후 저장</label>
+      <div class="between"><label>할인 목록 — 확인·수정 후 저장 (저장하면 이 목록 전체로 교체)</label>
         <button id="daddRow" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="drows"></div>
-      <div class="hint">rate = 정수 %. type: STANDING(누구나) / ELIGIBILITY(자격증빙) / LOYALTY(재관람전용).
+      <div class="hint">기존 할인이 미리 채워져 있고, 판독은 여기에 <b>더해집니다</b> (덮어쓰기 아님).
+        1·2차 공지를 다 올리면 됨. 없어진 할인만 × 로 지우세요.<br>
+        rate = 정수 %. type: STANDING(누구나) / ELIGIBILITY(자격증빙) / LOYALTY(재관람전용).
         회차 = 낮공/밤공 전용이면 지정. 등급 = 특정 좌석등급만이면 쉼표로 (예 R,S / 비우면 전체).
-        회차·등급은 엔진 기준선에 반영, 조건란은 참고용. 대상별 할인율·등급이 다르면 행을 나누세요.</div>
+        대상별 할인율·등급이 다르면 행을 나누세요.</div>
       <button id="dsaveBtn">이 공연 할인으로 저장</button>
       <div id="dsaveMsg" class="msg hidden"></div>
     </div>
@@ -227,18 +229,31 @@ async function loadSeasons() {
     setMsg($("dparseMsg"), e.message, "err");
   }
 }
+const dKey = (d) =>
+  String(d.name || "").trim().toLowerCase() + "|" + Number(d.rate) + "|" +
+  (Array.isArray(d.grades) ? [...d.grades].map((g) => String(g).toUpperCase()).sort().join(",") : "");
+
 function renderCurSeason() {
   const s = $("season").selectedOptions[0] && $("season").selectedOptions[0]._s;
   if (!s) return;
   const d = s.discounts;
   $("curInfo").textContent = d
-    ? "현재 " + d.length + "개" + (s.discounts_verified ? " (검증됨)" : " (임시 — 덮어써도 됨)")
+    ? "현재 " + d.length + "개" + (s.discounts_verified ? " (검증됨)" : " (임시)")
     : "현재 할인 정보 없음";
+  // 기존 할인을 검토표에 미리 채운다 — 판독은 여기에 더해진다 (덮어쓰기 아님)
+  setMsg($("dparseMsg"), "", "");
+  setMsg($("dsaveMsg"), "", "");
+  if (d && d.length) {
+    renderDRows(d);
+    show($("deditCard"), true);
+  } else {
+    $("drows").innerHTML = "";
+    show($("deditCard"), false);
+  }
 }
 
 $("dfile").onchange = () => {
   const files = $("dfile").files;
-  show($("deditCard"), false);
   setMsg($("dparseMsg"), "", "");
   renderPreviews(files, $("dpreview"));
   $("dparseBtn").disabled = !files.length;
@@ -249,18 +264,20 @@ $("dparseBtn").onclick = async () => {
   if (!files.length) return;
   $("dparseBtn").disabled = true;
   try {
-    const all = [];
+    // 검토표에 이미 있는 것(기존 할인 포함) + 새로 판독한 것을 합친다
+    const all = readDRows();
+    const before = all.length;
     for (let i = 0; i < files.length; i++) {
       setMsg($("dparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
       const b64 = await fileToB64(files[i]);
       const { discounts } = await api("parse", { image_base64: b64, mime_type: files[i].type });
       (discounts || []).forEach((d) => all.push(d));
     }
-    // 같은 이름이라도 등급/할인율이 다르면 다른 항목 (조기예매 R 10% vs S 20%)
-    const merged = dedupeByKey(all, (d) =>
-      String(d.name || "").trim().toLowerCase() + "|" + Number(d.rate) + "|" +
-      (Array.isArray(d.grades) ? [...d.grades].map((g) => String(g).toUpperCase()).sort().join(",") : ""));
-    setMsg($("dparseMsg"), files.length + "장에서 " + merged.length + "개 항목 (중복 제거). 아래에서 확인하세요.", "ok");
+    // 같은 이름이라도 등급/할인율 다르면 다른 항목 (조기예매 R 10% vs S 20%)
+    const merged = dedupeByKey(all, dKey);
+    const added = merged.length - before;
+    setMsg($("dparseMsg"),
+      "기존 " + before + "개 + 새로 " + (added >= 0 ? added : 0) + "개 → " + merged.length + "개. 확인 후 저장하세요.", "ok");
     renderDRows(merged);
     show($("deditCard"), true);
   } catch (e) {
@@ -273,6 +290,16 @@ $("dparseBtn").onclick = async () => {
 function renderDRows(list) {
   $("drows").innerHTML = "";
   (list && list.length ? list : [{ name: "", rate: 0, type: "STANDING", applies_to: "ALL", grades: [], note: "" }]).forEach(addDRow);
+}
+function readDRows() {
+  return [...document.querySelectorAll("#drows .drow")].map((r) => ({
+    name: r.querySelector(".n").value.trim(),
+    rate: Number(r.querySelector(".r").value),
+    type: r.querySelector(".t").value,
+    applies_to: r.querySelector(".at").value,
+    grades: (r.querySelector(".gr").value || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean),
+    note: r.querySelector(".nt").value.trim(),
+  })).filter((d) => d.name);
 }
 function addDRow(d) {
   d = d || { name: "", rate: 0, type: "STANDING", applies_to: "ALL", grades: [], note: "" };
@@ -302,14 +329,7 @@ $("daddRow").onclick = () => addDRow();
 
 $("dsaveBtn").onclick = async () => {
   const season_id = $("season").value;
-  const discounts = [...document.querySelectorAll("#drows .drow")].map((r) => ({
-    name: r.querySelector(".n").value.trim(),
-    rate: Number(r.querySelector(".r").value),
-    type: r.querySelector(".t").value,
-    applies_to: r.querySelector(".at").value,
-    grades: (r.querySelector(".gr").value || "").split(/[,\s]+/).map((s) => s.trim().toUpperCase()).filter(Boolean),
-    note: r.querySelector(".nt").value.trim(),
-  })).filter((d) => d.name);
+  const discounts = dedupeByKey(readDRows(), dKey);
   if (!discounts.length) { setMsg($("dsaveMsg"), "저장할 행이 없어요.", "err"); return; }
   $("dsaveBtn").disabled = true;
   setMsg($("dsaveMsg"), "저장 중…", "");

@@ -1156,53 +1156,74 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     return GON_DB.listPrice(season, seatInfo.grade);
   }
 
-  // 수집한 할인 목록을 버튼으로 편다. 목록이 없어도 정가·목록없음 버튼은 두고,
-  // 비용축은 degraded 로 "몇 % 받았는지"만 사실로 말한다.
-  function discountBtnLabel(d){
-    const g = (d.grades && d.grades.length) ? ' (' + d.grades.join('·') + ')' : '';
-    return d.name.replace(/\s*할인$/,'') + ' ' + d.rate + '%' + g;
+  // 좌석등급으로 실제 등급 알아낸다 (미입력이면 null)
+  function currentSeatGrade(){
+    const l = currentList();
+    return l ? l.grade : null;
   }
+
+  // 할인 버튼은 이름 하나당 하나. 등급별로 할인율이 나뉜 건 좌석을 넣으면 알아서 고른다.
   function fillDiscountButtons(){
     const box = $('discountBtns');
     const season = currentSeason();
     const ds  = GON_DB.discounts(season) || [];
     const hasList = ds.length > 0;
-    const prevObj = state.selectedDiscountObj;
-    const prevV = state.selectedDiscount;
+    const prevName = state.selectedDiscount;
     box.innerHTML = '';
 
-    // 항목: 정가 / (등급별로 나뉜 것 포함) 각 할인 / 목록에 없는 할인
-    const opts = [{ v:'NONE', label:'정가', d:null }];
-    ds.forEach(d=> opts.push({ v:d.name, label:discountBtnLabel(d), d:d }));
-    opts.push({ v:'OTHER', label: hasList ? '목록에 없는 할인' : '할인 받음', d:null });
+    // 이름으로 묶는다
+    const groups = [];
+    ds.forEach(d=>{
+      let g = groups.find(x=> x.name === d.name);
+      if(!g){ g = { name:d.name, items:[] }; groups.push(g); }
+      g.items.push(d);
+    });
 
-    // 공연을 바꿔도 같은 이름·할인율이면 선택을 유지한다
-    let keptOpt = null;
-    if(prevV === 'NONE' || prevV === 'OTHER'){
-      keptOpt = opts.find(o=> o.v === prevV);
-    } else if(prevObj){
-      keptOpt = opts.find(o=> o.d && o.d.name === prevObj.name && Number(o.d.rate) === Number(prevObj.rate));
-    }
-    state.selectedDiscount = keptOpt ? keptOpt.v : '';
-    state.selectedDiscountObj = keptOpt ? keptOpt.d : null;
+    const opts = [{ v:'NONE', label:'정가' }];
+    groups.forEach(g=>{
+      const rs = g.items.map(d=> Number(d.rate));
+      const mn = Math.min.apply(null, rs), mx = Math.max.apply(null, rs);
+      const rate = (mn === mx) ? mn + '%' : mn + '~' + mx + '%';
+      opts.push({ v:g.name, label: g.name.replace(/\s*할인$/,'') + ' ' + rate });
+    });
+    opts.push({ v:'OTHER', label: hasList ? '목록에 없는 할인' : '할인 받음' });
+
+    const keep = opts.some(o=> o.v === prevName) ? prevName : '';
+    state.selectedDiscount = keep;
 
     opts.forEach(o=>{
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'pill';
       b.textContent = o.label;
-      if(o === keptOpt) b.classList.add('active');
+      if(o.v === keep) b.classList.add('active');
       b.addEventListener('click', ()=>{
         state.selectedDiscount = o.v;
-        state.selectedDiscountObj = o.d;
         box.querySelectorAll('.pill').forEach(x=> x.classList.toggle('active', x === b));
+        resolveSelectedDiscount();
         syncTicketFields();
         updateProgress();
       });
       box.appendChild(b);
     });
 
+    resolveSelectedDiscount();
     renderDiscountMeta(season, hasList);
+  }
+
+  // state.selectedDiscount(이름) + 내 좌석등급 → 실제 할인 객체를 고른다.
+  // 같은 이름이 등급별로 여러 개면 등급에 맞는 것. 등급 모르면 첫 번째.
+  function resolveSelectedDiscount(){
+    const v = state.selectedDiscount;
+    if(!v || v === 'NONE' || v === 'OTHER'){ state.selectedDiscountObj = null; return; }
+    const named = (GON_DB.discounts(currentSeason()) || []).filter(d=> d.name === v);
+    if(!named.length){ state.selectedDiscountObj = null; return; }
+    if(named.length === 1){ state.selectedDiscountObj = named[0]; return; }
+    const grade = currentSeatGrade();
+    const hit = named.filter(d=>
+      GON_DB.discountAppliesToGrade(d, grade) &&
+      GON_DB.discountAppliesToSession(d, state.matinee));
+    state.selectedDiscountObj = hit[0] || named[0];
   }
 
   // "어떤 할인을 받으셨나요?" 옆 작은 글씨 — 갱신일 또는 미수집 안내
@@ -1323,7 +1344,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   /* ---------------------------------------------------------
      세그먼트 토글 바인딩
   --------------------------------------------------------- */
-  segBind('matinee', v=>{ state.matinee=v; updateProgress(); });
+  segBind('matinee', v=>{ state.matinee=v; resolveSelectedDiscount(); renderFactLine(); updateProgress(); });
 
   segBind('proofStatus', v=>{
     state.proofStatus=v;
@@ -1374,12 +1395,14 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     .forEach(id=> $(id).addEventListener('input', updateProgress));
   $('seatFloor').addEventListener('change', updateProgress);
 
-  // 공연·날짜가 바뀌면 사다리가 통째로 바뀌고, 좌석·금액이 바뀌면 계산이 바뀐다
+  // 공연·날짜가 바뀌면 사다리가 통째로 바뀌고, 좌석이 바뀌면 등급이 바뀌어
+  // 등급별로 나뉜 할인의 적용 항목이 바뀐다.
   ['workTitle','sessionDate'].forEach(id=>
     $(id).addEventListener('input', ()=>{ fillDiscountButtons(); syncTicketFields(); }));
+  function onSeatOrPaidChange(){ resolveSelectedDiscount(); syncTicketFields(); }
   ['seatFloor','seatRowInput','seatNumber','paidAmount'].forEach(id=>
-    $(id).addEventListener('input', renderFactLine));
-  $('seatFloor').addEventListener('change', renderFactLine);
+    $(id).addEventListener('input', onSeatOrPaidChange));
+  $('seatFloor').addEventListener('change', onSeatOrPaidChange);
 
   fillDiscountButtons();
 

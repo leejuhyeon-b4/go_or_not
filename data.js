@@ -496,6 +496,8 @@ window.GON_DB = (function(){
     listPrice: listPrice,
     discounts: discounts,
     discountsUpdatedAt: discountsUpdatedAt,
+    discountAppliesToGrade: discountAppliesToGrade,
+    discountAppliesToSession: discountAppliesToSession,
     findDiscount: findDiscount,
     baselineRate: baselineRate,
     priceForDiscount: priceForDiscount,
