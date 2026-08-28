@@ -335,8 +335,10 @@ $("dsaveBtn").onclick = async () => {
   setMsg($("dsaveMsg"), "저장 중…", "");
   try {
     await api("save", { season_id, discounts });
-    setMsg($("dsaveMsg"), "저장 완료. 데스크탑에서 'npm run pull' 하면 앱에 반영돼요.", "ok");
     await loadSeasons();
+    $("season").value = season_id;   // 방금 저장한 시즌 유지
+    renderCurSeason();
+    setMsg($("dsaveMsg"), discounts.length + "개 저장 완료. 데스크탑에서 'npm run pull' 하면 앱에 반영돼요.", "ok");
   } catch (e) {
     setMsg($("dsaveMsg"), e.message, "err");
   } finally {

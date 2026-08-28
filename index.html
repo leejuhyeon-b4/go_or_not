@@ -182,6 +182,8 @@ input::placeholder, textarea::placeholder{ color:var(--text-dis); }
   transition:max-height .25s ease;
 }
 .ticket-extra.open{ max-height:72px; margin-top:6px; }
+#seatGradeExtra.open{ max-height:200px; }
+#seatGradeBtns{ margin-bottom:2px; }
 
 /* 계산 결과 — 사실만 적고 판정하지 않는다 (changelog v2.1 §1.7).
    "최대 할인 받으셨어요!" 같은 판정은 비용 에이전트가 푯말로 할 말이다. */
@@ -685,6 +687,16 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
           </div>
         </div>
 
+        <!-- R-3b 좌석 등급 폴백 — 다등급 공연인데 좌석→등급 매핑이 없을 때만.
+             입력값은 상담 기록에만 쓰고 Supabase 엔 안 쓴다 (PRD 원칙 6). -->
+        <div class="ticket-extra" id="seatGradeExtra">
+          <div class="field">
+            <label class="field-label">예매하신 좌석 등급은?<span class="req">*</span></label>
+            <div class="pill-group" id="seatGradeBtns"></div>
+            <p class="fact-line">등급별 정가가 달라 티켓에 적힌 등급이 필요해요. 시야제한석이면 그걸 골라주세요.</p>
+          </div>
+        </div>
+
         <!-- R-4 티켓값 — changelog v2.1 §1.5
              직접/양도 분기는 없앴다. 직접 예매한 표를 남에게 양도할 때도
              권종 증빙 문제가 생기므로 "내 표"라고 답한 사용자에게 증빙
@@ -1010,6 +1022,9 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     selectedDiscount:'',
     // 실제 고른 할인 객체 — 같은 이름이 등급별로 여러 개일 수 있어 이름만으론 부족하다
     selectedDiscountObj:null,
+    // R-3b 좌석 등급 폴백 (다등급인데 매핑 없을 때 사용자가 직접). 상담 기록에만.
+    seatGrade:null,          // 'VIP' | 'R' | ... | null
+    seatRestricted:false,    // "시야제한석" 선택 시
     proofStatus:null,      // NOT_REQUIRED | AVAILABLE | UNAVAILABLE
     altGradeName:null,     // 증빙 불가 + GRADE_CHANGE 일 때 고른 대체 권종
     casting:null,
@@ -1145,21 +1160,76 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     return GON_DB.findSeason($('workTitle').value.trim(), $('sessionDate').value);
   }
 
-  function currentList(){
+  function resolvedGrade(){
     const season = currentSeason();
     if(!season) return null;
-    const seatInfo = GON_DB.resolveSeat(season, {
+    const g = GON_DB.resolveSeat(season, {
       floor: $('seatFloor').value ? Number($('seatFloor').value) : null,
       row: $('seatRowInput').value.trim(),
       number: $('seatNumber').value ? Number($('seatNumber').value) : null
-    });
-    return GON_DB.listPrice(season, seatInfo.grade);
+    }).grade;
+    return g || state.seatGrade || null;   // 매핑 없으면 사용자가 고른 등급
+  }
+  function currentList(){
+    const season = currentSeason();
+    if(!season) return null;
+    // 시야제한석은 정가 비교 대상이 없다 — 지불액을 정가로 본다 (BUILD_ORDER 결정)
+    if(state.seatRestricted){
+      const paid = Number($('paidAmount').value) || 0;
+      return paid ? { price: paid, grade: null, verified: false } : null;
+    }
+    return GON_DB.listPrice(season, resolvedGrade());
   }
 
-  // 좌석등급으로 실제 등급 알아낸다 (미입력이면 null)
+  // 할인 등급 필터에 쓸 좌석등급 (매핑 or 사용자 선택)
   function currentSeatGrade(){
-    const l = currentList();
-    return l ? l.grade : null;
+    return resolvedGrade();
+  }
+
+  // 다등급 공연인데 좌석→등급을 못 구하면 사용자에게 직접 묻는다 (R-3b).
+  function syncSeatGrade(){
+    const box = $('seatGradeBtns');
+    const season = currentSeason();
+    const priceKeys = (season && season.prices) ? Object.keys(season.prices) : [];
+    const mapped = season ? GON_DB.resolveSeat(season, {
+      floor: $('seatFloor').value ? Number($('seatFloor').value) : null,
+      row: $('seatRowInput').value.trim(),
+      number: $('seatNumber').value ? Number($('seatNumber').value) : null
+    }).grade : null;
+
+    const needAsk = priceKeys.length > 1 && !mapped;
+    $('seatGradeExtra').classList.toggle('open', needAsk);
+    if(!needAsk){
+      state.seatGrade = null; state.seatRestricted = false;
+      box.innerHTML = '';
+      return;
+    }
+
+    // 이미 이 가격표로 버튼을 그렸으면 다시 안 그린다
+    if(box.dataset.keys !== priceKeys.join(',')){
+      box.dataset.keys = priceKeys.join(',');
+      box.innerHTML = '';
+      const rank = { VIP:0, R:1, S:2, A:3, B:4, C:5 };
+      priceKeys.slice().sort((a,b)=> (rank[a]??9) - (rank[b]??9)).forEach(g=>{
+        addSeatGradeBtn(g, g + ' ' + Number(season.prices[g]).toLocaleString() + '원', 'grade');
+      });
+      addSeatGradeBtn('__RESTRICTED__', '시야제한석', 'restricted');
+    }
+  }
+  function addSeatGradeBtn(value, label, kind){
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pill';
+    b.textContent = label;
+    b.addEventListener('click', ()=>{
+      $('seatGradeBtns').querySelectorAll('.pill').forEach(x=> x.classList.toggle('active', x === b));
+      if(kind === 'restricted'){ state.seatRestricted = true; state.seatGrade = null; }
+      else { state.seatRestricted = false; state.seatGrade = value; }
+      resolveSelectedDiscount();
+      syncTicketFields();
+      updateProgress();
+    });
+    $('seatGradeBtns').appendChild(b);
   }
 
   // 할인 버튼은 이름 하나당 하나. 등급별로 할인율이 나뉜 건 좌석을 넣으면 알아서 고른다.
@@ -1398,21 +1468,26 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   // 공연·날짜가 바뀌면 사다리가 통째로 바뀌고, 좌석이 바뀌면 등급이 바뀌어
   // 등급별로 나뉜 할인의 적용 항목이 바뀐다.
   ['workTitle','sessionDate'].forEach(id=>
-    $(id).addEventListener('input', ()=>{ fillDiscountButtons(); syncTicketFields(); }));
-  function onSeatOrPaidChange(){ resolveSelectedDiscount(); syncTicketFields(); }
+    $(id).addEventListener('input', ()=>{ fillDiscountButtons(); syncSeatGrade(); syncTicketFields(); }));
+  function onSeatOrPaidChange(){ syncSeatGrade(); resolveSelectedDiscount(); syncTicketFields(); }
   ['seatFloor','seatRowInput','seatNumber','paidAmount'].forEach(id=>
     $(id).addEventListener('input', onSeatOrPaidChange));
   $('seatFloor').addEventListener('change', onSeatOrPaidChange);
 
   fillDiscountButtons();
+  syncSeatGrade();
 
   /* ---------------------------------------------------------
      완성도 계산 (필수 9항목) → 스포트라이트 반영
   --------------------------------------------------------- */
+  function seatGradeAnswered(){
+    return !$('seatGradeExtra').classList.contains('open') ||
+           state.seatRestricted || state.seatGrade !== null;
+  }
   const REQUIRED_CHECKS = [
     ()=> $('workTitle').value.trim().length>0,
     ()=> $('sessionDate').value.length>0 && state.matinee!==null,
-    ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
+    ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value && seatGradeAnswered(),
     // 할인 목록이 없어도 정가/할인받음 버튼은 있으니 항상 하나는 골라야 한다
     ()=> Number($('paidAmount').value)>0
          && state.selectedDiscount !== ''
@@ -1848,9 +1923,11 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         row: seatIn.row,
         number: seatIn.number,
         // 아래는 DB에서 자동 산출한다. 모르면 null — false 가 아니다
-        grade: seatInfo.grade,
+        // 다등급인데 매핑이 없으면 사용자가 R-3b 에서 고른 값으로 채운다 (grade_source 로 구분)
+        grade: seatInfo.grade || state.seatGrade || null,
+        grade_source: seatInfo.grade ? 'venue' : (state.seatGrade ? 'user' : null),
         is_aisle: seatInfo.is_aisle,
-        is_restricted: seatInfo.is_restricted,
+        is_restricted: seatInfo.is_restricted || state.seatRestricted || null,
         zone: seatInfo.zone,
         side_zone: seatInfo.side_zone,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
         side_block: seatInfo.side_block,

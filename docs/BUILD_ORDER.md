@@ -35,25 +35,21 @@
   새 컬럼: `alter table seasons add column if not exists discounts_updated_at timestamptz;`
   관리자 도구: 시즌 선택 시 **기존 할인 미리 로드**, 판독은 거기에 더해짐(1·2차 공지 누적). changelog §1.2 개정.
 
+- **좌석 등급 폴백 (R-3b)** — 다등급 공연인데 `seat_grades` 매핑이 없어 `resolveSeat().grade` 가
+  null이면, 좌석 입력칸 아래 `#seatGradeExtra` 가 열려 `season.prices` 키 버튼 + "시야제한석" 을 묻는다.
+  `state.seatGrade`/`state.seatRestricted` → `currentList()`·`buildBundle` 에 반영 (상담 기록에만, Supabase X).
+  시야제한석은 정가=지불액. `index.html` 인라인(모달 아님).
+
 ---
 
 ## 다음 작업
 
-### 3. 폴백 모달 — 등급 + 시야제한석
+### 3. 폴백 — 남은 것
 
-`seasons` 데이터가 덜 찼을 때 상담 시작 전에 사용자에게 직접 물어 메운다.
-
-- 트리거 조건:
-  - **등급**: `GON_DB.listPrice(season, seatInfo.grade)` 가 null (다등급인데 `seat_grades` 매핑 없음)
-  - **시야제한석**: `venue.collected` 가 false (좌석배치도 미수집)
-- 질문 (둘 다 필요하면 한 모달에):
-  - "예매하신 좌석 등급은?" → `season.prices` 키로 버튼 생성 **+ "시야제한석" 옵션**
-    (시야제한석은 가격이 달라서 등급 선택지에 같이 둔다)
-  - (등급 옵션에 시야제한석이 이미 있으므로 별도 예/아니오 불필요)
-- 엔진 연결:
-  - 등급 선택 → 번들 `seat.grade` 를 덮어씀 → `listPrice` 동작 → 비용축이 실제 숫자로 판정
-  - "시야제한석" 선택 → `seat.is_restricted = true` → 시야축 반영. 정가는 지불액 그대로 사용.
-- 입력값은 **상담 기록에만** 저장. Supabase `seasons` 엔 쓰지 않는다 (사용자 기억 ≠ 검증값, 원칙 6).
+등급 폴백은 R-3b 로 완료. 남은 것:
+- **시야제한석 트리거 확장**: 지금은 등급 폴백에 얹혀서만 물음. `venue.collected` 가 false 인데
+  등급은 아는 공연에서는 시야제한석을 못 묻는다 → 독립 트리거 필요 시 추가.
+- **seat_grades 수집**: 관리자 좌석배치도 판독이 등급별 구역 색상까지 읽게 (Gemini) — 그러면 폴백이 덜 뜬다.
 
 ### 할인 폴백은 안 만든다 (결정됨)
 
