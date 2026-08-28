@@ -140,12 +140,20 @@ Deno.serve(async (req) => {
         throw new HttpError(400, "season_id 와 discounts 배열이 필요합니다.");
       }
       const clean = discounts
-        .map((d) => ({
-          name: String(d?.name ?? "").trim(),
-          rate: Number(d?.rate),
-          type: ["STANDING", "ELIGIBILITY", "LOYALTY"].includes(d?.type) ? d.type : "STANDING",
-        }))
-        .filter((d) => d.name && Number.isFinite(d.rate) && d.rate >= 0 && d.rate <= 100);
+        .map((d) => {
+          const at = ["ALL", "MATINEE", "EVENING"].includes(d?.applies_to) ? d.applies_to : "ALL";
+          const note = String(d?.note ?? "").trim();
+          const row: Record<string, unknown> = {
+            name: String(d?.name ?? "").trim(),
+            rate: Number(d?.rate),
+            type: ["STANDING", "ELIGIBILITY", "LOYALTY"].includes(d?.type) ? d.type : "STANDING",
+          };
+          // 기본값은 저장하지 않는다 — seed 와 모양을 맞춤 (없으면 ALL 로 읽힘)
+          if (at !== "ALL") row.applies_to = at;
+          if (note) row.note = note;
+          return row;
+        })
+        .filter((d) => d.name && Number.isFinite(d.rate as number) && (d.rate as number) >= 0 && (d.rate as number) <= 100);
       if (!clean.length) throw new HttpError(400, "저장할 유효한 할인이 없습니다.");
 
       const { data, error } = await admin
@@ -255,7 +263,7 @@ Deno.serve(async (req) => {
   }
 });
 
-// ---- Gemini 비전: 할인표 → [{name, rate, type}] --------------------------
+// ---- Gemini 비전: 할인표 → [{name, rate, type, applies_to, note}] ---------
 async function geminiExtractDiscounts(b64: string, mime: string) {
   const prompt =
 `이 이미지는 한국 공연 예매처의 '할인 정보' 화면이다. 화면에 실제로 보이는 할인 항목만 추출하라.
@@ -265,7 +273,12 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
   - STANDING     조건 없이 누구나·상시 (조기예매/조조/문화가있는날/마티네/멤버십)
   - ELIGIBILITY  자격 증빙 필요 (청소년/대학생/경로/장애인/국가유공자/다자녀)
   - LOYALTY      재관람자 전용 (재관람 할인/도장/쿠폰팩)
-- 애매하면 STANDING. 이미지에 없는 항목은 만들지 마라.`;
+- applies_to: 특정 회차에만 적용되면 표시.
+  - MATINEE   낮공(마티네) 전용
+  - EVENING   밤공 전용
+  - ALL       회차 제한 없음 (대부분)
+- note: 적용 기간·조건이 적혀 있으면 그 문구를 짧게 그대로 (예 "2/28까지", "월·수 공연", "A·B석 제외"). 없으면 빈 문자열.
+- 애매하면 type=STANDING, applies_to=ALL. 이미지에 없는 항목은 만들지 마라.`;
 
   const body = {
     contents: [{
@@ -284,8 +297,10 @@ async function geminiExtractDiscounts(b64: string, mime: string) {
             name: { type: "STRING" },
             rate: { type: "INTEGER" },
             type: { type: "STRING", enum: ["STANDING", "ELIGIBILITY", "LOYALTY"] },
+            applies_to: { type: "STRING", enum: ["ALL", "MATINEE", "EVENING"] },
+            note: { type: "STRING" },
           },
-          required: ["name", "rate", "type"],
+          required: ["name", "rate", "type", "applies_to", "note"],
         },
       },
     },

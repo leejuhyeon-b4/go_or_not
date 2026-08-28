@@ -1209,7 +1209,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       isOther: state.selectedDiscount === 'OTHER',
       firstWatch: state.firstWatch === 'YES',
       proofStatus: needsProof() ? state.proofStatus : null,
-      altName: state.altGradeName
+      altName: state.altGradeName,
+      matinee: state.matinee            // 회차 제한 할인(마티네/밤공 전용) 필터
     });
   }
 

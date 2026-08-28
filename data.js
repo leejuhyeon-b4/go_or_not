@@ -283,21 +283,35 @@ window.GON_DB = (function(){
     return ds.find(d => d.name === name) || null;
   }
 
+  // 회차 제한 할인(마티네/밤공 전용)이 이 회차에 적용되는가.
+  // applies_to 없으면 ALL. 회차(matinee)를 모르면 거르지 않는다 — 보수적 유지.
+  function discountAppliesToSession(d, matinee){
+    const at = d && d.applies_to;
+    if(!at || at === 'ALL') return true;
+    if(!matinee) return true;
+    if(at === 'MATINEE') return matinee === 'MATINEE';
+    if(at === 'EVENING') return matinee === 'EVENING';
+    return true;
+  }
+
   // §1.3 기준선 = max(STANDING 최댓값,
   //                  선택한 ELIGIBILITY 권종의 값,
   //                  자첫이 아니면 LOYALTY 최댓값)
   // 같은 공연이라도 사용자마다 다르다. 자첫 여부는 R-6에 이미 있다.
+  // 밤공 상담에 '마티네 전용' 할인은 기준선에서 뺀다 (못 받는 할인).
   function baselineRate(season, opts){
     const ds = discounts(season);
     if(!ds || !ds.length) return null;
     const o = opts || {};
     let base = 0;
     ds.forEach(function(d){
+      if(!discountAppliesToSession(d, o.matinee)) return;
       const rate = Number(d.rate) || 0;
       if(d.type === 'STANDING') base = Math.max(base, rate);
       else if(d.type === 'LOYALTY' && !o.firstWatch) base = Math.max(base, rate);
     });
-    if(o.selected && o.selected.type === 'ELIGIBILITY'){
+    if(o.selected && o.selected.type === 'ELIGIBILITY' &&
+       discountAppliesToSession(o.selected, o.matinee)){
       base = Math.max(base, Number(o.selected.rate) || 0);
     }
     return base;
@@ -333,11 +347,12 @@ window.GON_DB = (function(){
      band 까지 여기서 확정해서 넘긴다. 엔진은 산수를 하지 않고
      푯말 문구와 설명만 쓴다.
 
-     input = { paid, selectedName, isOther, firstWatch, proofStatus, altName }
+     input = { paid, selectedName, isOther, firstWatch, proofStatus, altName, matinee }
        selectedName : 사다리에서 고른 할인명. null = 정가
        isOther      : "목록에 없는 할인" 선택 여부
        proofStatus  : NOT_REQUIRED | AVAILABLE | UNAVAILABLE | null
        altName      : GRADE_CHANGE 로 바꿀 대체 권종명
+       matinee      : MATINEE | EVENING | null — 회차 제한 할인 필터에 쓴다
   --------------------------------------------------------- */
   function computePayment(season, list, input){
     const inp   = input || {};
@@ -366,7 +381,9 @@ window.GON_DB = (function(){
     }
 
     const rate     = discountRate(lp, burden);
-    const baseline = baselineRate(season, { firstWatch: !!inp.firstWatch, selected: effective });
+    const baseline = baselineRate(season, {
+      firstWatch: !!inp.firstWatch, selected: effective, matinee: inp.matinee || null
+    });
 
     let bandVal = null;
     let gap = null;

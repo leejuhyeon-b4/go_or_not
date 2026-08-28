@@ -86,6 +86,18 @@ eq(rs.is_aisle, true, 'resolveSeat B16 통로석 (verified_seats)');
 eq(rs.grade, null, 'resolveSeat 등급 미수집 → null (false 아님)');
 ok(rs.unknown.includes('좌석 등급 (좌석배치도 미수집)'), 'resolveSeat unknown 에 등급 누락');
 
+// 회차 제한 할인 (applies_to) → 기준선 필터
+section('할인 기준선 — applies_to 회차 필터');
+const seasonMat = { discounts: [
+  { name: '조기예매', rate: 20, type: 'STANDING' },
+  { name: '마티네',   rate: 30, type: 'STANDING', applies_to: 'MATINEE' },
+] };
+eq(DB.baselineRate(seasonMat, { matinee: 'MATINEE' }), 30, 'baseline 낮공 → 마티네 30 포함');
+eq(DB.baselineRate(seasonMat, { matinee: 'EVENING' }), 20, 'baseline 밤공 → 마티네 제외, 20');
+eq(DB.baselineRate(seasonMat, {}), 30, 'baseline 회차 모름 → 보수적으로 30 포함');
+eq(DB.baselineRate({ discounts: [{ name: 'x', rate: 25, type: 'STANDING' }] }, { matinee: 'EVENING' }),
+   25, 'baseline applies_to 없으면 회차 무관 25');
+
 /* ============================================================
    2. 사이드 구간 분류 (PRD §5.2)
    ============================================================ */

@@ -39,7 +39,8 @@ create table if not exists seasons (
   has_intermission      boolean,
   prices                jsonb   default '{}'::jsonb,   -- { "R": 70000 }
   prices_verified       boolean default false,
-  discounts             jsonb,                          -- [{name,rate,type}]  · null=미수집, []=할인없음
+  discounts             jsonb,                          -- [{name,rate,type,applies_to?,note?}] · null=미수집, []=할인없음
+                                                        --   applies_to: ALL(기본)|MATINEE|EVENING  note: 적용기간·조건 원문(참고용)
   discounts_verified    boolean default false,
   discount_proof_policy text,                           -- FULL_PRICE | GRADE_CHANGE | UNKNOWN
   seat_grades           jsonb   default '[]'::jsonb,    -- [{floor,row,grade,source}]
