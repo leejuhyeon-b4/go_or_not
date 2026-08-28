@@ -962,9 +962,10 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   </div>
 </div>
 
-<!-- 로그인 게이트 — 로그인해야 상담을 시작할 수 있다 -->
+<!-- 로그인 게이트 — 로그인해야 상담을 시작할 수 있다. 닫으면 비활성 화면이 보인다 -->
 <div class="modal-backdrop" id="authBackdrop" hidden>
   <div class="modal">
+    <button type="button" class="btn-dot modal-close" id="authClose">닫기</button>
     <h3 id="authTitle">로그인</h3>
     <p id="authIntro">상담을 시작하려면 로그인하세요. 상담 내역이 저장되고, 관람 후 피드백을 받아 정확도가 올라갑니다.</p>
     <label class="field-label" for="authEmail">이메일</label>
@@ -1376,7 +1377,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     // 이벤트 화면에서는 끌림도·희소성(PRD §3.3 4·5단계)까지 받아야 넘어간다
     const eventReady = state.appeal !== null && state.scarcity !== null;
     const startBtn = $('startBtn');
-    const ready = state.loggedIn && p >= 1 && (!state.onEventScreen || eventReady);
+    const ready = (state.loggedIn || state.preview) && p >= 1 && (!state.onEventScreen || eventReady);
     startBtn.disabled = !ready;
     startBtn.classList.toggle('ready', ready);
   }
@@ -1416,21 +1417,22 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     state.loggedIn = false;
     $('loginBtn').textContent = '로그인';
     $('historyBtn').hidden = true;
-    $('userChip').hidden = true;
-    $('consultForm').classList.remove('is-lit');
-    openAuth();
+    if(state.preview){ $('userChip').textContent = '미리보기 모드'; $('userChip').hidden = false; }
+    else $('userChip').hidden = true;
+    $('consultForm').classList.toggle('is-lit', state.preview);
+    // 모달을 자동으로 다시 띄우지 않는다 — 비활성 화면을 보여준다 (design.md)
     updateProgress();
   }
   function openAuth(){
     if(!window.GON_AUTH || !GON_AUTH.ready()){
       $('authIntro').textContent = '로그인 기능을 쓸 수 없어요. 인터넷 연결과 data/supabase-config.js 를 확인하세요.';
-      $('authBackdrop').hidden = false;
-      return;
+    } else {
+      setAuthMode('signin');
+      $('authError').hidden = true;
     }
-    setAuthMode('signin');
-    $('authError').hidden = true;
     $('authBackdrop').hidden = false;
   }
+  function closeAuth(){ $('authBackdrop').hidden = true; }
   function setAuthMode(mode){
     authMode = mode;
     const signup = mode === 'signup';
@@ -1473,6 +1475,9 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     if(state.loggedIn){ await GON_AUTH.signOut(); exitAuthed(); }
     else openAuth();
   });
+
+  $('authClose').addEventListener('click', closeAuth);
+  $('authBackdrop').addEventListener('click', (e)=>{ if(e.target === $('authBackdrop')) closeAuth(); });
 
   $('historyBtn').addEventListener('click', ()=>{ $('historyBackdrop').hidden = false; loadHistory(); });
   $('historyClose').addEventListener('click', ()=>{ $('historyBackdrop').hidden = true; });
@@ -1635,11 +1640,22 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     $('feedbackBackdrop').hidden = true;
   });
 
-  // 시작 시 세션 확인
+  // ?preview — 로그인 없이 화면/폼을 켜서 디자인·흐름을 확인하는 개발용 모드.
+  // 상담기록은 세션이 없어 저장되지 않는다 (consult.html 이 알아서 스킵).
+  state.preview = new URLSearchParams(location.search).has('preview');
+  if(state.preview){
+    $('consultForm').classList.add('is-lit');
+    const chip = $('userChip');
+    chip.hidden = false;
+    chip.textContent = '미리보기 모드';
+  }
+
+  // 시작 시 세션 확인 — 로그인 안 돼 있으면 모달을 자동으로 띄우지 않고
+  // 비활성(어두운) 화면을 보여준다. 로그인은 상단 "로그인" 버튼으로.
   (async ()=>{
-    if(!window.GON_AUTH || !GON_AUTH.ready()){ openAuth(); return; }
+    if(!window.GON_AUTH || !GON_AUTH.ready()) return;
     const user = await GON_AUTH.user();
-    if(user) enterAuthed(user); else openAuth();
+    if(user) enterAuthed(user);
     GON_AUTH.onChange((u)=>{ if(!u && state.loggedIn) exitAuthed(); });
   })();
 
