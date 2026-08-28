@@ -10,7 +10,8 @@
 //   POST /functions/v1/admin?action=venues    → 극장 목록 (좌석배치도 드롭다운용)
 //   POST /functions/v1/admin?action=parse         → 할인표 이미지 → Gemini → [{name,rate,type}]
 //   POST /functions/v1/admin?action=save          → 검토된 할인 목록 → seasons.discounts
-//   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {floors, restricted_seats}
+//   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {memo}
+//   POST /functions/v1/admin?action=parse-seatmap-grid → 배치도 이미지 → Gemini → {floors:[{floor,rows:[{label,min,max}]}]} (색칠용 뼈대)
 //   POST /functions/v1/admin?action=save-seatmap  → 검토된 배치도 → venues.base_geometry / restricted_seats
 //
 // 인증: POST 는 헤더 x-admin-password 가 ADMIN_PASSWORD 시크릿과 일치해야 통과.
@@ -285,6 +286,15 @@ Deno.serve(async (req) => {
       return json(result);
     }
 
+    // ---- 좌석배치도 → 색칠용 그리드 뼈대 (층 / 열 목록 / 열별 좌석범위) ----
+    if (action === "parse-seatmap-grid") {
+      if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
+      const { image_base64, mime_type } = await req.json();
+      if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
+      const grid = await geminiExtractSeatmapGrid(image_base64, mime_type ?? "image/jpeg");
+      return json(grid);
+    }
+
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
     if (action === "save-seatmap") {
       const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats } = await req.json();
@@ -487,6 +497,75 @@ A-M열 S`;
 
   const data = await geminiText(prompt, b64, mime);
   return { memo: String(data || "").trim() };
+}
+
+// ---- Gemini 비전: 좌석배치도 → 색칠용 그리드 뼈대 -------------------------
+// 색·등급은 안 읽는다(비전이 부정확). 층 / 열 목록 / 열별 좌석 최소~최대 번호만.
+// 사람이 그 위에 등급을 색칠하고, admin.html 이 열별 스캔으로 구역을 만든다.
+async function geminiExtractSeatmapGrid(b64: string, mime: string) {
+  const prompt =
+`이 이미지는 한국 공연장의 좌석배치도다. 좌석의 '뼈대'만 읽어라. 색이나 등급은 읽지 마라.
+- floor: 층 번호 (1, 2, 3 …). 한 층만 보이면 1.
+- rows: 그 층의 열 목록을 무대에서 가까운 순으로. label 은 배치도에 적힌 그대로 ("1","2"… 또는 "A","B"…).
+- 각 열의 min / max: 그 열에 실제 있는 좌석 번호의 최소·최대.
+  앞열이 좁고 뒷열이 넓은 부채꼴이면 열마다 다르게 잡아라.
+  번호를 정확히 못 읽으면 그 층에서 가장 넓은 열 기준으로 같은 값을 넣어라.
+- 가운데 통로로 번호가 비어 있어도 min~max 는 끊지 말고 이어서 잡아라 (빈 칸은 사람이 지운다).
+실제로 보이는 층·열만. 추측으로 열 수를 늘리지 마라.`;
+
+  const body = {
+    contents: [{ parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: prompt }] }],
+    generationConfig: {
+      responseMimeType: "application/json",
+      responseSchema: {
+        type: "OBJECT",
+        properties: {
+          floors: {
+            type: "ARRAY",
+            items: {
+              type: "OBJECT",
+              properties: {
+                floor: { type: "INTEGER" },
+                rows: {
+                  type: "ARRAY",
+                  items: {
+                    type: "OBJECT",
+                    properties: {
+                      label: { type: "STRING" },
+                      min: { type: "INTEGER" },
+                      max: { type: "INTEGER" },
+                    },
+                    required: ["label", "min", "max"],
+                  },
+                },
+              },
+              required: ["floor", "rows"],
+            },
+          },
+        },
+        required: ["floors"],
+      },
+    },
+  };
+
+  // deno-lint-ignore no-explicit-any
+  const out = await geminiJson(body) as any;
+  const floors = Array.isArray(out?.floors) ? out.floors : [];
+  return {
+    // deno-lint-ignore no-explicit-any
+    floors: floors.map((f: any) => ({
+      floor: Number(f?.floor) || 1,
+      // deno-lint-ignore no-explicit-any
+      rows: (Array.isArray(f?.rows) ? f.rows : []).map((r: any) => {
+        const mn = Math.max(1, Math.round(Number(r?.min) || 1));
+        let mx = Math.max(mn, Math.round(Number(r?.max) || mn));
+        if (mx - mn > 200) mx = mn + 200;
+        return { label: String(r?.label ?? "").trim(), min: mn, max: mx };
+      // deno-lint-ignore no-explicit-any
+      }).filter((r: any) => r.label),
+    // deno-lint-ignore no-explicit-any
+    })).filter((f: any) => f.rows.length),
+  };
 }
 
 // deno-lint-ignore no-explicit-any

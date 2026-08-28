@@ -33,9 +33,13 @@ KOPIS ─(node data/kopis.js)→ SQL ─┐
   (웹 에디터는 큰 파일 한글 깨짐).
 - **할인정보 탭**: 이미지 여러 장 → Gemini `[{name,rate,type,applies_to,grades,note}]` → 검토표 → `seasons.discounts`.
   시즌 선택 시 **기존 할인 미리 로드**, 판독은 거기에 더해짐(1·2차 공지 누적). `discounts_updated_at` 기록.
-- **좌석배치도 탭 = 공연(시즌) 선택 → 문단 메모 방식**:
-  - `parse-seatmap` → Gemini 가 이미지 보고 **초안 문단**만 (`{memo}`). 색↔등급·통로는 비전이 부정확.
-  - 관리자가 메모를 형식대로 고침 → "표 채우기"(`parseSeatMemo`) → 4개 표(블록/등급/통로/시야제한) → 저장.
+- **좌석배치도 탭 = 공연(시즌) 선택.** 세 방식 중 하나로 `seasons.seat_grades/aisle_seats/restricted_seats/side_seats` 채움:
+  - **그리드 색칠(권장)**: `parse-seatmap-grid` → Gemini 는 **뼈대만**(`{floors:[{floor,rows:[{label,min,max}]}]}`, 색·등급 안 읽음)
+    → admin.html 이 층별 그리드 렌더 → 관리자가 드래그로 좌석 사각 선택 → 등급/표시(통로·시야제한·극싸·사이드) 버튼 클릭.
+    저장 시 `gToPayload` 가 열별로 등급 연속구간 스캔 + 시그니처 같은 연속 열을 `[from_row,to_row]` 로 압축.
+    다층이면 `#gFloorTabs` 로 전환(층별 색칠 상태는 `gSpec.floors[].paint` 에 유지, 저장은 전 층 함께 전송).
+    스캔이 안 맞으면 `<details>` 열어 층/열/좌석범위 직접 입력.
+  - **문단 메모**: `parse-seatmap` → Gemini **초안 문단**(`{memo}`) → 관리자가 형식대로 고침 → "표 채우기"(`parseSeatMemo`) → 4개 표 → 저장.
   - 메모 형식(한 줄 = 한 층·한 열컨텍스트):
     ```
     1층

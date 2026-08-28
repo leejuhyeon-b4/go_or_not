@@ -44,6 +44,7 @@
   .cell.mk-EDGE  { border:2px solid #e11; }
   .cell.mk-SIDE  { border:2px dashed #e11; }
   .cell.sel { box-shadow:0 0 0 2px #06f inset; }
+  .cell.absent { background:transparent; pointer-events:none; opacity:.12; }
   .ghead { font-size:9px; color:var(--mut); }
   .grow { display:grid; grid-template-columns:30px 42px 1fr 1fr 42px 42px 48px 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .grow input, .grow select { padding:7px 4px; font-size:13px; }
@@ -127,16 +128,24 @@
       <div id="sparseMsg" class="msg hidden"></div>
     </div>
     <div class="card">
-      <label>그리드로 칠하기 (권장) — 네모로 드래그해 좌석 선택 → 등급/표시 버튼 클릭</label>
-      <div style="display:grid;grid-template-columns:44px 1fr 56px 56px 84px;gap:5px;align-items:end;margin-top:6px">
-        <div><label>층</label><input id="gFloor" type="number" value="1"></div>
-        <div><label>열 (1-22 또는 A-V)</label><input id="gRows" placeholder="1-22"></div>
-        <div><label>좌석 처음</label><input id="gMin" type="number" value="1"></div>
-        <div><label>좌석 끝</label><input id="gMax" type="number" placeholder="48"></div>
-        <button id="gBuild" class="ghost" style="width:auto;margin:0">그리드 만들기</button>
-      </div>
-      <div class="hint">이미지를 위 "초안 받기" 칸에 올려두면 참고용으로 같이 보여요. 저장된 구역이 있으면 자동으로 칠해집니다.</div>
+      <label>그리드에 색칠하기 (권장)</label>
+      <div class="hint">위 "좌석배치도 이미지" 칸에 배치도를 올린 뒤 <b>스캔</b> →
+        뜨는 그리드에서 드래그로 좌석을 고르고 등급/표시 버튼을 누르세요. 색·등급은 Gemini 가 아니라 <b>사람이</b> 칠합니다.</div>
+      <button id="gScanBtn" style="margin-top:6px" disabled>① 배치도 스캔해서 그리드 만들기</button>
+      <div id="gScanMsg" class="msg hidden"></div>
+      <details style="margin-top:6px">
+        <summary class="hint" style="cursor:pointer">스캔이 안 맞으면 직접 만들기</summary>
+        <div style="display:grid;grid-template-columns:44px 1fr 56px 56px 72px;gap:5px;align-items:end;margin-top:6px">
+          <div><label>층</label><input id="gFloor" type="number" value="1"></div>
+          <div><label>열 (1-22 또는 A-V)</label><input id="gRows" placeholder="1-22"></div>
+          <div><label>좌석 처음</label><input id="gMin" type="number" value="1"></div>
+          <div><label>좌석 끝</label><input id="gMax" type="number" placeholder="48"></div>
+          <button id="gBuild" class="ghost" style="width:auto;margin:0">만들기</button>
+        </div>
+      </details>
+      <div class="hint" style="margin-top:6px">저장된 구역이 있으면 그리드에 자동으로 칠해져요.</div>
       <img id="gRef" style="max-width:100%;border-radius:8px;margin-top:8px;display:none">
+      <div class="gpal" id="gFloorTabs" style="display:none"></div>
       <div class="gpal" id="gPalette" style="display:none"></div>
       <div class="gwrap" id="gWrap" style="display:none"><div class="grid" id="seatGrid"></div></div>
       <button id="gSave" style="display:none">이 그리드로 저장</button>
@@ -443,6 +452,8 @@ $("sfile").onchange = () => {
   setMsg($("sparseMsg"), "", "");
   renderPreviews(files, $("spreview"));
   $("sparseBtn").disabled = !files.length;
+  $("gScanBtn").disabled = !files.length;
+  if (files.length) { $("gRef").src = URL.createObjectURL(files[0]); $("gRef").style.display = ""; }
 };
 
 $("sparseBtn").onclick = async () => {
@@ -748,7 +759,8 @@ function rowNum(label){
 }
 
 let gActive = null;   // 현재 고른 페인트: {kind:'grade'|'mark'|'erase', v}
-let gDrag = null;     // {r0,c0}
+let gDrag = null;     // {r,s}
+let gSpec = null;     // { floors:[{ floor, rows:[{label,min,max}], paint?:{order,rowsMap} }] }
 
 function gBuildPalette(){
   const box = $("gPalette"); box.innerHTML = "";
@@ -790,57 +802,152 @@ function gMarkRect(r0,c0,r1,c1){
   clearSel();
   const rlo=Math.min(r0,r1), rhi=Math.max(r0,r1), clo=Math.min(c0,c1), chi=Math.max(c0,c1);
   $("seatGrid").querySelectorAll(".cell").forEach(c => {
+    if (c.dataset.absent) return;
     const r=+c.dataset.ri, s=+c.dataset.ci;
     if (r>=rlo && r<=rhi && s>=clo && s<=chi) c.classList.add("sel");
   });
 }
 
-function gBuild(){
+// 배치도 이미지를 Gemini 로 스캔 → 그리드 뼈대
+async function gScan(){
+  const files = $("sfile").files;
+  if (!files || !files.length) { setMsg($("gScanMsg"), "위 '좌석배치도 이미지' 칸에 배치도를 먼저 올리세요.", "err"); return; }
+  $("gScanBtn").disabled = true;
   try {
-    const floor = parseInt($("gFloor").value,10) || 1;
-    const rows = gRowLabels($("gRows").value);
-    const smin = parseInt($("gMin").value,10) || 1;
-    const smax = parseInt($("gMax").value,10);
-    if (!rows.length) { setMsg($("gMsg"), "열 범위를 넣어주세요 (예: 1-22 또는 A-V).", "err"); return; }
-    if (!Number.isFinite(smax) || smax < smin) { setMsg($("gMsg"), "좌석 끝 번호를 넣어주세요.", "err"); return; }
-    if (rows.length * (smax - smin + 1) > 6000) { setMsg($("gMsg"), "칸이 너무 많아요. 층을 나눠 넣으세요.", "err"); return; }
-
-    gBuildPalette();
-    const grid = $("seatGrid"); grid.innerHTML = "";
-    const head = document.createElement("div"); head.className = "gr";
-    head.innerHTML = '<span class="grl"></span>';
-    for (let n=smin; n<=smax; n++) {
-      const h = document.createElement("span");
-      h.className = "ghead"; h.style.cssText = "width:13px;flex:0 0 13px;text-align:center";
-      h.textContent = (n === smin || n % 5 === 0) ? n : "";
-      head.appendChild(h);
+    const merged = [];
+    for (let i = 0; i < files.length; i++) {
+      setMsg($("gScanMsg"), "스캔 중… (" + (i + 1) + "/" + files.length + ")", "");
+      const b64 = await fileToB64(files[i]);
+      const r = await api("parse-seatmap-grid", { image_base64: b64, mime_type: files[i].type || "image/jpeg" });
+      (r.floors || []).forEach((f) => {
+        const ex = merged.find((m) => m.floor === f.floor);
+        if (ex) { if ((f.rows || []).length > ex.rows.length) ex.rows = f.rows; }
+        else merged.push({ floor: f.floor, rows: f.rows || [], paint: null });
+      });
     }
-    grid.appendChild(head);
-
-    rows.forEach((rl, ri) => {
-      const gr = document.createElement("div"); gr.className = "gr";
-      const l = document.createElement("span"); l.className = "grl"; l.textContent = rl;
-      gr.appendChild(l);
-      for (let n=smin, ci=0; n<=smax; n++, ci++) {
-        const c = document.createElement("span");
-        c.className = "cell";
-        c.dataset.row = rl; c.dataset.seat = n; c.dataset.ri = ri + 1; c.dataset.ci = n;
-        c.dataset.grade = ""; c.dataset.mark = "";
-        gr.appendChild(c);
-      }
-      grid.appendChild(gr);
-    });
-
-    grid.dataset.floor = floor;
-    const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
-    if (s) gPrefill(floor, s);
-
-    $("gWrap").style.display = "";
-    $("gSave").style.display = "";
-    setMsg($("gMsg"), "네모로 드래그해 좌석을 선택하고, 아래 버튼을 누르면 적용됩니다.", "ok");
+    if (!merged.length) { setMsg($("gScanMsg"), "열을 못 읽었어요. '직접 만들기'로 넣어주세요.", "err"); return; }
+    gSpec = { floors: merged.sort((a, b) => a.floor - b.floor) };
+    $("seatGrid").innerHTML = ""; $("seatGrid").removeAttribute("data-floor");
+    gRenderFloorTabs();
+    gShowFloor(gSpec.floors[0].floor);
+    setMsg($("gScanMsg"),
+      gSpec.floors.map((f) => f.floor + "층 " + f.rows.length + "열").join(" · ") + " 읽음. 그리드에서 색칠하세요.", "ok");
   } catch (e) {
-    setMsg($("gMsg"), "그리드 오류: " + (e && e.message || e), "err");
+    setMsg($("gScanMsg"), e.message, "err");
+  } finally {
+    $("gScanBtn").disabled = false;
   }
+}
+
+// 직접 만들기 (스캔이 안 맞을 때)
+function gBuild(){
+  const floor = parseInt($("gFloor").value, 10) || 1;
+  const rows = gRowLabels($("gRows").value);
+  const smin = parseInt($("gMin").value, 10) || 1;
+  const smax = parseInt($("gMax").value, 10);
+  if (!rows.length) { setMsg($("gMsg"), "열 범위를 넣어주세요 (예: 1-22 또는 A-V).", "err"); return; }
+  if (!Number.isFinite(smax) || smax < smin) { setMsg($("gMsg"), "좌석 끝 번호를 넣어주세요.", "err"); return; }
+  gSpec = { floors: [{ floor, rows: rows.map((rl) => ({ label: rl, min: smin, max: smax })), paint: null }] };
+  $("seatGrid").innerHTML = ""; $("seatGrid").removeAttribute("data-floor");
+  gRenderFloorTabs();
+  gShowFloor(floor);
+}
+
+function gRenderFloorTabs(){
+  const box = $("gFloorTabs"); box.innerHTML = "";
+  if (!gSpec || gSpec.floors.length < 2) { box.style.display = "none"; return; }
+  gSpec.floors.forEach((f, idx) => {
+    const b = document.createElement("button");
+    b.textContent = f.floor + "층"; b.style.background = "var(--line)"; b.style.color = "var(--fg)";
+    if (idx === 0) b.classList.add("on");
+    b.onclick = () => {
+      [...box.children].forEach((c) => c.classList.toggle("on", c === b));
+      gShowFloor(f.floor);
+    };
+    box.appendChild(b);
+  });
+  box.style.display = "flex";
+}
+
+function gShowFloor(floor){
+  gCaptureCurrent();
+  const f = gSpec && gSpec.floors.find((x) => x.floor === floor);
+  if (!f) return;
+  gRenderGrid(f);
+}
+
+// 지금 화면에 뜬 층의 색칠 상태를 gSpec 에 저장 (층 전환·저장 전에 호출)
+function gCaptureCurrent(){
+  const grid = $("seatGrid");
+  if (!grid.dataset.floor || !gSpec) return;
+  const f = gSpec.floors.find((x) => x.floor === parseInt(grid.dataset.floor, 10));
+  if (f) f.paint = gReadGrid();
+}
+
+function gReadGrid(){
+  const order = [], rowsMap = {};
+  $("seatGrid").querySelectorAll(".cell").forEach((c) => {
+    if (c.dataset.absent) return;
+    const rl = c.dataset.row;
+    if (!rowsMap[rl]) { rowsMap[rl] = {}; order.push(rl); }
+    rowsMap[rl][+c.dataset.seat] = { grade: c.dataset.grade || "", mark: c.dataset.mark || "" };
+  });
+  return { order, rowsMap };
+}
+
+function gRenderGrid(f){
+  const defs = (f.rows || []).filter((r) => r.label && r.max >= r.min);
+  if (!defs.length) { setMsg($("gMsg"), "열 정보가 없어요.", "err"); return; }
+  const gMin = Math.min(...defs.map((r) => r.min));
+  const gMax = Math.max(...defs.map((r) => r.max));
+  if (defs.length * (gMax - gMin + 1) > 14000) { setMsg($("gMsg"), "칸이 너무 많아요. 층/범위를 나눠 주세요.", "err"); return; }
+
+  gBuildPalette();
+  const grid = $("seatGrid"); grid.innerHTML = "";
+  const head = document.createElement("div"); head.className = "gr";
+  head.innerHTML = '<span class="grl"></span>';
+  for (let n = gMin; n <= gMax; n++) {
+    const h = document.createElement("span");
+    h.className = "ghead"; h.style.cssText = "width:13px;flex:0 0 13px;text-align:center";
+    h.textContent = (n === gMin || n % 5 === 0) ? n : "";
+    head.appendChild(h);
+  }
+  grid.appendChild(head);
+
+  defs.forEach((rd, ri) => {
+    const gr = document.createElement("div"); gr.className = "gr";
+    const l = document.createElement("span"); l.className = "grl"; l.textContent = rd.label;
+    gr.appendChild(l);
+    for (let n = gMin; n <= gMax; n++) {
+      const c = document.createElement("span");
+      const absent = n < rd.min || n > rd.max;
+      c.className = "cell" + (absent ? " absent" : "");
+      c.dataset.row = rd.label; c.dataset.seat = n; c.dataset.ri = ri + 1; c.dataset.ci = n;
+      c.dataset.grade = ""; c.dataset.mark = "";
+      if (absent) c.dataset.absent = "1";
+      gr.appendChild(c);
+    }
+    grid.appendChild(gr);
+  });
+
+  grid.dataset.floor = f.floor;
+  if (f.paint) {
+    const pm = f.paint.rowsMap;
+    grid.querySelectorAll(".cell").forEach((c) => {
+      if (c.dataset.absent) return;
+      const cell = pm[c.dataset.row] && pm[c.dataset.row][+c.dataset.seat];
+      if (cell) { c.dataset.grade = cell.grade; c.dataset.mark = cell.mark; }
+      c.className = "cell" + (c.dataset.mark ? " mk-" + c.dataset.mark : "");
+      c.style.background = c.dataset.grade ? gradeColor(c.dataset.grade) : "var(--line)";
+    });
+  } else {
+    const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
+    if (s) gPrefill(f.floor, s);
+  }
+
+  $("gWrap").style.display = "";
+  $("gSave").style.display = "";
+  setMsg($("gMsg"), "드래그로 좌석을 고르고 아래 등급/표시 버튼을 누르세요.", "ok");
 }
 
 function gPrefill(floor, s){
@@ -860,6 +967,7 @@ function gPrefill(floor, s){
     return true;
   };
   $("seatGrid").querySelectorAll(".cell").forEach(c => {
+    if (c.dataset.absent) return;
     const row = c.dataset.row, seat = +c.dataset.seat;
     (s.seat_grades || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.grade = z.grade; });
     (s.aisle_seats || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.mark = "AISLE"; });
@@ -870,17 +978,11 @@ function gPrefill(floor, s){
   });
 }
 
-function gToPayload(){
-  const grid = $("seatGrid");
-  const floor = parseInt(grid.dataset.floor, 10) || 1;
-  const rowsMap = {};   // rowLabel -> {seat: {grade,mark}}
-  const order = [];
-  grid.querySelectorAll(".cell").forEach(c => {
-    const rl = c.dataset.row;
-    if (!rowsMap[rl]) { rowsMap[rl] = {}; order.push(rl); }
-    rowsMap[rl][+c.dataset.seat] = { grade: c.dataset.grade || "", mark: c.dataset.mark || "" };
-  });
-  const sig = {};
+// 색칠된 모든 층 → 저장 payload. 열별로 등급 연속구간을 뽑고, 시그니처가 같은
+// 연속 열을 [from_row,to_row] 로 묶는다. save-seatmap 이 seat_grades 를 통째로
+// 갈아끼우므로 색칠한 층을 전부 함께 보낸다.
+function gFloorZones(floor, order, rowsMap, out){
+  const sig = {}, local = {};
   order.forEach(rl => {
     const cells = rowsMap[rl];
     const seats = Object.keys(cells).map(Number).sort((a,b)=>a-b);
@@ -893,25 +995,34 @@ function gToPayload(){
     if (cur && cur.g) runs.push(cur);
     const pick = m => seats.filter(n => cells[n].mark === m);
     const marks = { AISLE: pick("AISLE"), RESTR: pick("RESTR"), EDGE: pick("EDGE"), SIDE: pick("SIDE") };
-    rowsMap[rl] = { runs, marks };
+    local[rl] = { runs, marks };
     sig[rl] = JSON.stringify([runs, marks]);
   });
-  const grade_zones = [], aisle = [], restr = [], side = [];
   let i = 0;
   while (i < order.length) {
     let j = i;
     while (j + 1 < order.length && sig[order[j+1]] === sig[order[i]]) j++;
-    const rf = order[i], rt = order[j], b = rowsMap[rf];
-    b.runs.forEach(r => grade_zones.push({ floor, from_row: rf, to_row: rt, from_seat: r.s, to_seat: r.e, grade: r.g }));
-    if (b.marks.AISLE.length) aisle.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.AISLE });
-    if (b.marks.RESTR.length) restr.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.RESTR });
-    if (b.marks.EDGE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.EDGE, zone: "EDGE" });
-    if (b.marks.SIDE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.SIDE, zone: "SIDE" });
+    const rf = order[i], rt = order[j], b = local[rf];
+    b.runs.forEach(r => out.grade_zones.push({ floor, from_row: rf, to_row: rt, from_seat: r.s, to_seat: r.e, grade: r.g }));
+    if (b.marks.AISLE.length) out.aisle_seats.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.AISLE });
+    if (b.marks.RESTR.length) out.restricted_zones.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.RESTR });
+    if (b.marks.EDGE.length)  out.side_seats.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.EDGE, zone: "EDGE" });
+    if (b.marks.SIDE.length)  out.side_seats.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.SIDE, zone: "SIDE" });
     i = j + 1;
   }
-  return { grade_zones, aisle_seats: aisle, restricted_zones: restr, side_seats: side };
 }
 
+function gToPayload(){
+  gCaptureCurrent();
+  const out = { grade_zones: [], aisle_seats: [], restricted_zones: [], side_seats: [] };
+  (gSpec ? gSpec.floors : []).forEach(f => {
+    if (!f.paint || !f.paint.order.length) return;
+    gFloorZones(f.floor, f.paint.order, f.paint.rowsMap, out);
+  });
+  return out;
+}
+
+$("gScanBtn").onclick = gScan;
 $("gBuild").onclick = gBuild;
 
 (function wireGridDrag(){
@@ -956,12 +1067,6 @@ $("gSave").onclick = async () => {
   } catch (e) { setMsg($("gMsg"), e.message, "err"); }
   finally { $("gSave").disabled = false; }
 };
-
-// 배치도 이미지를 그리드 참고용으로도 표시
-$("sfile").addEventListener("change", () => {
-  const f = $("sfile").files[0];
-  if (f) { $("gRef").src = URL.createObjectURL(f); $("gRef").style.display = ""; }
-});
 
 boot();
 </script>
