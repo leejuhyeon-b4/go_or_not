@@ -354,6 +354,9 @@ window.GON_DB = (function(){
   function discountAppliesToSession(d, matinee){
     const at = d && d.applies_to;
     if(!at || at === 'ALL') return true;
+    // LIMITED = 프리뷰·문화가있는날·N회차 한정. 어느 회차인지 데이터가 없어
+    // "이 사람이 받을 수 있었던 최선" 기준선에는 넣지 않는다 (changelog §1.2).
+    if(at === 'LIMITED') return false;
     if(!matinee) return true;
     if(at === 'MATINEE') return matinee === 'MATINEE';
     if(at === 'EVENING') return matinee === 'EVENING';
@@ -376,23 +379,29 @@ window.GON_DB = (function(){
   // 같은 공연이라도 사용자마다 다르다. 자첫 여부는 R-6에 이미 있다.
   // 회차(마티네 전용)·좌석등급(대학생 R·S만) 제한에 안 맞는 할인은 기준선에서 뺀다.
   function baselineRate(season, opts){
+    const d = baselineDetail(season, opts);
+    return d ? d.rate : null;
+  }
+  // 기준선 + 그걸 만든 할인 이름·조건. agentCost 가 "최선은 X 20%였습니다" 로 쓴다.
+  function baselineDetail(season, opts){
     const ds = discounts(season);
     if(!ds || !ds.length) return null;
     const o = opts || {};
     function usable(d){
       return discountAppliesToSession(d, o.matinee) && discountAppliesToGrade(d, o.grade);
     }
-    let base = 0;
+    let base = 0, name = null, note = null;
+    function consider(d){
+      const rate = Number(d.rate) || 0;
+      if(rate > base){ base = rate; name = d.name || null; note = d.note || null; }
+    }
     ds.forEach(function(d){
       if(!usable(d)) return;
-      const rate = Number(d.rate) || 0;
-      if(d.type === 'STANDING') base = Math.max(base, rate);
-      else if(d.type === 'LOYALTY' && !o.firstWatch) base = Math.max(base, rate);
+      if(d.type === 'STANDING') consider(d);
+      else if(d.type === 'LOYALTY' && !o.firstWatch) consider(d);
     });
-    if(o.selected && o.selected.type === 'ELIGIBILITY' && usable(o.selected)){
-      base = Math.max(base, Number(o.selected.rate) || 0);
-    }
-    return base;
+    if(o.selected && o.selected.type === 'ELIGIBILITY' && usable(o.selected)) consider(o.selected);
+    return { rate: base, name: name, note: note };
   }
 
   // 권종 적용가 — 정가에 그 권종의 할인율을 먹인 값
@@ -461,11 +470,12 @@ window.GON_DB = (function(){
     }
 
     const rate     = discountRate(lp, burden);
-    const baseline = baselineRate(season, {
+    const bd = baselineDetail(season, {
       firstWatch: !!inp.firstWatch, selected: effective,
       matinee: inp.matinee || null,
       grade: (list && list.grade) || null
     });
+    const baseline = bd ? bd.rate : null;
 
     let bandVal = null;
     let gap = null;
@@ -495,6 +505,8 @@ window.GON_DB = (function(){
       mismatch_warn: mismatch,
       discount_rate: rate,
       baseline_rate: baseline,
+      baseline_name: bd && bd.rate > 0 ? bd.name : null,
+      baseline_note: bd && bd.rate > 0 ? bd.note : null,
       gap: gap,
       band: bandVal,
       discount_proof_policy: policy,
@@ -561,6 +573,7 @@ window.GON_DB = (function(){
     discountAppliesToSession: discountAppliesToSession,
     findDiscount: findDiscount,
     baselineRate: baselineRate,
+    baselineDetail: baselineDetail,
     priceForDiscount: priceForDiscount,
     band: band,
     discountRate: discountRate,

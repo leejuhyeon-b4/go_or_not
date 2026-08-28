@@ -614,11 +614,16 @@ window.GON = (function(){
     let priceLine;
 
     if(valueScore != null){
+      const bn = b.payment.baseline_name;
+      const bnote = b.payment.baseline_note;
+      const bestPhrase = baseline > 0
+        ? '오늘 받으실 수 있었던 최선은 ' + (bn ? bn + ' ' : '') + baseline + '%' +
+          (bnote ? ' (' + bnote + ')' : '') + '였습니다.'
+        : '오늘은 더 받을 수 있는 할인이 없었습니다.';
       priceLine = (b.payment.list_price_grade ? b.payment.list_price_grade + '석 ' : '') +
                   '정가 ' + won(list) +
-                  (rate > 0 ? '에서 ' + rate + '% 할인받으셨습니다.'
-                            : '을 그대로 내셨습니다.') +
-                  ' 오늘 받으실 수 있었던 최선은 ' + baseline + '%였습니다.';
+                  (rate > 0 ? '에서 ' + rate + '% 할인받으셨습니다. '
+                            : '을 그대로 내셨습니다. ') + bestPhrase;
       if(b.payment.list_price_verified === false) missing.push('정가 확인 (추정값)');
       if(b.payment.discounts_verified === false) missing.push('할인 목록 확인 (임시값)');
       drivers.push('PRICE_GAP');

@@ -344,7 +344,7 @@ function addDRow(d) {
   div.className = "drow";
   const typeOpts = ["STANDING", "ELIGIBILITY", "LOYALTY"]
     .map((t) => '<option ' + (d.type === t ? "selected" : "") + ">" + t + "</option>").join("");
-  const atOpts = [["ALL", "전체 회차"], ["MATINEE", "낮공 전용"], ["EVENING", "밤공 전용"]]
+  const atOpts = [["ALL", "전체 회차"], ["MATINEE", "낮공 전용"], ["EVENING", "밤공 전용"], ["LIMITED", "특정회차(프리뷰·문화의날)"]]
     .map(([v, t]) => '<option value="' + v + '"' + ((d.applies_to || "ALL") === v ? " selected" : "") + ">" + t + "</option>").join("");
   const grStr = Array.isArray(d.grades) ? d.grades.join(",") : "";
   div.innerHTML =
