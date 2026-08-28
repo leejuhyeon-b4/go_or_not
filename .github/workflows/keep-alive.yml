@@ -4,7 +4,7 @@ name: Supabase keep-alive
 # 5일에 한 번 아무 테이블 1행만 읽어서 프로젝트를 깨워 둔다.
 #
 # 필요한 저장소 Secrets (Settings → Secrets and variables → Actions):
-#   SUPABASE_URL              예: https://xxxx.supabase.co
+#   SUPABASE_URL              전체 주소. 예: https://xxxx.supabase.co
 #   SUPABASE_PUBLISHABLE_KEY  publishable(anon) 키 — 읽기 전용, RLS 로 통제됨
 
 on:
@@ -22,14 +22,26 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_PUBLISHABLE_KEY: ${{ secrets.SUPABASE_PUBLISHABLE_KEY }}
         run: |
-          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_PUBLISHABLE_KEY" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY secret 이 없습니다."
+          # 시크릿에 섞여 들어간 공백/줄바꿈 제거 + 끝의 / 제거
+          URL="$(printf '%s' "$SUPABASE_URL" | tr -d '[:space:]')"
+          URL="${URL%/}"
+          KEY="$(printf '%s' "$SUPABASE_PUBLISHABLE_KEY" | tr -d '[:space:]')"
+
+          if [ -z "$URL" ] || [ -z "$KEY" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY secret 이 비어 있습니다."
             exit 1
           fi
-          echo "GET ${SUPABASE_URL}/rest/v1/venues?select=venue_id&limit=1"
+          case "$URL" in
+            https://*) ;;
+            *) echo "::error::SUPABASE_URL 이 https:// 로 시작하지 않습니다. 전체 주소를 넣으세요. (길이=${#URL})"
+               exit 1 ;;
+          esac
+
+          echo "URL 길이 ${#URL} · KEY 길이 ${#KEY}"
+          echo "GET ${URL}/rest/v1/venues?select=venue_id&limit=1"
           curl --fail --show-error --silent --retry 3 --retry-delay 5 \
-            "${SUPABASE_URL}/rest/v1/venues?select=venue_id&limit=1" \
-            -H "apikey: ${SUPABASE_PUBLISHABLE_KEY}" \
-            -H "Authorization: Bearer ${SUPABASE_PUBLISHABLE_KEY}"
+            "${URL}/rest/v1/venues?select=venue_id&limit=1" \
+            -H "apikey: ${KEY}" \
+            -H "Authorization: Bearer ${KEY}"
           echo
           echo "keep-alive OK"
