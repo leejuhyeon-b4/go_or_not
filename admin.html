@@ -43,6 +43,7 @@
   .cell.mk-RESTR { background-image:repeating-linear-gradient(45deg,transparent,transparent 2px,rgba(0,0,0,.5) 2px,rgba(0,0,0,.5) 4px); }
   .cell.mk-EDGE  { border:2px solid #e11; }
   .cell.mk-SIDE  { border:2px dashed #e11; }
+  .cell.sel { box-shadow:0 0 0 2px #06f inset; }
   .ghead { font-size:9px; color:var(--mut); }
   .grow { display:grid; grid-template-columns:30px 42px 1fr 1fr 42px 42px 48px 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .grow input, .grow select { padding:7px 4px; font-size:13px; }
@@ -126,18 +127,17 @@
       <div id="sparseMsg" class="msg hidden"></div>
     </div>
     <div class="card">
-      <div class="between"><label>그리드로 칠하기 (권장) — 좌석에 등급·통로·시야제한·극싸를 직접 색칠</label></div>
-      <div class="row" style="display:grid;grid-template-columns:48px 1fr 60px 60px 90px;gap:5px;align-items:end">
+      <label>그리드로 칠하기 (권장) — 네모로 드래그해 좌석 선택 → 등급/표시 버튼 클릭</label>
+      <div style="display:grid;grid-template-columns:44px 1fr 56px 56px 84px;gap:5px;align-items:end;margin-top:6px">
         <div><label>층</label><input id="gFloor" type="number" value="1"></div>
-        <div><label>열 범위 (1-22 또는 A-V)</label><input id="gRows" placeholder="1-22"></div>
-        <div><label>좌석 최소</label><input id="gMin" type="number" value="1"></div>
-        <div><label>좌석 최대</label><input id="gMax" type="number" placeholder="48"></div>
+        <div><label>열 (1-22 또는 A-V)</label><input id="gRows" placeholder="1-22"></div>
+        <div><label>좌석 처음</label><input id="gMin" type="number" value="1"></div>
+        <div><label>좌석 끝</label><input id="gMax" type="number" placeholder="48"></div>
         <button id="gBuild" class="ghost" style="width:auto;margin:0">그리드 만들기</button>
       </div>
-      <div class="hint">배치도 이미지를 위 "초안 받기" 칸에 올려두면 여기 참고용으로 같이 보여요.
-        현재 저장된 구역이 있으면 그리드에 자동으로 칠해집니다.</div>
+      <div class="hint">이미지를 위 "초안 받기" 칸에 올려두면 참고용으로 같이 보여요. 저장된 구역이 있으면 자동으로 칠해집니다.</div>
       <img id="gRef" style="max-width:100%;border-radius:8px;margin-top:8px;display:none">
-      <div class="gpal" id="gPalette"></div>
+      <div class="gpal" id="gPalette" style="display:none"></div>
       <div class="gwrap" id="gWrap" style="display:none"><div class="grid" id="seatGrid"></div></div>
       <button id="gSave" style="display:none">이 그리드로 저장</button>
       <div id="gMsg" class="msg hidden"></div>
@@ -717,225 +717,251 @@ $("ssaveBtn").onclick = async () => {
   }
 };
 
-/* ================= 그리드로 칠하기 ================= */
+/* ================= 그리드로 칠하기 (드래그 선택 → 버튼 적용) ================= */
 const GRADE_COLORS = { VIP:"#7c5cff", R:"#3b82f6", S:"#22a06b", A:"#e0a72e", B:"#9aa0a6", C:"#c0663f" };
 function gradeColor(g){ return GRADE_COLORS[g] || "#b06fd6"; }
-const MARKS = [["AISLE","통로","#111"],["RESTR","시야제한","#555"],["EDGE","극싸","#e11"],["SIDE","사이드","#e11"]];
-
-let gPaint = null;      // 현재 선택된 페인트 값 { kind:'grade'|'mark'|'erase', v }
-let gPainting = false;
+const G_MARKS = [["AISLE","통로","#111"],["RESTR","시야제한","#555"],["EDGE","극싸","#e11"],["SIDE","사이드","#c11"]];
 
 function gRowLabels(spec){
-  const p = String(spec||"").trim().replace(/열/g,"").split(/[-~–]/).map(x=>x.trim());
+  const p = String(spec||"").trim().replace(/열/g,"").split(/[-~–]/).map(x=>x.trim()).filter(Boolean);
+  if (!p.length) return [];
   const a = p[0], b = p.length>1 ? p[1] : p[0];
-  if (/^\d+$/.test(a) && /^\d+$/.test(b)) {
+  const num = /^\d+$/;
+  if (num.test(a) && num.test(b)) {
     const lo=Math.min(+a,+b), hi=Math.max(+a,+b), out=[];
-    for(let i=lo;i<=hi;i++) out.push(String(i));
+    for (let i=lo;i<=hi;i++) out.push(String(i));
     return out;
   }
-  const idx = s => { let n=0; for(const c of s.toUpperCase()) n=n*26+(c.charCodeAt(0)-64); return n; };
-  const lbl = n => { let s=""; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26);} return s; };
+  const toI = s => { let n=0; for (const c of s.toUpperCase()) n=n*26+(c.charCodeAt(0)-64); return n; };
+  const toL = n => { let s=""; while (n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26);} return s; };
   if (/^[A-Za-z]+$/.test(a) && /^[A-Za-z]+$/.test(b)) {
-    const lo=Math.min(idx(a),idx(b)), hi=Math.max(idx(a),idx(b)), out=[];
-    for(let i=lo;i<=hi;i++) out.push(lbl(i));
+    const lo=Math.min(toI(a),toI(b)), hi=Math.max(toI(a),toI(b)), out=[];
+    for (let i=lo;i<=hi;i++) out.push(toL(i));
     return out;
   }
   return [];
 }
-
-function buildPalette(){
-  const box = $("gPalette"); box.innerHTML = "";
-  const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
-  const grades = s && s.prices ? Object.keys(s.prices) : ["VIP","R","S","A"];
-  const mk = (label,bg,fg,pick) => {
-    const b = document.createElement("button");
-    b.textContent = label; b.style.background = bg; b.style.color = fg || "#fff";
-    b.onclick = () => { gPaint = pick; [...box.children].forEach(c=>c.classList.toggle("on", c===b)); };
-    box.appendChild(b);
-  };
-  mk("지우기", "var(--line)", "var(--fg)", { kind:"erase" });
-  grades.forEach(g => mk(g, gradeColor(g), "#fff", { kind:"grade", v:g }));
-  MARKS.forEach(([v,label,col]) => mk(label, col, "#fff", { kind:"mark", v }));
-}
-
-function paintCell(cell){
-  if (!cell || !cell.classList || !cell.classList.contains("cell") || !gPaint) return;
-  if (gPaint.kind === "erase") {
-    cell.dataset.grade = ""; cell.dataset.mark = "";
-    cell.style.background = "var(--line)";
-    cell.className = "cell";
-  } else if (gPaint.kind === "grade") {
-    cell.dataset.grade = gPaint.v;
-    cell.style.background = gradeColor(gPaint.v);
-  } else if (gPaint.kind === "mark") {
-    cell.dataset.mark = gPaint.v;
-    cell.className = "cell mk-" + gPaint.v;
-    if (cell.dataset.grade) cell.style.background = gradeColor(cell.dataset.grade);
-  }
-}
-
-function buildGrid(prefill){
-  const floor = parseInt($("gFloor").value,10) || 1;
-  const rows = gRowLabels($("gRows").value);
-  const smin = parseInt($("gMin").value,10) || 1;
-  const smax = parseInt($("gMax").value,10);
-  if (!rows.length || !Number.isFinite(smax) || smax < smin) {
-    setMsg($("gMsg"), "열 범위(1-22 등)와 좌석 최대를 넣어주세요.", "err"); return;
-  }
-  buildPalette();
-  const grid = $("seatGrid"); grid.innerHTML = "";
-  // 헤더 (좌석번호 5칸마다)
-  const head = document.createElement("div"); head.className = "gr";
-  head.innerHTML = '<span class="grl"></span>';
-  for (let n=smin; n<=smax; n++) {
-    const h = document.createElement("span");
-    h.className = "ghead"; h.style.cssText = "width:13px;flex:0 0 13px;text-align:center";
-    h.textContent = (n % 5 === 0 || n === smin) ? n : "";
-    head.appendChild(h);
-  }
-  grid.appendChild(head);
-
-  rows.forEach(rl => {
-    const gr = document.createElement("div"); gr.className = "gr";
-    const l = document.createElement("span"); l.className = "grl"; l.textContent = rl + "열";
-    gr.appendChild(l);
-    for (let n=smin; n<=smax; n++) {
-      const c = document.createElement("span");
-      c.className = "cell"; c.dataset.floor = floor; c.dataset.row = rl; c.dataset.seat = n;
-      c.dataset.grade = ""; c.dataset.mark = "";
-      gr.appendChild(c);
-    }
-    grid.appendChild(gr);
-  });
-
-  if (prefill) prefillGrid(floor, prefill);
-  $("gWrap").style.display = "";
-  $("gSave").style.display = "";
-  setMsg($("gMsg"), "팔레트에서 색을 고르고 좌석을 클릭·드래그하세요. 저장하면 구역으로 압축됩니다.", "ok");
-}
-
-function eachCell(fn){ $("seatGrid").querySelectorAll(".cell").forEach(fn); }
-function rowIdxNum(label){ // 그리드 내 열 라벨 → 숫자 (A→1, 1→1)
+function rowNum(label){
   const s = String(label).toUpperCase();
   if (/^\d+$/.test(s)) return +s;
-  let n=0; for(const c of s) n=n*26+(c.charCodeAt(0)-64); return n;
+  let n=0; for (const c of s) n=n*26+(c.charCodeAt(0)-64); return n;
 }
 
-function prefillGrid(floor, s){
+let gActive = null;   // 현재 고른 페인트: {kind:'grade'|'mark'|'erase', v}
+let gDrag = null;     // {r0,c0}
+
+function gBuildPalette(){
+  const box = $("gPalette"); box.innerHTML = "";
+  const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
+  const grades = (s && s.prices) ? Object.keys(s.prices) : ["VIP","R","S","A"];
+  const add = (label, bg, fg, pick) => {
+    const b = document.createElement("button");
+    b.textContent = label; b.style.background = bg; b.style.color = fg;
+    b.onclick = () => {
+      gActive = pick;
+      [...box.children].forEach(c => c.classList.toggle("on", c === b));
+      applyToSelection();
+    };
+    box.appendChild(b);
+  };
+  add("지우기", "var(--line)", "var(--fg)", { kind:"erase" });
+  grades.forEach(g => add(g, gradeColor(g), "#fff", { kind:"grade", v:g }));
+  G_MARKS.forEach(([v,label,col]) => add(label, col, "#fff", { kind:"mark", v }));
+  box.style.display = "flex";
+}
+
+function paintOne(cell, pick){
+  if (!cell) return;
+  if (pick.kind === "erase") { cell.dataset.grade=""; cell.dataset.mark=""; }
+  else if (pick.kind === "grade") cell.dataset.grade = pick.v;
+  else if (pick.kind === "mark") cell.dataset.mark = pick.v;
+  cell.className = "cell" + (cell.dataset.mark ? " mk-" + cell.dataset.mark : "");
+  cell.style.background = cell.dataset.grade ? gradeColor(cell.dataset.grade) : "var(--line)";
+}
+function applyToSelection(){
+  if (!gActive) return;
+  const sel = $("seatGrid").querySelectorAll(".cell.sel");
+  if (!sel.length) return;
+  sel.forEach(c => { paintOne(c, gActive); c.classList.remove("sel"); });
+}
+function clearSel(){ $("seatGrid").querySelectorAll(".cell.sel").forEach(c => c.classList.remove("sel")); }
+
+function gMarkRect(r0,c0,r1,c1){
+  clearSel();
+  const rlo=Math.min(r0,r1), rhi=Math.max(r0,r1), clo=Math.min(c0,c1), chi=Math.max(c0,c1);
+  $("seatGrid").querySelectorAll(".cell").forEach(c => {
+    const r=+c.dataset.ri, s=+c.dataset.ci;
+    if (r>=rlo && r<=rhi && s>=clo && s<=chi) c.classList.add("sel");
+  });
+}
+
+function gBuild(){
+  try {
+    const floor = parseInt($("gFloor").value,10) || 1;
+    const rows = gRowLabels($("gRows").value);
+    const smin = parseInt($("gMin").value,10) || 1;
+    const smax = parseInt($("gMax").value,10);
+    if (!rows.length) { setMsg($("gMsg"), "열 범위를 넣어주세요 (예: 1-22 또는 A-V).", "err"); return; }
+    if (!Number.isFinite(smax) || smax < smin) { setMsg($("gMsg"), "좌석 끝 번호를 넣어주세요.", "err"); return; }
+    if (rows.length * (smax - smin + 1) > 6000) { setMsg($("gMsg"), "칸이 너무 많아요. 층을 나눠 넣으세요.", "err"); return; }
+
+    gBuildPalette();
+    const grid = $("seatGrid"); grid.innerHTML = "";
+    const head = document.createElement("div"); head.className = "gr";
+    head.innerHTML = '<span class="grl"></span>';
+    for (let n=smin; n<=smax; n++) {
+      const h = document.createElement("span");
+      h.className = "ghead"; h.style.cssText = "width:13px;flex:0 0 13px;text-align:center";
+      h.textContent = (n === smin || n % 5 === 0) ? n : "";
+      head.appendChild(h);
+    }
+    grid.appendChild(head);
+
+    rows.forEach((rl, ri) => {
+      const gr = document.createElement("div"); gr.className = "gr";
+      const l = document.createElement("span"); l.className = "grl"; l.textContent = rl;
+      gr.appendChild(l);
+      for (let n=smin, ci=0; n<=smax; n++, ci++) {
+        const c = document.createElement("span");
+        c.className = "cell";
+        c.dataset.row = rl; c.dataset.seat = n; c.dataset.ri = ri + 1; c.dataset.ci = n;
+        c.dataset.grade = ""; c.dataset.mark = "";
+        gr.appendChild(c);
+      }
+      grid.appendChild(gr);
+    });
+
+    grid.dataset.floor = floor;
+    const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
+    if (s) gPrefill(floor, s);
+
+    $("gWrap").style.display = "";
+    $("gSave").style.display = "";
+    setMsg($("gMsg"), "네모로 드래그해 좌석을 선택하고, 아래 버튼을 누르면 적용됩니다.", "ok");
+  } catch (e) {
+    setMsg($("gMsg"), "그리드 오류: " + (e && e.message || e), "err");
+  }
+}
+
+function gPrefill(floor, s){
   const inZone = (z, row, seat) => {
     if (z.floor != null && z.floor !== floor) return false;
-    const ri = rowIdxNum(row);
-    if (z.row_from || z.row_to) {
-      const rf = z.row_from ? rowIdxNum(z.row_from) : null, rt = z.row_to ? rowIdxNum(z.row_to) : null;
-      if (rf != null && ri < rf) return false;
-      if (rt != null && ri > rt) return false;
-    }
+    const ri = rowNum(row);
+    const rf = z.row_from ? rowNum(z.row_from) : null, rt = z.row_to ? rowNum(z.row_to) : null;
+    if (rf != null && ri < rf) return false;
+    if (rt != null && ri > rt) return false;
     if (z.row_parity === "even" && ri % 2 !== 0) return false;
-    if (z.row_parity === "odd" && ri % 2 !== 1) return false;
+    if (z.row_parity === "odd"  && ri % 2 !== 1) return false;
     if (Array.isArray(z.numbers) && z.numbers.length) return z.numbers.indexOf(seat) > -1;
-    const sf = z.seat_from ?? z.from_seat, st = z.seat_to ?? z.to_seat;
+    const sf = z.seat_from != null ? z.seat_from : z.from_seat;
+    const st = z.seat_to   != null ? z.seat_to   : z.to_seat;
     if (sf != null && seat < sf) return false;
     if (st != null && seat > st) return false;
     return true;
   };
-  eachCell(c => {
+  $("seatGrid").querySelectorAll(".cell").forEach(c => {
     const row = c.dataset.row, seat = +c.dataset.seat;
-    (s.seat_grades||[]).forEach(z => { if (inZone(z,row,seat)) { c.dataset.grade = z.grade; c.style.background = gradeColor(z.grade); } });
-    (s.aisle_seats||[]).forEach(z => { if (inZone(z,row,seat)) { c.dataset.mark = "AISLE"; c.className = "cell mk-AISLE"; if (c.dataset.grade) c.style.background = gradeColor(c.dataset.grade); } });
-    (s.restricted_seats||[]).forEach(z => { if (inZone(z,row,seat)) { c.dataset.mark = "RESTR"; c.className = "cell mk-RESTR"; } });
-    (s.side_seats||[]).forEach(z => { if (inZone(z,row,seat)) { c.dataset.mark = z.zone; c.className = "cell mk-" + z.zone; if (c.dataset.grade) c.style.background = gradeColor(c.dataset.grade); } });
+    (s.seat_grades || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.grade = z.grade; });
+    (s.aisle_seats || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.mark = "AISLE"; });
+    (s.restricted_seats || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.mark = "RESTR"; });
+    (s.side_seats || []).forEach(z => { if (inZone(z,row,seat)) c.dataset.mark = z.zone; });
+    c.className = "cell" + (c.dataset.mark ? " mk-" + c.dataset.mark : "");
+    c.style.background = c.dataset.grade ? gradeColor(c.dataset.grade) : "var(--line)";
   });
 }
 
-// 그리드 → 구역. 열별로 스캔 후, 연속된 동일 열을 열범위로 병합.
-function gridToPayload(){
-  const floor = parseInt($("gFloor").value,10) || 1;
-  const byRow = {};   // rowLabel → { grades:[{s,e,g}], aisle:[n], restr:[n], edge:[n], side:[n] }
-  const rowOrder = [];
-  eachCell(c => {
-    const rl = c.dataset.row, seat = +c.dataset.seat;
-    if (!byRow[rl]) { byRow[rl] = { cells:{} }; rowOrder.push(rl); }
-    byRow[rl].cells[seat] = { grade: c.dataset.grade || "", mark: c.dataset.mark || "" };
+function gToPayload(){
+  const grid = $("seatGrid");
+  const floor = parseInt(grid.dataset.floor, 10) || 1;
+  const rowsMap = {};   // rowLabel -> {seat: {grade,mark}}
+  const order = [];
+  grid.querySelectorAll(".cell").forEach(c => {
+    const rl = c.dataset.row;
+    if (!rowsMap[rl]) { rowsMap[rl] = {}; order.push(rl); }
+    rowsMap[rl][+c.dataset.seat] = { grade: c.dataset.grade || "", mark: c.dataset.mark || "" };
   });
-
-  const grade_zones = [], aisle = [], restr = [], side = [];
-  const sig = {};   // rowLabel → 압축 문자열 (병합 판단용)
-
-  rowOrder.forEach(rl => {
-    const cells = byRow[rl].cells;
+  const sig = {};
+  order.forEach(rl => {
+    const cells = rowsMap[rl];
     const seats = Object.keys(cells).map(Number).sort((a,b)=>a-b);
-    // 등급 런
-    const runs = [];
-    let cur = null;
+    const runs = []; let cur = null;
     seats.forEach(n => {
       const g = cells[n].grade;
       if (g && cur && cur.g === g && n === cur.e + 1) cur.e = n;
       else { if (cur && cur.g) runs.push(cur); cur = g ? { s:n, e:n, g } : null; }
     });
     if (cur && cur.g) runs.push(cur);
-    // 마크 번호
     const pick = m => seats.filter(n => cells[n].mark === m);
     const marks = { AISLE: pick("AISLE"), RESTR: pick("RESTR"), EDGE: pick("EDGE"), SIDE: pick("SIDE") };
-    byRow[rl].runs = runs; byRow[rl].marks = marks;
+    rowsMap[rl] = { runs, marks };
     sig[rl] = JSON.stringify([runs, marks]);
   });
-
-  // 연속 동일 시그니처 열을 [from,to] 로 병합
+  const grade_zones = [], aisle = [], restr = [], side = [];
   let i = 0;
-  while (i < rowOrder.length) {
+  while (i < order.length) {
     let j = i;
-    while (j + 1 < rowOrder.length && sig[rowOrder[j+1]] === sig[rowOrder[i]]) j++;
-    const rf = rowOrder[i], rt = rowOrder[j];
-    const b = byRow[rf];
-    if (b.runs && (b.runs.length || Object.values(b.marks).some(a=>a.length))) {
-      b.runs.forEach(r => grade_zones.push({ floor, from_row: rf, to_row: rt, from_seat: r.s, to_seat: r.e, grade: r.g }));
-      if (b.marks.AISLE.length) aisle.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.AISLE });
-      if (b.marks.RESTR.length) restr.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.RESTR });
-      if (b.marks.EDGE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.EDGE, zone: "EDGE" });
-      if (b.marks.SIDE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.SIDE, zone: "SIDE" });
-    }
+    while (j + 1 < order.length && sig[order[j+1]] === sig[order[i]]) j++;
+    const rf = order[i], rt = order[j], b = rowsMap[rf];
+    b.runs.forEach(r => grade_zones.push({ floor, from_row: rf, to_row: rt, from_seat: r.s, to_seat: r.e, grade: r.g }));
+    if (b.marks.AISLE.length) aisle.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.AISLE });
+    if (b.marks.RESTR.length) restr.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.RESTR });
+    if (b.marks.EDGE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.EDGE, zone: "EDGE" });
+    if (b.marks.SIDE.length)  side.push({ floor, row_from: rf, row_to: rt, numbers: b.marks.SIDE, zone: "SIDE" });
     i = j + 1;
   }
   return { grade_zones, aisle_seats: aisle, restricted_zones: restr, side_seats: side };
 }
 
-$("gBuild").onclick = () => {
-  const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
-  buildGrid(s || null);
-};
-document.addEventListener("mousedown", e => { if (e.target.classList && e.target.classList.contains("cell")) { gPainting = true; paintCell(e.target); e.preventDefault(); } });
-document.addEventListener("mouseover", e => { if (gPainting) paintCell(e.target); });
-document.addEventListener("mouseup", () => { gPainting = false; });
-$("seatGrid").addEventListener("touchmove", e => {
-  const t = e.touches[0]; const el = document.elementFromPoint(t.clientX, t.clientY);
-  paintCell(el); e.preventDefault();
-}, { passive:false });
-$("seatGrid").addEventListener("touchstart", e => {
-  const t = e.touches[0]; paintCell(document.elementFromPoint(t.clientX, t.clientY));
-}, { passive:true });
+$("gBuild").onclick = gBuild;
+
+(function wireGridDrag(){
+  const grid = $("seatGrid");
+  const cellAt = ev => {
+    const p = ev.touches ? ev.touches[0] : ev;
+    const el = document.elementFromPoint(p.clientX, p.clientY);
+    return (el && el.classList && el.classList.contains("cell")) ? el : null;
+  };
+  const start = ev => {
+    const c = cellAt(ev); if (!c) return;
+    gDrag = { r: +c.dataset.ri, s: +c.dataset.ci };
+    gMarkRect(gDrag.r, gDrag.s, gDrag.r, gDrag.s);
+    ev.preventDefault();
+  };
+  const move = ev => {
+    if (!gDrag) return;
+    const c = cellAt(ev); if (!c) return;
+    gMarkRect(gDrag.r, gDrag.s, +c.dataset.ri, +c.dataset.ci);
+    ev.preventDefault();
+  };
+  const end = () => { gDrag = null; };
+  grid.addEventListener("mousedown", start);
+  grid.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+  grid.addEventListener("touchstart", start, { passive:false });
+  grid.addEventListener("touchmove", move, { passive:false });
+  grid.addEventListener("touchend", end);
+})();
 
 $("gSave").onclick = async () => {
   const season_id = $("seatSeason").value;
-  const p = gridToPayload();
+  const p = gToPayload();
   if (!p.grade_zones.length && !p.aisle_seats.length && !p.restricted_zones.length && !p.side_seats.length) {
     setMsg($("gMsg"), "칠한 게 없어요.", "err"); return;
   }
   $("gSave").disabled = true; setMsg($("gMsg"), "저장 중…", "");
   try {
-    const res = await api("save-seatmap", { season_id, ...p });
+    const res = await api("save-seatmap", Object.assign({ season_id }, p));
     setMsg($("gMsg"), "저장 완료 — 등급 " + res.seat_grades + " · 통로 " + res.aisle_seats + " · 시야제한 " + res.restricted + " · 극싸/사이드 " + res.side_seats + ". 상담 앱 새로고침하면 반영.", "ok");
     await loadSeasons(); $("seatSeason").value = season_id; renderCurSeatSeason();
   } catch (e) { setMsg($("gMsg"), e.message, "err"); }
   finally { $("gSave").disabled = false; }
 };
 
-// 이미지 초안 미리보기를 그리드 참고용으로도 보여줌
-const _origSfile = $("sfile").onchange;
-$("sfile").onchange = function(){
-  if (_origSfile) _origSfile.call(this);
+// 배치도 이미지를 그리드 참고용으로도 표시
+$("sfile").addEventListener("change", () => {
   const f = $("sfile").files[0];
   if (f) { $("gRef").src = URL.createObjectURL(f); $("gRef").style.display = ""; }
-};
+});
 
 boot();
 </script>
