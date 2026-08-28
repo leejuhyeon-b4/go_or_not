@@ -31,7 +31,9 @@
   .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
   .msg.ok  { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
   .hint { font-size:12px; color:var(--mut); margin-top:8px; }
-  img.preview { width:100%; border-radius:10px; margin-top:10px; display:none; }
+  .previews { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .previews:empty { display:none; }
+  .previews img { height:64px; width:auto; border-radius:8px; border:1px solid var(--line); }
   .hidden { display:none; }
   .between { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
   .tabs { display:flex; gap:6px; margin-bottom:14px; }
@@ -64,11 +66,11 @@
       <div id="curInfo" class="hint"></div>
     </div>
     <div class="card">
-      <label for="dfile">할인정보 스크린샷</label>
-      <input id="dfile" type="file" accept="image/*" capture="environment">
-      <img id="dpreview" class="preview" alt="">
+      <label for="dfile">할인정보 스크린샷 (여러 장 가능)</label>
+      <input id="dfile" type="file" accept="image/*" multiple>
+      <div id="dpreview" class="previews"></div>
       <button id="dparseBtn" disabled>Gemini 로 판독</button>
-      <div class="hint">예매처 '할인정보' 화면을 캡처해서 올리세요. 저장은 아래에서 확인 후.</div>
+      <div class="hint">예매처 '할인정보' 화면을 캡처해서 올리세요. 스크롤로 나뉘면 여러 장 골라도 됩니다. 저장은 아래에서 확인 후.</div>
       <div id="dparseMsg" class="msg hidden"></div>
     </div>
     <div id="deditCard" class="card hidden">
@@ -89,11 +91,11 @@
       <div id="vcurInfo" class="hint"></div>
     </div>
     <div class="card">
-      <label for="sfile">좌석배치도 이미지</label>
-      <input id="sfile" type="file" accept="image/*" capture="environment">
-      <img id="spreview" class="preview" alt="">
+      <label for="sfile">좌석배치도 이미지 (여러 장 가능)</label>
+      <input id="sfile" type="file" accept="image/*" multiple>
+      <div id="spreview" class="previews"></div>
       <button id="sparseBtn" disabled>Gemini 로 판독</button>
-      <div class="hint">배치도 전체가 선명하게 나오게. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
+      <div class="hint">배치도 전체가 선명하게 나오게. 층별로 나뉘면 여러 장 골라도 됩니다. 판독은 거칠 수 있으니 아래에서 반드시 확인하세요.</div>
       <div id="sparseMsg" class="msg hidden"></div>
     </div>
     <div id="seditCard" class="card hidden">
@@ -139,6 +141,25 @@ function fileToB64(f) {
     r.onerror = () => no(new Error("이미지를 읽지 못했어요"));
     r.readAsDataURL(f);
   });
+}
+
+function renderPreviews(files, box) {
+  box.innerHTML = "";
+  [...files].forEach((f) => {
+    const im = document.createElement("img");
+    im.src = URL.createObjectURL(f);
+    im.alt = "";
+    box.appendChild(im);
+  });
+}
+
+function dedupeByKey(list, keyFn) {
+  const seen = new Map();
+  (list || []).forEach((x) => {
+    const k = keyFn(x);
+    if (k && !seen.has(k)) seen.set(k, x);
+  });
+  return [...seen.values()];
 }
 
 async function boot() {
@@ -212,26 +233,28 @@ function renderCurSeason() {
 }
 
 $("dfile").onchange = () => {
-  const f = $("dfile").files[0];
+  const files = $("dfile").files;
   show($("deditCard"), false);
   setMsg($("dparseMsg"), "", "");
-  if (!f) { $("dparseBtn").disabled = true; return; }
-  const img = $("dpreview");
-  img.src = URL.createObjectURL(f);
-  img.style.display = "block";
-  $("dparseBtn").disabled = false;
+  renderPreviews(files, $("dpreview"));
+  $("dparseBtn").disabled = !files.length;
 };
 
 $("dparseBtn").onclick = async () => {
-  const f = $("dfile").files[0];
-  if (!f) return;
+  const files = [...$("dfile").files];
+  if (!files.length) return;
   $("dparseBtn").disabled = true;
-  setMsg($("dparseMsg"), "판독 중… (몇 초)", "");
   try {
-    const b64 = await fileToB64(f);
-    const { discounts } = await api("parse", { image_base64: b64, mime_type: f.type });
-    setMsg($("dparseMsg"), discounts.length + "개 항목 판독됨. 아래에서 확인하세요.", "ok");
-    renderDRows(discounts);
+    const all = [];
+    for (let i = 0; i < files.length; i++) {
+      setMsg($("dparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
+      const b64 = await fileToB64(files[i]);
+      const { discounts } = await api("parse", { image_base64: b64, mime_type: files[i].type });
+      (discounts || []).forEach((d) => all.push(d));
+    }
+    const merged = dedupeByKey(all, (d) => String(d.name || "").trim().toLowerCase());
+    setMsg($("dparseMsg"), files.length + "장에서 " + merged.length + "개 항목 (중복 제거). 아래에서 확인하세요.", "ok");
+    renderDRows(merged);
     show($("deditCard"), true);
   } catch (e) {
     setMsg($("dparseMsg"), e.message, "err");
@@ -300,27 +323,30 @@ async function loadVenues() {
 }
 
 $("sfile").onchange = () => {
-  const f = $("sfile").files[0];
+  const files = $("sfile").files;
   show($("seditCard"), false);
   setMsg($("sparseMsg"), "", "");
-  if (!f) { $("sparseBtn").disabled = true; return; }
-  const img = $("spreview");
-  img.src = URL.createObjectURL(f);
-  img.style.display = "block";
-  $("sparseBtn").disabled = false;
+  renderPreviews(files, $("spreview"));
+  $("sparseBtn").disabled = !files.length;
 };
 
 $("sparseBtn").onclick = async () => {
-  const f = $("sfile").files[0];
-  if (!f) return;
+  const files = [...$("sfile").files];
+  if (!files.length) return;
   $("sparseBtn").disabled = true;
-  setMsg($("sparseMsg"), "판독 중… (몇 초)", "");
   try {
-    const b64 = await fileToB64(f);
-    const { floors, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: f.type });
-    setMsg($("sparseMsg"), "블록 " + floors.length + "개 · 시야제한 " + restricted_seats.length + "개 판독됨. 반드시 확인하세요.", "ok");
-    renderSBlocks(floors);
-    renderSRestr(restricted_seats);
+    const blocks = [], restr = [];
+    for (let i = 0; i < files.length; i++) {
+      setMsg($("sparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
+      const b64 = await fileToB64(files[i]);
+      const { floors, restricted_seats } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
+      (floors || []).forEach((x) => blocks.push(x));
+      (restricted_seats || []).forEach((x) => restr.push(x));
+    }
+    const mBlocks = dedupeByKey(blocks, (b) => b.floor + "|" + String(b.name || "").trim().toLowerCase());
+    setMsg($("sparseMsg"), files.length + "장에서 블록 " + mBlocks.length + "개 · 시야제한 " + restr.length + "개. 반드시 확인하세요.", "ok");
+    renderSBlocks(mBlocks);
+    renderSRestr(restr);
     show($("seditCard"), true);
   } catch (e) {
     setMsg($("sparseMsg"), e.message, "err");
