@@ -29,7 +29,10 @@
 - **할인 회차·등급 제한** — 할인 항목에 `applies_to`(ALL/MATINEE/EVENING) + `grades`(["R","S"]…) + `note`.
   `data.js baselineRate` 가 안 맞는 회차·좌석등급 할인을 기준선에서 제외 (모르면 보수적 포함).
   대상별 율·등급 다르면(대학생/초중고) 별도 항목. 관리자 도구가 Gemini 판독·검토·저장, `note` 는 저장만.
-  R-4 "어떤 할인" 드롭다운 → **버튼**(이 시즌 실제 할인 + 정가 + 목록에 없는 할인). changelog §1.2 개정.
+  R-4 "어떤 할인" 드롭다운 → **버튼**. 할인 미수집 시즌도 `정가`/`할인 받음` 버튼은 두고
+  degraded 판정(금액·증빙 기반, "몇 % 받았는지"만 사실). 라벨 옆에 `discounts_updated_at` 표시
+  (미수집이면 "아직 업데이트 안 됨"). 새 컬럼: `alter table seasons add column if not exists discounts_updated_at timestamptz;`
+  changelog §1.2 개정.
 
 ---
 

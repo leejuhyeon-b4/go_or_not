@@ -277,6 +277,11 @@ window.GON_DB = (function(){
     return (season && season.discounts) || null;
   }
 
+  // 할인 목록을 관리자 도구로 마지막 갱신한 시각 (ISO). 없으면 null.
+  function discountsUpdatedAt(season){
+    return (season && season.discounts_updated_at) || null;
+  }
+
   function findDiscount(season, name){
     const ds = discounts(season);
     if(!ds || !name) return null;
@@ -489,6 +494,7 @@ window.GON_DB = (function(){
     sideZoneFor: sideZoneFor,
     listPrice: listPrice,
     discounts: discounts,
+    discountsUpdatedAt: discountsUpdatedAt,
     findDiscount: findDiscount,
     baselineRate: baselineRate,
     priceForDiscount: priceForDiscount,

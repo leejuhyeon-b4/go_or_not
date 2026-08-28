@@ -162,7 +162,11 @@ Deno.serve(async (req) => {
 
       const { data, error } = await admin
         .from("seasons")
-        .update({ discounts: clean, discounts_verified: true })
+        .update({
+          discounts: clean,
+          discounts_verified: true,
+          discounts_updated_at: new Date().toISOString(),
+        })
         .eq("season_id", season_id)
         .select("season_id");
       if (error) throw new HttpError(500, error.message);

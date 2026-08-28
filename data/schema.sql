@@ -43,12 +43,16 @@ create table if not exists seasons (
                                                         --   applies_to: ALL(기본)|MATINEE|EVENING  grades: ["R","S"] 없으면 전체등급
                                                         --   note: 적용기간·조건 원문(참고용). 대상별 율/등급 다르면 별도 항목
   discounts_verified    boolean default false,
+  discounts_updated_at  timestamptz,                    -- 관리자 도구가 할인 목록 저장한 시각 (UI 표시용)
   discount_proof_policy text,                           -- FULL_PRICE | GRADE_CHANGE | UNKNOWN
   seat_grades           jsonb   default '[]'::jsonb,    -- [{floor,row,grade,source}]
   cancellation_policy   jsonb,
   source                text,
   created_at            timestamptz default now()
 );
+
+-- 이미 seasons 테이블이 있는 프로젝트는 아래만 실행 (create 는 컬럼을 안 더한다):
+--   alter table seasons add column if not exists discounts_updated_at timestamptz;
 
 -- ---------- 공연별 좌석배치도 오버레이 (PRD §8.4 season_seat_maps) ----------
 create table if not exists seatmaps (

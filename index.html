@@ -363,7 +363,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 }
 .pill.active{ border-color:var(--accent); color:var(--text); background:#3f341c; }
 #discountBtns .pill{ cursor:pointer; }
-.disc-empty{ font-size:12px; color:var(--text-dis); }
+.disc-meta{ font-size:11px; font-weight:400; color:var(--text-dis); margin-left:6px; }
+.disc-meta.warn{ color:var(--accent); }
 
 .scale-group{ display:flex; gap:6px; flex-wrap:wrap; }
 .scale-btn{
@@ -690,7 +691,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
              질문이 안 뜨는 게 오히려 틀렸다. -->
         <div class="row">
           <div class="field">
-            <label class="field-label">어떤 할인을 받으셨나요?<span class="req">*</span></label>
+            <label class="field-label">어떤 할인을 받으셨나요?<span class="req">*</span><span class="disc-meta" id="discountMeta"></span></label>
             <div class="pill-group" id="discountBtns"></div>
           </div>
           <div class="field mid">
@@ -1153,26 +1154,22 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     return GON_DB.listPrice(season, seatInfo.grade);
   }
 
-  // 수집한 할인 목록을 버튼으로 편다. 목록이 없으면 안내만 —
-  // 사용자는 "지금 모르는 게 있다"만 알면 되고 왜 모르는지는 알 필요가 없다.
+  // 수집한 할인 목록을 버튼으로 편다. 목록이 없어도 정가·목록없음 버튼은 두고,
+  // 비용축은 degraded 로 "몇 % 받았는지"만 사실로 말한다.
   function discountBtnLabel(d){
     return d.name.replace(/\s*할인$/,'') + ' ' + d.rate + '%';
   }
   function fillDiscountButtons(){
     const box = $('discountBtns');
-    const ds  = GON_DB.discounts(currentSeason());
+    const season = currentSeason();
+    const ds  = GON_DB.discounts(season);
+    const hasList = !!(ds && ds.length);
     const prev = state.selectedDiscount;
     box.innerHTML = '';
 
-    if(!ds || !ds.length){
-      box.innerHTML = '<span class="disc-empty">이 시즌의 할인 정보가 아직 없어요</span>';
-      state.selectedDiscount = '';
-      return;
-    }
-
-    const opts = [{ v:'NONE', label:'정가' }]
-      .concat(ds.map(d=> ({ v:d.name, label:discountBtnLabel(d) })))
-      .concat([{ v:'OTHER', label:'목록에 없는 할인' }]);   // 타임세일·쿠폰팩 등
+    const opts = [{ v:'NONE', label:'정가' }];
+    if(hasList) ds.forEach(d=> opts.push({ v:d.name, label:discountBtnLabel(d) }));
+    opts.push({ v:'OTHER', label: hasList ? '목록에 없는 할인' : '할인 받음' });
 
     // 공연을 바꿔도 같은 이름의 권종이 있으면 선택을 유지한다
     const keep = opts.some(o=> o.v === prev) ? prev : '';
@@ -1193,6 +1190,29 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       });
       box.appendChild(b);
     });
+
+    renderDiscountMeta(season, hasList);
+  }
+
+  // "어떤 할인을 받으셨나요?" 옆 작은 글씨 — 갱신일 또는 미수집 안내
+  function renderDiscountMeta(season, hasList){
+    const el = $('discountMeta');
+    if(!season){ el.textContent = ''; el.className = 'disc-meta'; return; }
+    if(!hasList){
+      el.textContent = '· 아직 할인 정보가 업데이트되지 않았어요';
+      el.className = 'disc-meta warn';
+      return;
+    }
+    const iso = GON_DB.discountsUpdatedAt(season);
+    if(iso){
+      const d = new Date(iso);
+      const ymd = d.getFullYear() + '.' +
+        String(d.getMonth()+1).padStart(2,'0') + '.' + String(d.getDate()).padStart(2,'0');
+      el.textContent = '· 할인정보 업데이트 ' + ymd;
+    } else {
+      el.textContent = '';
+    }
+    el.className = 'disc-meta';
   }
 
   function fillAltGradeSelect(){
@@ -1360,9 +1380,9 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     ()=> $('workTitle').value.trim().length>0,
     ()=> $('sessionDate').value.length>0 && state.matinee!==null,
     ()=> $('seatFloor').value && $('seatRowInput').value.trim() && $('seatNumber').value,
-    // 사다리가 아직 없는 시즌이면 권종을 물을 수 없으므로 금액만 본다 (v2.1 §5.4)
+    // 할인 목록이 없어도 정가/할인받음 버튼은 있으니 항상 하나는 골라야 한다
     ()=> Number($('paidAmount').value)>0
-         && (state.selectedDiscount !== '' || !GON_DB.discounts(currentSeason()))
+         && state.selectedDiscount !== ''
          && (!needsProof() || state.proofStatus !== null),
     ()=> state.casting!==null,
     ()=> state.firstWatch!==null && (state.firstWatch==='YES' || state.workAffinity!==null),
@@ -1652,9 +1672,11 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     $('feedbackBackdrop').hidden = true;
   });
 
-  // ?preview — 로그인 없이 화면/폼을 켜서 디자인·흐름을 확인하는 개발용 모드.
+  // ?preview 또는 #preview — 로그인 없이 화면/폼을 켜서 확인하는 개발용 모드.
+  // (file:// 에서 쿼리스트링이 잘리는 브라우저가 있어 해시·href 도 함께 본다.)
   // 상담기록은 세션이 없어 저장되지 않는다 (consult.html 이 알아서 스킵).
-  state.preview = new URLSearchParams(location.search).has('preview');
+  state.preview = /(\?|&|#)preview\b/.test(location.href) ||
+                  new URLSearchParams(location.search).has('preview');
   if(state.preview){
     $('consultForm').classList.add('is-lit');
     const chip = $('userChip');

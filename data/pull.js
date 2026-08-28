@@ -61,8 +61,8 @@ const VENUE_KEYS = ['venue_id', 'name', 'nearest_station', 'last_transit_time',
   'verified_seats', 'restricted_seats', 'collected'];
 const SEASON_KEYS = ['season_id', 'work_title', 'season_label', 'venue_id',
   'open_date', 'close_date', 'running_time', 'has_intermission', 'prices',
-  'prices_verified', 'discounts', 'discounts_verified', 'discount_proof_policy',
-  'seat_grades', 'cancellation_policy', 'source'];
+  'prices_verified', 'discounts', 'discounts_verified', 'discounts_updated_at',
+  'discount_proof_policy', 'seat_grades', 'cancellation_policy', 'source'];
 
 const pick = (row, keys) => {
   const o = {};
