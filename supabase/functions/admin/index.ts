@@ -166,12 +166,19 @@ Deno.serve(async (req) => {
 
     // ---- 공연 목록 ----
     if (action === "seasons") {
-      const { data, error } = await admin
+      // aisle_seats / restricted_seats 는 신규 컬럼 — 아직 마이그레이션 안 했어도 목록은 떠야 하므로
+      // 먼저 넓게 시도하고, 실패하면 기본 컬럼만.
+      const wide = await admin
         .from("seasons")
         .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, aisle_seats, restricted_seats")
         .order("work_title");
-      if (error) throw new HttpError(500, error.message);
-      return json({ seasons: data });
+      if (!wide.error) return json({ seasons: wide.data });
+      const narrow = await admin
+        .from("seasons")
+        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades")
+        .order("work_title");
+      if (narrow.error) throw new HttpError(500, narrow.error.message);
+      return json({ seasons: narrow.data, needs_migration: true });
     }
 
     // ---- 극장 목록 ----
@@ -319,7 +326,15 @@ Deno.serve(async (req) => {
       if (Object.keys(seasonUpdate).length) {
         const { error: seuErr } = await admin
           .from("seasons").update(seasonUpdate).eq("season_id", season_id);
-        if (seuErr) throw new HttpError(500, seuErr.message);
+        if (seuErr) {
+          if (/aisle_seats|restricted_seats|column/i.test(seuErr.message)) {
+            throw new HttpError(400,
+              "seasons 에 aisle_seats / restricted_seats 컬럼이 없어요. SQL Editor 에서:\n" +
+              "alter table seasons add column if not exists aisle_seats jsonb default '[]'::jsonb, " +
+              "add column if not exists restricted_seats jsonb default '[]'::jsonb;");
+          }
+          throw new HttpError(500, seuErr.message);
+        }
       }
 
       if (!hasGeometry && !Object.keys(seasonUpdate).length) {
