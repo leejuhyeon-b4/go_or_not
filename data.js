@@ -237,6 +237,24 @@ window.GON_DB = (function(){
     return out;
   }
 
+  // 가로통로("고속도로") — 한 층 안에서 특정 열 뒤에 좌석 없이 가로지르는 통로가 있는 극장
+  // (예: 엘리자벳 7열-8열 사이). season.cross_aisles: [{ floor, after_row }]
+  // (after_row = 통로 바로 앞쪽 열의 표기). 몰라도 false 로 단정하지 않고 null.
+  function crossAisleFor(season, seat, venue){
+    if(!season || !Array.isArray(season.cross_aisles) || !season.cross_aisles.length) return null;
+    if(seat.floor == null) return null;
+    const rIdx = rowIndex(seat.row, venue);
+    if(rIdx == null) return null;
+    for(const b of season.cross_aisles){
+      if(b.floor !== seat.floor) continue;
+      const bIdx = rowIndex(b.after_row, venue);
+      if(bIdx == null) continue;
+      if(rIdx === bIdx) return 'before';       // 이 열 바로 뒤가 가로통로
+      if(rIdx === bIdx + 1) return 'after';    // 이 열 바로 앞이 가로통로
+    }
+    return null;
+  }
+
   /* ---------------------------------------------------------
      좌석 조회 — 등급 / 시야제한 / 사이드 구간
   --------------------------------------------------------- */
@@ -250,6 +268,7 @@ window.GON_DB = (function(){
       side_block: null,
       side_source: null,        // 'season' | 'venue' | null
       side_estimate: false,
+      cross_aisle: null,        // 'before' | 'after' | null — 이 열 바로 앞/뒤 가로통로("고속도로")
       notes: [],
       sources: [],
       unknown: []
@@ -328,6 +347,8 @@ window.GON_DB = (function(){
         out.unknown.push('사이드 구간 (좌석배치도 미수집)');
       }
     }
+
+    out.cross_aisle = crossAisleFor(season, seat, venue);
 
     out.sources = out.sources.filter(Boolean);
     return out;

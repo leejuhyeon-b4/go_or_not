@@ -64,7 +64,7 @@ const SEASON_KEYS = ['season_id', 'work_title', 'season_label', 'venue_id',
   'open_date', 'close_date', 'running_time', 'has_intermission', 'prices',
   'prices_verified', 'discounts', 'discounts_verified', 'discounts_updated_at',
   'discount_proof_policy', 'seat_grades', 'aisle_seats', 'restricted_seats', 'side_seats',
-  'cancellation_policy', 'source'];
+  'cross_aisles', 'cancellation_policy', 'source'];
 
 const pick = (row, keys) => {
   const o = {};

@@ -259,6 +259,24 @@ function cleanSideZones(zones: unknown) {
   return out;
 }
 
+// 가로통로("고속도로") — 특정 열 뒤에 좌석 없이 가로지르는 통로
+function cleanCrossAisles(zones: unknown) {
+  if (!Array.isArray(zones)) return [];
+  const out: Array<{ floor: number; after_row: string }> = [];
+  const seen = new Set<string>();
+  for (const z of zones) {
+    const zz = z as { floor?: unknown; after_row?: unknown };
+    const floor = Number(zz?.floor);
+    const afterRow = String(zz?.after_row ?? "").trim().toUpperCase();
+    if (!Number.isFinite(floor) || !afterRow) continue;
+    const key = floor + "|" + afterRow;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ floor, after_row: afterRow });
+  }
+  return out;
+}
+
 function aliasesFor(name: string, side: string, floor: string) {
   const n = String(name).toLowerCase().trim();
   const bySide: Record<string, string[]> = {
@@ -302,17 +320,16 @@ Deno.serve(async (req) => {
 
     // ---- 공연 목록 ----
     if (action === "seasons") {
-      // aisle_seats / restricted_seats 는 신규 컬럼 — 아직 마이그레이션 안 했어도 목록은 떠야 하므로
-      // 먼저 넓게 시도하고, 실패하면 기본 컬럼만.
-      const wide = await admin
-        .from("seasons")
-        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, aisle_seats, restricted_seats, side_seats")
-        .order("work_title");
-      if (!wide.error) return json({ seasons: wide.data });
-      const narrow = await admin
-        .from("seasons")
-        .select("season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades")
-        .order("work_title");
+      // aisle_seats / restricted_seats / side_seats / cross_aisles 는 신규 컬럼 —
+      // 아직 마이그레이션 안 했어도 목록은 떠야 하므로 넓은 것부터 단계적으로 시도.
+      const cols = "season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades";
+      const widest = await admin.from("seasons")
+        .select(cols + ", aisle_seats, restricted_seats, side_seats, cross_aisles").order("work_title");
+      if (!widest.error) return json({ seasons: widest.data });
+      const wide = await admin.from("seasons")
+        .select(cols + ", aisle_seats, restricted_seats, side_seats").order("work_title");
+      if (!wide.error) return json({ seasons: wide.data, needs_migration: "cross_aisles" });
+      const narrow = await admin.from("seasons").select(cols).order("work_title");
       if (narrow.error) throw new HttpError(500, narrow.error.message);
       return json({ seasons: narrow.data, needs_migration: true });
     }
@@ -431,7 +448,7 @@ Deno.serve(async (req) => {
 
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
     if (action === "save-seatmap") {
-      const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats } = await req.json();
+      const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats, cross_aisles } = await req.json();
       if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
       const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
@@ -510,18 +527,21 @@ Deno.serve(async (req) => {
       if (Array.isArray(restricted_zones)) seasonUpdate.restricted_seats = restrZones;
       const sideZones = cleanSideZones(side_seats);
       if (Array.isArray(side_seats)) seasonUpdate.side_seats = sideZones;
+      const crossAisles = cleanCrossAisles(cross_aisles);
+      if (Array.isArray(cross_aisles)) seasonUpdate.cross_aisles = crossAisles;
 
       if (Object.keys(seasonUpdate).length) {
         const { error: seuErr } = await admin
           .from("seasons").update(seasonUpdate).eq("season_id", season_id);
         if (seuErr) {
-          if (/aisle_seats|restricted_seats|side_seats|column/i.test(seuErr.message)) {
+          if (/aisle_seats|restricted_seats|side_seats|cross_aisles|column/i.test(seuErr.message)) {
             throw new HttpError(400,
               "seasons 에 신규 컬럼이 없어요. SQL Editor 에서:\n" +
               "alter table seasons\n" +
               "  add column if not exists aisle_seats jsonb default '[]'::jsonb,\n" +
               "  add column if not exists restricted_seats jsonb default '[]'::jsonb,\n" +
-              "  add column if not exists side_seats jsonb default '[]'::jsonb;");
+              "  add column if not exists side_seats jsonb default '[]'::jsonb,\n" +
+              "  add column if not exists cross_aisles jsonb default '[]'::jsonb;");
           }
           throw new HttpError(500, seuErr.message);
         }
@@ -535,6 +555,7 @@ Deno.serve(async (req) => {
         ok: true, season_id, venue_id,
         seat_grades: seatGrades.length, aisle_seats: aisleZones.length,
         restricted: restrZones.length, side_seats: sideZones.length,
+        cross_aisles: crossAisles.length,
       });
     }
 

@@ -23,6 +23,11 @@
     --warn-bg:     #F1E3C6;
     --mut-bg:      #ECE6D6;
     --shadow: 0 1px 2px rgba(40,30,10,.07), 0 4px 14px rgba(40,30,10,.05);
+    /* 좌석 격자 표시자 — 통로/극싸/사이드가 한 좌석에 겹쳐도 구분되게 서로 다른 색 계열,
+       테마와 무관하게 고정(등급 배경색·강조색과도 안 겹치게). */
+    --gp-aisle: #2F6FED;   /* 통로 — 파랑 */
+    --gp-edge:  #E0342B;   /* 극싸 — 빨강 */
+    --gp-side:  #9B4FD1;   /* 사이드 — 보라 */
   }
   @media (prefers-color-scheme: dark) { :root {
     --bg:    #17140F;
@@ -102,6 +107,8 @@
   .grow input, .grow select { padding:7px 4px; font-size:13px; }
   .nrow { display:grid; grid-template-columns:30px 42px 1fr 1fr 1.5fr 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .nrow input, .nrow select { padding:7px 4px; font-size:13px; }
+  .hwrow { display:grid; grid-template-columns:44px 1fr 22px; gap:5px; align-items:center; margin-bottom:6px; }
+  .hwrow input { padding:8px; font-size:14px; }
   textarea { min-height:auto; }
   .del {
     background:transparent; color:var(--danger); border:1px solid var(--line);
@@ -123,6 +130,76 @@
     font-weight:600; padding:10px 14px;
   }
   .tabs button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+
+  /* ---- 좌석 격자 색칠판 (열 x 좌석번호) ---- */
+  .gp-floortabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  .gp-ftab {
+    width:auto; margin:0; padding:7px 13px; font-size:13px; font-weight:700;
+    background:var(--bg-2); color:var(--mut); border:1px solid var(--line);
+  }
+  .gp-ftab.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+  .gp-ftab.add { color:var(--accent); border-style:dashed; }
+  .gp-setup { display:grid; grid-template-columns:1fr 1fr 1fr auto; gap:6px; align-items:center; }
+  .gp-setup input { padding:8px; font-size:13px; }
+  .gp-setup button { margin:0; padding:8px 12px; font-size:13px; white-space:nowrap; width:auto; }
+  .gp-tools { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin:12px 0 8px; }
+  .gp-tool {
+    width:auto; margin:0; padding:5px 9px; font-size:12px; font-weight:700; cursor:pointer;
+    background:var(--bg-2); color:var(--fg); border:1px solid var(--line); border-radius:8px;
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  .gp-tool .sw { width:11px; height:11px; border-radius:3px; border:1px solid rgba(0,0,0,.2); display:inline-block; }
+  .gp-tool[aria-pressed="true"] { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); color:var(--fg); }
+  .gp-tool.erase[aria-pressed="true"] { border-color:var(--danger); box-shadow:inset 0 0 0 1px var(--danger); color:var(--danger); }
+  .gp-sep { width:1px; align-self:stretch; background:var(--line); margin:0 3px; }
+  .gp-wrap { overflow:auto; max-height:60vh; border:1px solid var(--line); border-radius:10px; background:var(--bg-2); }
+  .gp-grid { border-collapse:separate; border-spacing:0; user-select:none; touch-action:pan-x pan-y; }
+  .gp-grid th {
+    position:sticky; background:var(--bg-2); color:var(--fg); font-size:11px; font-weight:800;
+    padding:0; text-align:center; cursor:pointer; white-space:nowrap;
+  }
+  .gp-grid thead th { top:0; height:20px; min-width:23px; z-index:2; }
+  .gp-grid tbody th { left:0; width:32px; height:23px; z-index:1; }
+  .gp-grid thead th:first-child { left:0; z-index:3; }
+  .gp-grid th:hover { color:var(--accent); }
+  .gp-cell {
+    width:23px; height:23px; padding:0; position:relative; cursor:crosshair;
+    border:1px solid var(--line); background:var(--card);
+    font-size:9px; font-weight:800; text-align:center; line-height:21px;
+    color:var(--fg); text-shadow:0 0 2px var(--card), 0 0 3px var(--card), 0 0 4px var(--card);
+  }
+  .gp-cell.off { background:transparent !important; border-style:dashed; opacity:.4; }
+  .gp-cell.aisle::before {
+    content:""; position:absolute; right:1px; top:1px; width:5px; height:5px;
+    border-radius:50%; background:var(--gp-aisle); box-shadow:0 0 0 1px var(--card);
+  }
+  .gp-cell.restr::after {
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:repeating-linear-gradient(45deg, rgba(0,0,0,.6) 0 2px, transparent 2px 5px);
+  }
+  @media (prefers-color-scheme: dark) {
+    .gp-cell.restr::after { background:repeating-linear-gradient(45deg, rgba(255,255,255,.55) 0 2px, transparent 2px 5px); }
+  }
+  .gp-cell.side-edge-manual { box-shadow:inset 0 0 0 2px var(--gp-edge); }
+  .gp-cell.side-side-manual { box-shadow:inset 0 0 0 2px var(--gp-side); }
+  .gp-cell.side-edge-auto { outline:2px dashed var(--gp-edge); outline-offset:-2px; }
+  .gp-cell.side-side-auto { outline:2px dashed var(--gp-side); outline-offset:-2px; }
+  .gp-cell.cut { border-right-width:3px; border-right-color:var(--accent); }
+  .gp-cell.sel { outline:2px solid var(--accent); outline-offset:-2px; }
+  /* 고속도로(가로통로) 경계 — 평소엔 자리를 차지하지 않다가, "고속도로" 붓을 고르면
+     열 사이에 얇은 클릭 자리가 나타난다. 이미 놓은 자리는 그 위 열의 밑줄로 항상 보인다. */
+  .gp-hwrow td { height:0; padding:0; border:0; line-height:0; cursor:default; background:transparent; }
+  .gp-hwrow td > div { height:0; margin:0; overflow:hidden; }
+  #gpWrap.hwmode .gp-hwrow td { height:11px; cursor:pointer; }
+  #gpWrap.hwmode .gp-hwrow td > div { height:3px; margin:4px 6px; border-radius:2px; background:var(--line); }
+  #gpWrap.hwmode .gp-hwrow:hover td > div { background:var(--mut); }
+  #gpWrap.hwmode .gp-hwrow.on td > div { height:5px; margin:3px 6px; background:var(--accent); }
+  .gp-grid tbody tr.gp-row-hwy > td, .gp-grid tbody tr.gp-row-hwy > th { border-bottom:3px solid var(--accent); }
+  .gp-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
+  .gp-actions button { margin:0; }
+  .gp-legend { display:flex; flex-wrap:wrap; gap:10px; font-size:11px; color:var(--mut); margin-top:6px; }
+  .gp-legend span { display:inline-flex; align-items:center; gap:4px; }
+  .gp-legend i { width:10px; height:10px; border-radius:3px; display:inline-block; }
 
   /* ---- 로그인 화면 ---- */
   #loginCard { max-width:360px; margin:min(14vh,120px) auto 0; }
@@ -216,6 +293,50 @@
         <div id="claudePromptMsg" class="msg hidden"></div>
       </details>
     </div>
+    <div class="card">
+      <div class="between">
+        <label style="margin:0">격자로 칠하기 — 세로 열(row) × 가로 좌석번호</label>
+        <button id="gpToggle" class="ghost" type="button" style="width:auto;padding:4px 10px;margin:0;font-size:12px">격자 열기</button>
+      </div>
+      <div id="gpBody" class="hidden" style="margin-top:10px">
+        <div class="gp-floortabs" id="gpFloorTabs"></div>
+        <div class="gp-setup" id="gpSetup">
+          <input id="gpRowFrom" value="A" placeholder="시작열" title="시작열 (A / 1 / 가)">
+          <input id="gpRowTo" value="T" placeholder="끝열" title="끝열">
+          <input id="gpSeatMax" type="number" min="1" max="120" value="40" placeholder="마지막 좌석번호" title="마지막 좌석번호">
+          <button id="gpBuild" class="ghost" type="button">격자 만들기</button>
+        </div>
+        <div id="gpTools" class="gp-tools hidden"></div>
+        <div id="gpWrap" class="gp-wrap hidden"></div>
+        <div id="gpLegend" class="gp-legend hidden">
+          <span><i style="border-radius:50%;background:var(--gp-aisle)"></i>통로</span>
+          <span><i style="background:none;box-shadow:inset 0 0 0 2px var(--gp-edge)"></i>극싸(자동 계산)</span>
+          <span><i style="background:none;box-shadow:inset 0 0 0 2px var(--gp-side)"></i>사이드(자동 계산)</span>
+          <span><i style="background:repeating-linear-gradient(45deg,var(--fg) 0 2px,transparent 2px 4px)"></i>시야제한</span>
+          <span>━ 열 아래 굵은 밑줄 = 고속도로(가로통로)</span>
+        </div>
+        <div id="gpActions" class="gp-actions hidden">
+          <button id="gpLoad" class="ghost" type="button">아래 표 → 격자</button>
+          <button id="gpFill" type="button">격자 → 아래 표 채우기</button>
+        </div>
+        <div class="hint">
+          <b>층은 위 탭</b>에서 고르거나 <b>+층</b>으로 추가 — 층마다 열범위·좌석수가 다르면 따로 만드세요.<br>
+          드래그 = 사각형으로 칠하기 (<b>자유칠</b> 켜면 붓처럼). 열/번호 <b>머리칸을 클릭</b>하면 그 줄 전체.
+          <b>지우개</b>를 켜면 같은 붓이 지우개가 돼요. <b>좌우대칭</b>을 켜두면 한쪽에 칠한 게 반대쪽 대칭 자리에도
+          그대로 칠해져요(대부분 극장이 좌우 대칭이라 기본 켜짐 — 앞열 부채꼴처럼 비대칭이면 꺼두세요).<br>
+          <b>통로</b>는 통로에 <u>맞닿은 좌석</u>에 칠하세요 — 나란한 두 좌석이 통로면 그 사이가 블록 경계(좌/중/우)로 잡힙니다.
+          번호 자체가 없는 자리는 <b>좌석없음</b>으로.<br>
+          <b>극싸/사이드는 칠할 필요 없어요</b> — 통로 위치로 블록이 갈리면 PRD §5.2 규칙(벽·통로까지 거리)대로
+          자동 계산돼 격자에 바로 표시됩니다(점선 테두리). 자동 판정이 틀리는 예외 좌석에만 극싸/사이드(수동) 붓을
+          쓰세요 — 수동이 항상 우선하고, 저장되는 것도 이 수동 칠뿐입니다(자동은 상담 때마다 다시 계산돼서 안 저장).<br>
+          <b>고속도로(가로통로)</b>: 평소엔 안 보여요 — <b>고속도로</b> 붓을 고르면 열 사이에 클릭 자리가 생기고,
+          원하는 한 곳만 클릭하면 굵은 줄이 생겨요(예: 7열-8열 사이). 다른 붓으로 바꾸면 클릭 자리는 사라지고
+          이미 놓은 곳은 그 열 밑줄로만 남아요.<br>
+          칠한 결과는 <b>격자 → 아래 표 채우기</b>로 열범위·번호범위로 압축돼 표에 들어가고, 저장은 기존과 동일합니다 (그 층만 갱신).
+        </div>
+        <div id="gpMsg" class="msg hidden"></div>
+      </div>
+    </div>
     <div id="seditCard" class="card hidden">
       <div class="between"><label>블록 (층/이름/위치/좌석범위)</label>
         <button id="saddBlock" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
@@ -232,7 +353,10 @@
       <div class="between" style="margin-top:12px"><label>극싸/사이드 (층/열범위/좌석번호/구분)</label>
         <button id="saddSide" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
       <div id="ssides"></div>
-      <div class="hint" style="margin-top:6px">극싸/사이드를 여기 넣으면 블록 기하보다 우선해요 (뭉텅이 열이라 끝자리 계산이 안 될 때).
+      <div class="between" style="margin-top:12px"><label>고속도로 (층/이 열 바로 뒤에 가로통로)</label>
+        <button id="saddHwy" class="ghost" style="width:auto;padding:4px 10px;margin:0;font-size:12px">+ 행</button></div>
+      <div id="shwy"></div>
+      <div class="hint" style="margin-top:6px">극싸/사이드를 여기 넣으면 블록 기하보다 우선해요 (뭉텅이 열이라 끝자리 계산이 안 될 때, 자동 판정이 틀린 예외만).
         등급 비우면 상담 때 앱이 사용자에게 물음. 저장: 블록→venues, 나머지→이 공연(seasons).</div>
       <button id="ssaveBtn">이 공연 배치도로 저장</button>
       <div id="ssaveMsg" class="msg hidden"></div>
@@ -257,11 +381,18 @@ async function api(action, payload, loginPassword) {
   const headers = { "content-type": "application/json" };
   if (loginPassword != null) headers["x-admin-password"] = loginPassword;
   else headers["x-admin-token"] = TOKEN || "";
-  const res = await fetch(FN + "?action=" + action, {
-    method: "POST",
-    headers: headers,
-    body: JSON.stringify(payload || {}),
-  });
+  let res;
+  try {
+    res = await fetch(FN + "?action=" + action, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(payload || {}),
+    });
+  } catch (e) {
+    // fetch() 자체가 던지는 "Failed to fetch" — 서버까지 요청이 안 간 것.
+    // 원인 대부분: 이미지가 너무 커서 연결이 중간에 끊김 / 오프라인 / 함수 URL 오타.
+    throw new Error("서버에 연결하지 못했어요 (Failed to fetch). 이미지가 크면 줄여서 다시 시도하거나, 인터넷 연결·GON_SUPABASE 설정을 확인하세요.");
+  }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
   return data;
@@ -286,6 +417,39 @@ function fileToB64(f) {
     r.onload = () => ok(String(r.result).split(",")[1]);
     r.onerror = () => no(new Error("이미지를 읽지 못했어요"));
     r.readAsDataURL(f);
+  });
+}
+
+// 사진 원본(폰 카메라면 수 MB)을 그대로 base64 로 보내면 서버 요청 크기 제한에
+// 걸려 "Failed to fetch" 로 끊긴다 — 업로드 전에 긴 변 maxDim 으로 줄이고 JPEG 재압축.
+// 실패하면(이미지가 아니거나 캔버스 오류) 원본 그대로 보낸다.
+function compressImageToB64(f, maxDim, quality) {
+  maxDim = maxDim || 1600; quality = quality || 0.85;
+  return new Promise((ok) => {
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.naturalWidth, img.naturalHeight));
+      const w = Math.max(1, Math.round(img.naturalWidth * scale));
+      const h = Math.max(1, Math.round(img.naturalHeight * scale));
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        canvas.toBlob((blob) => {
+          if (!blob) { fileToB64(f).then((b64) => ok({ b64, mime: f.type })); return; }
+          const r = new FileReader();
+          r.onload = () => ok({ b64: String(r.result).split(",")[1], mime: "image/jpeg" });
+          r.onerror = () => fileToB64(f).then((b64) => ok({ b64, mime: f.type }));
+          r.readAsDataURL(blob);
+        }, "image/jpeg", quality);
+      } catch (e) {
+        fileToB64(f).then((b64) => ok({ b64, mime: f.type }));
+      }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); fileToB64(f).then((b64) => ok({ b64, mime: f.type })); };
+    img.src = url;
   });
 }
 
@@ -447,8 +611,8 @@ $("dparseBtn").onclick = async () => {
     const before = all.length;
     for (let i = 0; i < files.length; i++) {
       setMsg($("dparseMsg"), "판독 중… (" + (i + 1) + "/" + files.length + ")", "");
-      const b64 = await fileToB64(files[i]);
-      const { discounts } = await api("parse", { image_base64: b64, mime_type: files[i].type });
+      const img = await compressImageToB64(files[i]);
+      const { discounts } = await api("parse", { image_base64: img.b64, mime_type: img.mime });
       (discounts || []).forEach((d) => all.push(d));
     }
     // 같은 이름이라도 등급/할인율 다르면 다른 항목 (조기예매 R 10% vs S 20%)
@@ -532,7 +696,7 @@ function renderCurSeatSeason() {
     // 극장 선택칸을 노출한다(저장 시 새 시즌에 함께 붙는다).
     $("vcurInfo").innerHTML = $("seatSeason").value.trim() ? chip("mut", "새 공연 — 저장하면 만들어져요") : "";
     show($("seatVenueRow"), !!$("seatSeason").value.trim());
-    renderSGrades([]); renderSAisle([]); renderSRestr([]); renderSSides([]);
+    renderSGrades([]); renderSAisle([]); renderSRestr([]); renderSSides([]); renderSHighway([]);
     show($("seditCard"), true);
     return;
   }
@@ -541,16 +705,19 @@ function renderCurSeatSeason() {
   const ai = Array.isArray(s.aisle_seats) ? s.aisle_seats : [];
   const rs = Array.isArray(s.restricted_seats) ? s.restricted_seats : [];
   const sd = Array.isArray(s.side_seats) ? s.side_seats : [];
+  const hw = Array.isArray(s.cross_aisles) ? s.cross_aisles : [];
   $("vcurInfo").innerHTML =
     chip(zg.length ? "ok" : "mut", "등급 " + zg.length) + " " +
     chip(ai.length ? "ok" : "mut", "통로 " + ai.length) + " " +
     chip(rs.length ? "ok" : "mut", "시야제한 " + rs.length) + " " +
-    chip(sd.length ? "ok" : "mut", "극싸/사이드 " + sd.length) +
+    chip(sd.length ? "ok" : "mut", "극싸/사이드 " + sd.length) + " " +
+    chip(hw.length ? "ok" : "mut", "고속도로 " + hw.length) +
     (zg.length ? "" : ' <span class="hint" style="display:inline">등급 비면 상담 때 사용자에게 물음</span>');
   renderSGrades(zg);
   renderSAisle(ai);
   renderSRestr(rs);
   renderSSides(sd);
+  renderSHighway(hw);
   show($("seditCard"), true);
 }
 $("seatSeason").oninput = renderCurSeatSeason;
@@ -570,8 +737,9 @@ $("sparseBtn").onclick = async () => {
     const memos = [];
     for (let i = 0; i < files.length; i++) {
       setMsg($("sparseMsg"), "초안 받는 중… (" + (i + 1) + "/" + files.length + ")", "");
-      const b64 = await fileToB64(files[i]);
-      const { memo } = await api("parse-seatmap", { image_base64: b64, mime_type: files[i].type });
+      // 좌석배치도는 작은 숫자를 읽어야 해서 discount 표보다 넉넉하게(2000px) 줄인다
+      const img = await compressImageToB64(files[i], 2000, 0.88);
+      const { memo } = await api("parse-seatmap", { image_base64: img.b64, mime_type: img.mime });
       if (memo) memos.push(memo);
     }
     const cur = $("seatMemo").value.trim();
@@ -799,21 +967,20 @@ $("seatMemoParse").onclick = () => {
     total ? "ok" : "err");
 };
 
-$("ssaveBtn").onclick = async () => {
-  const floors = {};
-  [...document.querySelectorAll("#sblocks .srow")].forEach((r) => {
-    const f = String(parseInt(r.querySelector(".f").value, 10) || "");
-    const name = r.querySelector(".n").value.trim();
-    if (!f || !name) return;
-    (floors[f] = floors[f] || []).push({
-      name, side: r.querySelector(".sd").value,
-      seat_min: Number(r.querySelector(".mn").value),
-      seat_max: Number(r.querySelector(".mx").value),
-      row_from: r.querySelector(".fr").value.trim(),
-      row_to: r.querySelector(".tr").value.trim(),
-    });
-  });
-  const grade_zones = [...document.querySelectorAll("#sgrades .grow")].map((r) => ({
+/* ---------------- 표 읽기 (격자·저장이 함께 씀) ---------------- */
+function readBlockRows() {
+  return [...document.querySelectorAll("#sblocks .srow")].map((r) => ({
+    floor: parseInt(r.querySelector(".f").value, 10) || null,
+    name: r.querySelector(".n").value.trim(),
+    side: r.querySelector(".sd").value,
+    seat_min: Number(r.querySelector(".mn").value) || null,
+    seat_max: Number(r.querySelector(".mx").value) || null,
+    row_from: r.querySelector(".fr").value.trim(),
+    row_to: r.querySelector(".tr").value.trim(),
+  }));
+}
+function readGradeRows() {
+  return [...document.querySelectorAll("#sgrades .grow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
     row_parity: r.querySelector(".par").value || null,
     from_row: r.querySelector(".fr").value.trim(),
@@ -822,9 +989,9 @@ $("ssaveBtn").onclick = async () => {
     to_seat: r.querySelector(".ts").value ? Number(r.querySelector(".ts").value) : null,
     grade: r.querySelector(".gd").value.trim().toUpperCase(),
   })).filter((z) => z.floor != null && z.grade);
-  const aisle_seats = readNumRows($("saisles"));
-  const restricted_zones = readNumRows($("srestr"));
-  const side_seats = [...document.querySelectorAll("#ssides .nrow")].map((r) => ({
+}
+function readSideRows() {
+  return [...document.querySelectorAll("#ssides .nrow")].map((r) => ({
     floor: parseInt(r.querySelector(".f").value, 10) || null,
     row_parity: r.querySelector(".par").value || null,
     row_from: r.querySelector(".fr").value.trim(),
@@ -832,8 +999,555 @@ $("ssaveBtn").onclick = async () => {
     numbers: (r.querySelector(".nm").value || "").split(/[,\s]+/).map(Number).filter((n) => Number.isFinite(n) && n > 0),
     zone: r.querySelector(".zn").value,
   })).filter((z) => z.floor != null && z.numbers.length);
+}
+function renderSHighway(list) { $("shwy").innerHTML = ""; (list || []).forEach(addSHighway); }
+function addSHighway(z) {
+  z = z || {};
+  const div = document.createElement("div");
+  div.className = "hwrow";
+  div.innerHTML =
+    '<input class="f" type="number" placeholder="층" value="' + (z.floor != null ? z.floor : "") + '">' +
+    '<input class="ar" placeholder="이 열 뒤 (예: 7)" value="' + esc(z.after_row || "") + '">' +
+    '<button class="del">×</button>';
+  div.querySelector(".del").onclick = () => div.remove();
+  $("shwy").appendChild(div);
+}
+$("saddHwy").onclick = () => addSHighway();
+function readHighwayRows() {
+  return [...document.querySelectorAll("#shwy .hwrow")].map((r) => ({
+    floor: parseInt(r.querySelector(".f").value, 10) || null,
+    after_row: r.querySelector(".ar").value.trim(),
+  })).filter((z) => z.floor != null && z.after_row);
+}
 
-  const nothing = !Object.keys(floors).length && !grade_zones.length && !aisle_seats.length && !restricted_zones.length && !side_seats.length;
+/* ---------------- 좌석 격자 색칠판 ----------------
+   cssgridgenerator 식 격자를 쓰되 칸을 합치지 않는다 — 칸 하나 = 좌석 하나.
+   세로축 = 열(row), 가로축 = 좌석번호. 층마다 열범위·좌석수가 다를 수 있어
+   층별로 따로 격자를 두고(gpFloors) 탭으로 오간다. 칠한 격자는 "격자 → 표"
+   에서 열범위·번호범위로 압축돼 기존 표·스키마 그대로 들어간다.
+--------------------------------------------------- */
+const GP_HANGUL = "가나다라마바사아자차카타파하";   // data.js rowIndex 와 같은 체계
+const GP_PALETTE = ["#E0B252", "#7FA9D8", "#8CBE8A", "#D592B8", "#B79BE0", "#7FC8C4", "#E09070", "#A3B18A"];
+let gpGrades = ["VIP", "R", "S", "A"];
+let gpFloors = {};       // { "1": { built, rows:[라벨], cols, cells:[][], highways:[행idx,...] } }
+let gpActiveFloor = null;
+let gpRows = [];        // 활성 층의 열 라벨 배열 (gpFloors[gpActiveFloor].rows 와 같은 참조)
+let gpCols = 0;         // 활성 층의 좌석번호 1..gpCols
+let gpCells = [];       // gpCells[r][c] = { grade, aisle, restr, side, off }
+let gpHighways = [];    // 행 r 뒤에 가로통로 있으면 r 포함 (0-index, r 과 r+1 열 사이)
+let gpEls = [];         // 같은 좌표의 <td>
+let gpTool = { type: "grade", value: "VIP" };
+let gpErase = false, gpFree = false, gpDrag = null, gpSel = [];
+let gpMirror = true;   // 좌우대칭 — 대부분 극장이 좌우 대칭이라 기본 켜짐, 앞열 부채꼴 등 비대칭이면 꺼서 씀
+let gpRowTrs = [];     // 실제 좌석 행 <tr> — 고속도로 밑줄(.gp-row-hwy) 토글용
+
+const gpNewCell = () => ({ grade: null, aisle: false, restr: false, side: null, off: false });
+function gpColor(g) { const i = gpGrades.indexOf(g); return GP_PALETTE[(i < 0 ? 0 : i) % GP_PALETTE.length]; }
+function gpFloor() { return Number(gpActiveFloor); }
+function gpCurrent() { return gpFloors[gpActiveFloor]; }
+function gpSyncFromActive() {
+  const f = gpCurrent();
+  gpRows = f.rows; gpCols = f.cols; gpCells = f.cells; gpHighways = f.highways;
+}
+
+// 데이터 판정 자동 계산 — data.js sideZoneFor 와 완전히 같은 규칙 (§5.2)
+function gpSideZoneFor(width, dWall, dAisle) {
+  if (width == null || dWall == null || dAisle == null) return null;
+  if (width <= 2) return "EDGE";
+  if (width <= 4) {
+    if (dWall <= 1) return "EDGE";
+    if (dAisle >= 3) return "SIDE";
+    return null;
+  }
+  if (dWall <= 2) return "EDGE";
+  if (dAisle >= 4) return "SIDE";
+  return null;
+}
+
+// 열 라벨 → 번호 (data.js rowIndex 와 동일 규칙)
+function gpRowNum(label) {
+  if (label == null || label === "") return null;
+  const s = String(label).trim().toUpperCase();
+  if (/^\d+$/.test(s)) return Number(s);
+  if (/^[A-Z]$/.test(s)) return s.charCodeAt(0) - 64;
+  const h = GP_HANGUL.indexOf(String(label).trim());
+  return h > -1 ? h + 1 : null;
+}
+function gpMakeRows(from, to) {
+  const a = String(from || "").trim(), b = String(to || "").trim();
+  if (!a) return [];
+  const out = [];
+  if (/^\d+$/.test(a)) {
+    const s = Number(a), e = /^\d+$/.test(b) ? Number(b) : s;
+    for (let i = s; i <= e && out.length < 200; i++) out.push(String(i));
+    return out;
+  }
+  const A = a.toUpperCase(), B = b.toUpperCase();
+  if (/^[A-Z]$/.test(A)) {
+    const s = A.charCodeAt(0), e = /^[A-Z]$/.test(B) ? B.charCodeAt(0) : s;
+    for (let i = s; i <= e; i++) out.push(String.fromCharCode(i));
+    return out;
+  }
+  const s = GP_HANGUL.indexOf(a);
+  if (s > -1) {
+    const e = GP_HANGUL.indexOf(b) > -1 ? GP_HANGUL.indexOf(b) : s;
+    for (let i = s; i <= e; i++) out.push(GP_HANGUL[i]);
+    return out;
+  }
+  return [a];
+}
+
+/* ---- 층 탭 ---- */
+function gpRenderFloorTabs() {
+  const keys = Object.keys(gpFloors).map(Number).sort((a, b) => a - b);
+  let h = "";
+  keys.forEach((f) => {
+    h += '<button type="button" class="gp-ftab' + (String(f) === gpActiveFloor ? " on" : "") + '" data-f="' + f + '">' + f + "층</button>";
+  });
+  h += '<button type="button" class="gp-ftab add" data-add="1">+ 층</button>';
+  $("gpFloorTabs").innerHTML = h;
+}
+$("gpFloorTabs").addEventListener("click", (e) => {
+  const b = e.target.closest(".gp-ftab");
+  if (!b) return;
+  if (b.dataset.add) {
+    const keys = Object.keys(gpFloors).map(Number);
+    const next = keys.length ? Math.max(...keys) + 1 : 1;
+    const raw = window.prompt("추가할 층 번호", String(next));
+    if (!raw) return;
+    const f = parseInt(raw, 10);
+    if (!Number.isFinite(f) || f < 1) return;
+    gpAddFloor(f);
+    return;
+  }
+  gpSwitchFloor(b.dataset.f);
+});
+function gpAddFloor(f) {
+  const key = String(f);
+  if (!gpFloors[key]) gpFloors[key] = { built: false, rows: [], cols: 0, cells: [], highways: [] };
+  gpSwitchFloor(key);
+}
+function gpSwitchFloor(key) {
+  gpActiveFloor = key;
+  gpRenderFloorTabs();
+  gpSyncFromActive();
+  const f = gpCurrent();
+  if (f.built) {
+    $("gpRowFrom").value = f.rows[0] || "";
+    $("gpRowTo").value = f.rows[f.rows.length - 1] || "";
+    $("gpSeatMax").value = f.cols || "";
+    $("gpBuild").textContent = "다시 만들기 (이 층 초기화)";
+    gpRenderTools(); gpRenderGrid();
+    show($("gpTools"), true); show($("gpWrap"), true); show($("gpActions"), true);
+    show($("gpLegend"), true);
+  } else {
+    $("gpBuild").textContent = "격자 만들기";
+    show($("gpTools"), false); show($("gpWrap"), false); show($("gpActions"), false);
+    show($("gpLegend"), false);
+  }
+  setMsg($("gpMsg"), "", "");
+}
+
+/* ---- 붓 ---- */
+function gpRenderTools() {
+  const btn = (k, label, color, on) =>
+    '<button type="button" class="gp-tool' + (k === "erase" ? " erase" : "") + '" data-k="' + k + '" aria-pressed="' + (on ? "true" : "false") + '">' +
+    (color ? '<i class="sw" style="background:' + color + '"></i>' : "") + esc(label) + "</button>";
+  const isG = (g) => gpTool.type === "grade" && gpTool.value === g;
+  let h = "";
+  gpGrades.forEach((g) => { h += btn("grade:" + g, g, gpColor(g), isG(g)); });
+  h += btn("addgrade", "+ 등급", "", false);
+  h += '<span class="gp-sep"></span>';
+  h += btn("aisle", "통로", "", gpTool.type === "aisle");
+  h += btn("restr", "시야제한", "", gpTool.type === "restr");
+  h += btn("side:EDGE", "극싸(수동)", "", gpTool.type === "side" && gpTool.value === "EDGE");
+  h += btn("side:SIDE", "사이드(수동)", "", gpTool.type === "side" && gpTool.value === "SIDE");
+  h += btn("off", "좌석없음", "", gpTool.type === "off");
+  h += btn("highway", "고속도로", "", gpTool.type === "highway");
+  h += '<span class="gp-sep"></span>';
+  h += btn("mirror", "좌우대칭", "", gpMirror);
+  h += btn("free", "자유칠", "", gpFree);
+  h += btn("erase", "지우개", "", gpErase);
+  $("gpTools").innerHTML = h;
+  $("gpWrap").classList.toggle("hwmode", gpTool.type === "highway");
+}
+$("gpTools").addEventListener("click", (e) => {
+  const b = e.target.closest(".gp-tool");
+  if (!b) return;
+  const k = b.dataset.k;
+  if (k === "erase") gpErase = !gpErase;
+  else if (k === "free") gpFree = !gpFree;
+  else if (k === "mirror") gpMirror = !gpMirror;
+  else if (k === "addgrade") {
+    const g = (window.prompt("추가할 등급 이름 (예: VIP, R, OP)") || "").trim().toUpperCase();
+    if (!g) return;
+    if (gpGrades.indexOf(g) < 0) gpGrades.push(g);
+    gpTool = { type: "grade", value: g };
+  } else if (k.indexOf("grade:") === 0) gpTool = { type: "grade", value: k.slice(6) };
+  else if (k.indexOf("side:") === 0) gpTool = { type: "side", value: k.slice(5) };
+  else gpTool = { type: k };
+  gpRenderTools();
+});
+
+/* ---- 격자 만들기 · 그리기 ---- */
+function gpBuild() {
+  if (!gpActiveFloor) gpAddFloor(1);
+  const rows = gpMakeRows($("gpRowFrom").value, $("gpRowTo").value);
+  const cols = Math.max(1, Math.min(120, parseInt($("gpSeatMax").value, 10) || 0));
+  if (!rows.length) { setMsg($("gpMsg"), "열 범위를 확인하세요 — A~T / 1~20 / 가~하.", "err"); return; }
+  const f = gpCurrent();
+  f.rows = rows; f.cols = cols; f.cells = rows.map(() => Array.from({ length: cols }, gpNewCell)); f.highways = []; f.built = true;
+  gpSyncFromActive();
+  gpRenderTools(); gpRenderGrid();
+  $("gpBuild").textContent = "다시 만들기 (이 층 초기화)";
+  show($("gpTools"), true); show($("gpWrap"), true); show($("gpActions"), true);
+  show($("gpLegend"), true);
+  setMsg($("gpMsg"), gpActiveFloor + "층 — " + rows.length + "열 × " + cols + "번 격자를 만들었어요. 붓을 고르고 드래그하세요.", "ok");
+}
+function gpRenderGrid() {
+  let h = '<table class="gp-grid"><thead><tr><th></th>';
+  for (let c = 0; c < gpCols; c++) h += '<th data-col="' + c + '">' + (c + 1) + "</th>";
+  h += "</tr></thead><tbody>";
+  for (let r = 0; r < gpRows.length; r++) {
+    const hasHwy = gpHighways.indexOf(r) > -1;
+    h += '<tr class="' + (hasHwy ? "gp-row-hwy" : "") + '"><th data-row="' + r + '">' + esc(gpRows[r]) + "</th>";
+    for (let c = 0; c < gpCols; c++) h += '<td class="gp-cell" data-r="' + r + '" data-c="' + c + '"></td>';
+    h += "</tr>";
+    if (r < gpRows.length - 1) {
+      h += '<tr class="gp-hwrow' + (hasHwy ? " on" : "") + '" data-after="' + r + '" title="' +
+        esc(gpRows[r]) + "열-" + esc(gpRows[r + 1]) + '열 사이 — 고속도로(가로통로) 놓기/빼기">' +
+        '<td colspan="' + (gpCols + 1) + '"><div></div></td></tr>';
+    }
+  }
+  $("gpWrap").innerHTML = h + "</tbody></table>";
+  const bodyTrs = [...$("gpWrap").querySelectorAll("tbody tr:not(.gp-hwrow)")];
+  gpRowTrs = bodyTrs;
+  gpEls = bodyTrs.map((tr) => [...tr.querySelectorAll("td")]);
+  $("gpWrap").classList.toggle("hwmode", gpTool.type === "highway");
+  for (let r = 0; r < gpRows.length; r++) gpPaintRow(r);
+}
+// 한 행의 좌석 연속 구간들 — 좌석없음 칸과 "나란한 두 통로석" 을 경계로 자른다
+function gpRuns(r) {
+  const runs = []; let start = null;
+  for (let c = 0; c < gpCols; c++) {
+    const st = gpCells[r][c];
+    if (st.off) { if (start != null) { runs.push([start + 1, c]); start = null; } continue; }
+    if (start == null) start = c;
+    const nx = c + 1 < gpCols ? gpCells[r][c + 1] : null;
+    if (nx && !nx.off && st.aisle && nx.aisle) { runs.push([start + 1, c + 1]); start = c + 1; }
+  }
+  if (start != null) runs.push([start + 1, gpCols]);
+  return runs;
+}
+// 극싸/사이드 자동 미리보기 — 구간이 둘 이상일 때만(좌/우를 가릴 수 있을 때만) 계산
+function gpPreviewFor(r, c) {
+  const runs = gpRuns(r);
+  if (runs.length < 2) return null;
+  const n = c + 1;
+  let idx = -1;
+  for (let i = 0; i < runs.length; i++) if (n >= runs[i][0] && n <= runs[i][1]) { idx = i; break; }
+  if (idx < 0) return null;
+  if (idx > 0 && idx < runs.length - 1) return null;   // 중블 — 감점 대상 아님
+  const run = runs[idx];
+  const width = run[1] - run[0] + 1;
+  const isLeft = idx === 0;
+  const dWall  = isLeft ? (n - run[0] + 1) : (run[1] - n + 1);
+  const dAisle = isLeft ? (run[1] - n + 1) : (n - run[0] + 1);
+  return gpSideZoneFor(width, dWall, dAisle);
+}
+function gpPaintRow(r) {
+  const row = gpCells[r], els = gpEls[r];
+  if (!els) return;
+  for (let c = 0; c < gpCols; c++) {
+    const st = row[c], td = els[c], nx = c + 1 < gpCols ? row[c + 1] : null;
+    // 나란한 두 통로석 사이(또는 좌석없음 경계) = 블록이 갈리는 자리
+    const cut = !!(nx && !st.off && (nx.off ? true : (st.aisle && nx.aisle)));
+    let cls = "gp-cell" + (st.off ? " off" : "") + (st.aisle ? " aisle" : "") + (st.restr ? " restr" : "") + (cut ? " cut" : "");
+    if (st.side === "EDGE") cls += " side-edge-manual";
+    else if (st.side === "SIDE") cls += " side-side-manual";
+    else if (!st.off) {
+      // 수동으로 안 건드린 좌석은 통로 위치만으로 항상 자동 계산해서 보여준다 (PRD §5.2) — 손댈 필요 없음
+      const prev = gpPreviewFor(r, c);
+      if (prev === "EDGE") cls += " side-edge-auto";
+      else if (prev === "SIDE") cls += " side-side-auto";
+    }
+    td.className = cls;
+    td.style.background = (!st.off && st.grade) ? gpColor(st.grade) : "";
+    td.textContent = st.off ? "" : String(c + 1);   // 번호는 항상 표시 — 행/열 헷갈림 방지
+  }
+}
+function gpSetCell(st) {
+  const t = gpTool;
+  if (t.type === "grade") st.grade = gpErase ? null : t.value;
+  else if (t.type === "aisle") st.aisle = !gpErase;
+  else if (t.type === "restr") st.restr = !gpErase;
+  else if (t.type === "side") st.side = gpErase ? null : t.value;
+  else if (t.type === "off") {
+    st.off = !gpErase;
+    // 좌석없음으로 칠하면 그 자리에 남아있던 등급/통로/시야제한/극싸·사이드(수동)도 같이 지운다 —
+    // 없는 좌석에 표시가 남아있으면 나중에 헷갈린다.
+    if (st.off) { st.grade = null; st.aisle = false; st.restr = false; st.side = null; }
+  }
+}
+// 좌우대칭 — 왼쪽에 칠하면 오른쪽 대칭 자리(번호 c ↔ 번호 gpCols-1-c)에도 같은 걸 칠한다.
+// 모두 "그 값으로 정하기" 방식이라(토글 아님) 같은 칸을 두 번 칠해도 안전하다.
+function gpApply(r0, c0, r1, c1) {
+  const ra = Math.min(r0, r1), rb = Math.max(r0, r1);
+  const ca = Math.min(c0, c1), cb = Math.max(c0, c1);
+  for (let r = ra; r <= rb; r++) {
+    for (let c = ca; c <= cb; c++) {
+      gpSetCell(gpCells[r][c]);
+      if (gpMirror) {
+        const mc = gpCols - 1 - c;
+        if (mc !== c && mc >= 0 && mc < gpCols) gpSetCell(gpCells[r][mc]);
+      }
+    }
+    gpPaintRow(r);
+  }
+}
+function gpClearSel() { gpSel.forEach((td) => td.classList.remove("sel")); gpSel = []; }
+function gpShowSel() {
+  gpClearSel();
+  const ra = Math.min(gpDrag.r0, gpDrag.r1), rb = Math.max(gpDrag.r0, gpDrag.r1);
+  const ca = Math.min(gpDrag.c0, gpDrag.c1), cb = Math.max(gpDrag.c0, gpDrag.c1);
+  for (let r = ra; r <= rb; r++) for (let c = ca; c <= cb; c++) {
+    gpEls[r][c].classList.add("sel"); gpSel.push(gpEls[r][c]);
+  }
+}
+// "고속도로" 붓을 고른 동안에만 열 사이 자리가 클릭 가능해진다(hwmode 클래스, CSS 참고).
+// 다른 붓일 땐 자리가 사라져서(높이 0) 실수로 눌릴 일이 없다.
+$("gpWrap").addEventListener("click", (e) => {
+  const hw = e.target.closest(".gp-hwrow");
+  if (!hw || gpTool.type !== "highway") return;
+  const r = +hw.dataset.after;
+  const i = gpHighways.indexOf(r);
+  if (i > -1) gpHighways.splice(i, 1); else gpHighways.push(r);
+  hw.classList.toggle("on", i === -1);
+  if (gpRowTrs[r]) gpRowTrs[r].classList.toggle("gp-row-hwy", i === -1);
+});
+$("gpWrap").addEventListener("pointerdown", (e) => {
+  if (gpTool.type === "highway") return;   // 고속도로는 위 click 핸들러가 처리 — 칸 칠하기 없음
+  const th = e.target.closest("th");
+  if (th) {
+    if (th.dataset.row != null) gpApply(+th.dataset.row, 0, +th.dataset.row, gpCols - 1);
+    else if (th.dataset.col != null) gpApply(0, +th.dataset.col, gpRows.length - 1, +th.dataset.col);
+    return;
+  }
+  const td = e.target.closest(".gp-cell");
+  if (!td) return;
+  e.preventDefault();
+  gpDrag = { r0: +td.dataset.r, c0: +td.dataset.c, r1: +td.dataset.r, c1: +td.dataset.c };
+  if (gpFree) gpApply(gpDrag.r0, gpDrag.c0, gpDrag.r0, gpDrag.c0); else gpShowSel();
+});
+$("gpWrap").addEventListener("pointermove", (e) => {
+  if (!gpDrag) return;
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const td = el && el.closest ? el.closest(".gp-cell") : null;
+  if (!td) return;
+  const r = +td.dataset.r, c = +td.dataset.c;
+  if (r === gpDrag.r1 && c === gpDrag.c1) return;
+  gpDrag.r1 = r; gpDrag.c1 = c;
+  if (gpFree) gpApply(r, c, r, c); else gpShowSel();
+});
+document.addEventListener("pointerup", () => {
+  if (!gpDrag) return;
+  const d = gpDrag; gpDrag = null;
+  gpClearSel();
+  if (!gpFree) gpApply(d.r0, d.c0, d.r1, d.c1);
+});
+
+/* ---- 격자 → 표 (열범위·번호범위로 압축) ---- */
+// 결과가 같은 이웃 열끼리 묶어 from_row~to_row 한 줄로 접는다
+function gpFoldRows(perRow, emit) {
+  let i = 0;
+  while (i < perRow.length) {
+    const v = perRow[i];
+    if (!v || !v.length) { i++; continue; }
+    const sig = JSON.stringify(v);
+    let j = i;
+    while (j + 1 < perRow.length && JSON.stringify(perRow[j + 1] || []) === sig) j++;
+    emit(v, gpRows[i], gpRows[j]);
+    i = j + 1;
+  }
+}
+function gpGradeSegs(r) {
+  const out = []; let cur = null;
+  for (let c = 0; c < gpCols; c++) {
+    const st = gpCells[r][c];
+    const g = (!st.off && st.grade) ? st.grade : null;
+    if (cur && g === cur.grade) { cur.to = c + 1; continue; }
+    if (cur) out.push(cur);
+    cur = g ? { grade: g, from: c + 1, to: c + 1 } : null;
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+function gpNums(r, pick) {
+  const out = [];
+  for (let c = 0; c < gpCols; c++) { const st = gpCells[r][c]; if (!st.off && pick(st)) out.push(c + 1); }
+  return out;
+}
+function gpFillTables() {
+  if (!gpRows.length) { setMsg($("gpMsg"), "먼저 격자를 만드세요.", "err"); return; }
+  const f = gpFloor();
+  const other = (list) => list.filter((z) => Number(z.floor) !== f);
+
+  const grades = [], aisles = [], restr = [], sides = [], blocks = [];
+  gpFoldRows(gpRows.map((_, r) => gpGradeSegs(r)), (segs, rf, rt) => {
+    segs.forEach((s) => grades.push({ floor: f, row_parity: null, from_row: rf, to_row: rt, from_seat: s.from, to_seat: s.to, grade: s.grade }));
+  });
+  gpFoldRows(gpRows.map((_, r) => gpNums(r, (s) => s.aisle)), (nums, rf, rt) => {
+    aisles.push({ floor: f, row_parity: null, row_from: rf, row_to: rt, numbers: nums });
+  });
+  gpFoldRows(gpRows.map((_, r) => gpNums(r, (s) => s.restr)), (nums, rf, rt) => {
+    restr.push({ floor: f, row_parity: null, row_from: rf, row_to: rt, numbers: nums });
+  });
+  // 수동으로 칠한 극싸/사이드만 표에 낸다 — 자동 미리보기는 확인용일 뿐, 저장은 안 된다
+  // (통로 위치로 블록만 정확하면 상담 때 매번 다시 계산되니 그걸로 충분하다)
+  ["EDGE", "SIDE"].forEach((zone) => {
+    gpFoldRows(gpRows.map((_, r) => gpNums(r, (s) => s.side === zone)), (nums, rf, rt) => {
+      sides.push({ floor: f, row_parity: null, row_from: rf, row_to: rt, numbers: nums, zone });
+    });
+  });
+  // 블록: 덩어리가 하나뿐이면 좌/중/우를 알 수 없으니 만들지 않는다 (극장 기본 기하를 그대로 둔다)
+  let single = 0;
+  gpFoldRows(gpRows.map((_, r) => gpRuns(r)), (runs, rf, rt) => {
+    if (runs.length < 2) { single++; return; }
+    let mid = 0;
+    runs.forEach((run, i) => {
+      const isFirst = i === 0, isLast = i === runs.length - 1;
+      const side = isFirst ? "left" : isLast ? "right" : "center";
+      const name = isFirst ? "좌" : isLast ? "우" : (++mid > 1 ? "중" + mid : "중");
+      blocks.push({ floor: f, name, side, seat_min: run[0], seat_max: run[1], row_from: rf, row_to: rt });
+    });
+  });
+  const highways = gpHighways.slice().sort((a, b) => a - b).map((r) => ({ floor: f, after_row: gpRows[r] }));
+
+  renderSBlocks(other(readBlockRows()).concat(blocks));
+  renderSGrades(other(readGradeRows()).concat(grades));
+  renderSAisle(other(readNumRows($("saisles"))).concat(aisles));
+  renderSRestr(other(readNumRows($("srestr"))).concat(restr));
+  renderSSides(other(readSideRows()).concat(sides));
+  renderSHighway(other(readHighwayRows()).concat(highways));
+  show($("seditCard"), true);
+  setMsg($("gpMsg"),
+    f + "층 → 등급 " + grades.length + " · 통로 " + aisles.length + " · 시야제한 " + restr.length +
+    " · 극싸/사이드(수동) " + sides.length + " · 블록 " + blocks.length + " · 고속도로 " + highways.length +
+    " 줄 (아래 표 확인 후 저장)" +
+    (single ? "\n통로가 표시되지 않은 열 묶음 " + single + "개는 블록(좌/중/우)을 만들지 않았어요." : ""), "ok");
+}
+
+/* ---- 표 → 격자 (이미 넣어둔 배치도를 다시 칠할 때) ---- */
+function gpRowSpan(from, to) {
+  const idx = (v) => {
+    const s = String(v == null ? "" : v).trim().toUpperCase();
+    if (!s) return -1;
+    for (let i = 0; i < gpRows.length; i++) if (gpRows[i].toUpperCase() === s) return i;
+    const n = gpRowNum(s);
+    if (n == null) return -1;
+    for (let i = 0; i < gpRows.length; i++) if (gpRowNum(gpRows[i]) === n) return i;
+    return -1;
+  };
+  let a = idx(from), b = idx(to);
+  if (a < 0 && b < 0) return [0, gpRows.length - 1];   // 열범위 생략 = 전 열
+  if (a < 0) a = 0;
+  if (b < 0) b = gpRows.length - 1;
+  return a <= b ? [a, b] : [b, a];
+}
+function gpRowsOf(z) {
+  const span = gpRowSpan(z.row_from != null && z.row_from !== "" ? z.row_from : z.from_row,
+                         z.row_to != null && z.row_to !== "" ? z.row_to : z.to_row);
+  const out = [];
+  for (let r = span[0]; r <= span[1]; r++) {
+    if (z.row_parity) {
+      const n = gpRowNum(gpRows[r]);
+      if (n == null) continue;
+      if (z.row_parity === "even" && n % 2 !== 0) continue;
+      if (z.row_parity === "odd" && n % 2 !== 1) continue;
+    }
+    out.push(r);
+  }
+  return out;
+}
+// after_row 표기 → 그 열의 격자 행 인덱스 (없으면 -1)
+function gpHighwayIndexFor(afterRow) {
+  const s = String(afterRow || "").trim().toUpperCase();
+  for (let i = 0; i < gpRows.length; i++) if (gpRows[i].toUpperCase() === s) return i;
+  const n = gpRowNum(s);
+  if (n == null) return -1;
+  for (let i = 0; i < gpRows.length; i++) if (gpRowNum(gpRows[i]) === n) return i;
+  return -1;
+}
+function gpLoadFromTables() {
+  if (!gpRows.length) { setMsg($("gpMsg"), "먼저 격자를 만드세요.", "err"); return; }
+  const f = gpFloor();
+  const mine = (list) => list.filter((z) => Number(z.floor) === f);
+  gpCells = gpRows.map(() => Array.from({ length: gpCols }, gpNewCell));
+
+  // 블록 → 블록 밖 번호는 '좌석없음'
+  const blocks = mine(readBlockRows()).filter((b) => b.seat_min && b.seat_max);
+  if (blocks.length) {
+    const cover = gpRows.map(() => null);
+    blocks.forEach((b) => { gpRowsOf(b).forEach((r) => { (cover[r] = cover[r] || []).push(b); }); });
+    cover.forEach((bs, r) => {
+      if (!bs) return;
+      for (let c = 0; c < gpCols; c++) {
+        const n = c + 1;
+        if (!bs.some((b) => n >= b.seat_min && n <= b.seat_max)) gpCells[r][c].off = true;
+      }
+    });
+  }
+  const paintNums = (list, set) => list.forEach((z) => gpRowsOf(z).forEach((r) => {
+    (z.numbers || []).forEach((n) => { if (n >= 1 && n <= gpCols) set(gpCells[r][n - 1], z); });
+  }));
+  const gz = mine(readGradeRows());
+  gz.forEach((z) => { if (z.grade && gpGrades.indexOf(z.grade) < 0) gpGrades.push(z.grade); });
+  gz.forEach((z) => gpRowsOf(z).forEach((r) => {
+    const a = z.from_seat || 1, b = z.to_seat || gpCols;
+    for (let n = a; n <= Math.min(b, gpCols); n++) gpCells[r][n - 1].grade = z.grade;
+  }));
+  paintNums(mine(readNumRows($("saisles"))), (st) => { st.aisle = true; });
+  paintNums(mine(readNumRows($("srestr"))), (st) => { st.restr = true; });
+  paintNums(mine(readSideRows()), (st, z) => { st.side = z.zone; });
+  gpHighways = mine(readHighwayRows())
+    .map((z) => gpHighwayIndexFor(z.after_row))
+    .filter((i, idx, arr) => i > -1 && i < gpRows.length - 1 && arr.indexOf(i) === idx);
+
+  const cur = gpCurrent();
+  cur.cells = gpCells; cur.highways = gpHighways;
+
+  gpRenderTools(); gpRenderGrid();
+  setMsg($("gpMsg"), f + "층 표 내용을 격자에 옮겼어요. 고친 뒤 '격자 → 아래 표 채우기'.", "ok");
+}
+
+$("gpToggle").onclick = () => {
+  const opening = $("gpBody").classList.contains("hidden");
+  show($("gpBody"), opening);
+  $("gpToggle").textContent = opening ? "격자 닫기" : "격자 열기";
+  if (opening && !Object.keys(gpFloors).length) gpAddFloor(1);
+};
+$("gpBuild").onclick = gpBuild;
+$("gpFill").onclick = gpFillTables;
+$("gpLoad").onclick = gpLoadFromTables;
+
+
+$("ssaveBtn").onclick = async () => {
+  const floors = {};
+  readBlockRows().forEach((b) => {
+    if (b.floor == null || !b.name) return;
+    (floors[String(b.floor)] = floors[String(b.floor)] || []).push({
+      name: b.name, side: b.side,
+      seat_min: Number(b.seat_min), seat_max: Number(b.seat_max),
+      row_from: b.row_from, row_to: b.row_to,
+    });
+  });
+  const grade_zones = readGradeRows();
+  const aisle_seats = readNumRows($("saisles"));
+  const restricted_zones = readNumRows($("srestr"));
+  const side_seats = readSideRows();
+  const cross_aisles = readHighwayRows();
+
+  const nothing = !Object.keys(floors).length && !grade_zones.length && !aisle_seats.length && !restricted_zones.length && !side_seats.length && !cross_aisles.length;
   if (nothing) { setMsg($("ssaveMsg"), "저장할 내용이 없어요. 메모를 채우고 '표 채우기' 하세요.", "err"); return; }
 
   $("ssaveBtn").disabled = true;
@@ -844,11 +1558,11 @@ $("ssaveBtn").onclick = async () => {
       throw new Error("새 공연에 블록(좌석 기하)을 저장하려면 극장을 먼저 골라주세요.");
     }
     const season_id = await resolveSeasonId($("seatSeason"), venueId);
-    const payload = { season_id, grade_zones, aisle_seats, restricted_zones, side_seats };
+    const payload = { season_id, grade_zones, aisle_seats, restricted_zones, side_seats, cross_aisles };
     if (Object.keys(floors).length) payload.floors = floors;
     const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
-      "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + " · 극싸/사이드 " + (res.side_seats || 0) + ". 상담 앱 새로고침하면 반영.", "ok");
+      "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + " · 극싸/사이드 " + (res.side_seats || 0) + " · 고속도로 " + (res.cross_aisles || 0) + ". 상담 앱 새로고침하면 반영.", "ok");
     await loadSeasons();
     renderCurSeatSeason();
   } catch (e) {
