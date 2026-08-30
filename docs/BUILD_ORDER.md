@@ -33,13 +33,14 @@ KOPIS ─(node data/kopis.js)→ SQL ─┐
   (웹 에디터는 큰 파일 한글 깨짐).
 - **할인정보 탭**: 이미지 여러 장 → Gemini `[{name,rate,type,applies_to,grades,note}]` → 검토표 → `seasons.discounts`.
   시즌 선택 시 **기존 할인 미리 로드**, 판독은 거기에 더해짐(1·2차 공지 누적). `discounts_updated_at` 기록.
-- **좌석배치도 탭 = 공연(시즌) 선택.** 세 방식 중 하나로 `seasons.seat_grades/aisle_seats/restricted_seats/side_seats` 채움:
-  - **그리드 색칠(권장)**: `parse-seatmap-grid` → Gemini 는 **뼈대만**(`{floors:[{floor,rows:[{label,min,max}]}]}`, 색·등급 안 읽음)
-    → admin.html 이 층별 그리드 렌더 → 관리자가 드래그로 좌석 사각 선택 → 등급/표시(통로·시야제한·극싸·사이드) 버튼 클릭.
-    저장 시 `gToPayload` 가 열별로 등급 연속구간 스캔 + 시그니처 같은 연속 열을 `[from_row,to_row]` 로 압축.
-    다층이면 `#gFloorTabs` 로 전환(층별 색칠 상태는 `gSpec.floors[].paint` 에 유지, 저장은 전 층 함께 전송).
-    스캔이 안 맞으면 `<details>` 열어 층/열/좌석범위 직접 입력.
+- **좌석배치도 탭 = 공연(시즌) 선택.** `seasons.seat_grades/aisle_seats/restricted_seats/side_seats` 를 채우는 경로:
   - **문단 메모**: `parse-seatmap` → Gemini **초안 문단**(`{memo}`) → 관리자가 형식대로 고침 → "표 채우기"(`parseSeatMemo`) → 4개 표 → 저장.
+    Gemini 초안이 부실하면 같은 칸에 Claude 챗(수동, 관리자가 직접 물어봄) 결과를 붙여넣어도 형식만 맞으면 그대로 파싱됨 —
+    `admin.html` 에 프롬프트 템플릿과 복사 버튼 있음.
+  - 표는 "+행" 버튼으로 직접 추가·수정도 가능 — 메모 없이 손으로만 채워도 됨.
+  - **(폐지) 그리드 색칠** — `parse-seatmap-grid` + 드래그 선택 색칠 UI는 삭제했다. Claude API 를
+    관리자 도구에 안 쓰기로 하면서 자동 그리드 재구성(Vision/CLOVA OCR + 코드 재구성)까지
+    함께 걷어냈다 — 문단 메모 하나로 통일.
   - 메모 형식(한 줄 = 한 층·한 열컨텍스트):
     ```
     1층
@@ -58,6 +59,7 @@ KOPIS ─(node data/kopis.js)→ SQL ─┐
 ### 상담 앱 (`index.html`)
 - **로그인 게이트** — Supabase Auth. 모달이 화면을 막지 않게(닫기 가능), 로드 시 자동 오픈 안 함.
   `?preview` / `#preview` = 로그인 없이 폼·상담시작 활성(저장은 세션 없어 스킵).
+  `file://`·`localhost` 에서만 동작 — 배포 도메인에서는 로그인 우회 안 됨.
 - **R-4 "어떤 할인" = 버튼** — 이 시즌 실제 할인 + `정가` + `목록에 없는 할인`.
   등급별로 나뉜 할인(조기예매 VIP·R 10% / S·A 20%)은 **버튼 1개** — 좌석 넣으면 등급으로 `resolveSelectedDiscount()` 자동 선택.
   할인 미수집 시즌도 `정가`/`할인 받음` 버튼은 두고 degraded 판정. 라벨 옆 `discounts_updated_at` 표시.

@@ -11,19 +11,13 @@
 //   POST /functions/v1/admin?action=parse         → 할인표 이미지 → Gemini → [{name,rate,type}]
 //   POST /functions/v1/admin?action=save          → 검토된 할인 목록 → seasons.discounts
 //   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {memo}
-//   POST /functions/v1/admin?action=parse-seatmap-grid → 배치도 이미지 → {floors:[{floor,rows:[{label,min,max}]}]} (색칠용 뼈대)
 //   POST /functions/v1/admin?action=save-seatmap  → 검토된 배치도 → venues.base_geometry / restricted_seats
 //
-// parse-seatmap-grid 판독 엔진 (배포 전 점검 후속 — "좌석배치도는 시도해보자"):
-//   OCR(글자 인식) 전용 엔진이 좌석 번호 같은 조밀한 숫자를 Gemini의 내장 비전보다
-//   더 정확히 읽는다는 전제로, 이미지 → OCR(텍스트+좌표) → 순수 코드(y좌표 군집화 +
-//   숫자 최소·최대)로 그리드를 재구성한다. LLM 판단은 안 쓴다 — Claude API 는 이
-//   프로젝트에서 상담 에이전트 전용이고 관리자 도구엔 붙이지 않기로 했다.
-//   OCR은 Google Vision 우선(무료 한도가 월등히 큼, 월 1,000장) → 실패 시 Naver
-//   CLOVA OCR 로 폴백(무료 월 100회) → 그마저 실패하거나 시크릿이 아예 없으면
-//   예전 Gemini 비전 단일 호출로 되돌아간다. 그것도 안 맞으면 사람이 Claude 챗에
-//   이미지를 직접 물어보고 결과를 "좌석배치도" 탭의 메모칸에 붙여넣는다 —
-//   그 형식은 admin.html 의 기존 파서(parseSeatMemo)가 그대로 읽는다.
+// 좌석배치도 판독: Gemini 비전으로 메모 초안만 뽑는다(색칠용 그리드 스캔 기능은
+// 폐지). Claude API 는 이 관리자 도구엔 안 쓴다(상담 에이전트 전용) — Gemini
+// 초안이 부족하면 사람이 Claude 챗에 이미지를 직접 물어보고 결과를 "좌석배치도"
+// 탭의 메모칸에 붙여넣는다. 그 형식은 admin.html 의 기존 파서(parseSeatMemo)가
+// 그대로 읽는다.
 //
 // 인증 (배포 전 점검 S-1/S-2/S-5 대응으로 재작성):
 //   최초 로그인만 x-admin-password 헤더로 ADMIN_PASSWORD 시크릿과 비교한다.
@@ -40,14 +34,8 @@
 //   ADMIN_PASSWORD        ← 직접 등록. 폰에서 입력할 공유 비밀번호 하나.
 //   ADMIN_ALLOWED_ORIGINS ← 직접 등록. admin.html 을 올린 도메인, 쉼표로 여러 개
 //                           (예: https://example.github.io). 비워두면 file:// 만 허용.
-//   GEMINI_API_KEY   ← 직접 등록 (aistudio.google.com). parse/parse-seatmap(메모)와
-//                      parse-seatmap-grid 의 폴백 경로가 여전히 이걸 쓴다.
+//   GEMINI_API_KEY   ← 직접 등록 (aistudio.google.com). parse/parse-seatmap 이 이걸 쓴다.
 //   GEMINI_MODEL     ← 선택, 기본 gemini-3.6-flash
-//   GOOGLE_VISION_API_KEY   ← 선택. parse-seatmap-grid 1차 OCR (Cloud Vision API 키,
-//                             Vision API 로 제한해서 발급). 없으면 CLOVA 로.
-//   CLOVA_OCR_INVOKE_URL    ← 선택. NCP 콘솔에서 CLOVA OCR General 도메인 생성 시
-//                             나오는 Invoke URL 그대로("/general" 은 코드가 붙임).
-//   CLOVA_OCR_SECRET_KEY    ← 선택. 그 도메인의 Secret Key.
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ← 자동 주입됨
 // =============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -59,9 +47,6 @@ const ALLOWED_ORIGINS = (Deno.env.get("ADMIN_ALLOWED_ORIGINS") ?? "")
   .split(",").map((s) => s.trim()).filter(Boolean);
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.6-flash";
-const GOOGLE_VISION_KEY = Deno.env.get("GOOGLE_VISION_API_KEY") ?? "";
-const CLOVA_OCR_INVOKE_URL = (Deno.env.get("CLOVA_OCR_INVOKE_URL") ?? "").replace(/\/$/, "");
-const CLOVA_OCR_SECRET_KEY = Deno.env.get("CLOVA_OCR_SECRET_KEY") ?? "";
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
@@ -403,28 +388,6 @@ Deno.serve(async (req) => {
       return json(result);
     }
 
-    // ---- 좌석배치도 → 색칠용 그리드 뼈대 (층 / 열 목록 / 열별 좌석범위) ----
-    if (action === "parse-seatmap-grid") {
-      const { image_base64, mime_type } = await req.json();
-      const mime = validateImage(image_base64, mime_type);
-
-      // OCR(Vision→CLOVA) 시크릿이 있으면 그쪽을 먼저 쓰고, 열을 하나도 못 찾거나
-      // 시크릿이 없으면 예전 방식(Gemini 비전 단일 호출)으로 되돌아간다.
-      let grid: GridFloors | null = null;
-      let engineUsed = "gemini-vision";
-      try {
-        const ocrResult = await tryOcrSeatmapGrid(image_base64, mime);
-        if (ocrResult) { grid = ocrResult.grid; engineUsed = ocrResult.engine; }
-      } catch (e) {
-        console.error("[admin] OCR 경로 실패, Gemini 비전으로 폴백:", e);
-      }
-      if (!grid) {
-        if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
-        grid = await geminiExtractSeatmapGrid(image_base64, mime);
-      }
-      return json({ ...grid, engine: engineUsed });
-    }
-
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
     if (action === "save-seatmap") {
       const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats } = await req.json();
@@ -627,274 +590,6 @@ A-M열 S`;
 
   const data = await geminiText(prompt, b64, mime);
   return { memo: String(data || "").trim() };
-}
-
-// ---- Gemini 비전: 좌석배치도 → 색칠용 그리드 뼈대 -------------------------
-// 색·등급은 안 읽는다(비전이 부정확). 층 / 열 목록 / 열별 좌석 최소~최대 번호만.
-// 사람이 그 위에 등급을 색칠하고, admin.html 이 열별 스캔으로 구역을 만든다.
-async function geminiExtractSeatmapGrid(b64: string, mime: string) {
-  const prompt =
-`이 이미지는 한국 공연장의 좌석배치도다. 좌석의 '뼈대'만 읽어라. 색이나 등급은 읽지 마라.
-- floor: 층 번호 (1, 2, 3 …). 한 층만 보이면 1.
-- rows: 그 층의 열 목록을 무대에서 가까운 순으로. label 은 배치도에 적힌 그대로 ("1","2"… 또는 "A","B"…).
-- 각 열의 min / max: 그 열에 실제 있는 좌석 번호의 최소·최대.
-  앞열이 좁고 뒷열이 넓은 부채꼴이면 열마다 다르게 잡아라.
-  번호를 정확히 못 읽으면 그 층에서 가장 넓은 열 기준으로 같은 값을 넣어라.
-- 가운데 통로로 번호가 비어 있어도 min~max 는 끊지 말고 이어서 잡아라 (빈 칸은 사람이 지운다).
-실제로 보이는 층·열만. 추측으로 열 수를 늘리지 마라.`;
-
-  const body = {
-    contents: [{ parts: [{ inline_data: { mime_type: mime, data: b64 } }, { text: prompt }] }],
-    generationConfig: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: "OBJECT",
-        properties: {
-          floors: {
-            type: "ARRAY",
-            items: {
-              type: "OBJECT",
-              properties: {
-                floor: { type: "INTEGER" },
-                rows: {
-                  type: "ARRAY",
-                  items: {
-                    type: "OBJECT",
-                    properties: {
-                      label: { type: "STRING" },
-                      min: { type: "INTEGER" },
-                      max: { type: "INTEGER" },
-                    },
-                    required: ["label", "min", "max"],
-                  },
-                },
-              },
-              required: ["floor", "rows"],
-            },
-          },
-        },
-        required: ["floors"],
-      },
-    },
-  };
-
-  // deno-lint-ignore no-explicit-any
-  const out = await geminiJson(body) as any;
-  return normalizeGridFloors(out?.floors);
-}
-
-// geminiExtractSeatmapGrid 와 claudeExtractSeatmapGridFromTokens 가 공유하는
-// 후처리 — 어느 엔진이 만들었든 같은 모양·같은 안전장치로 admin.html 에 나간다.
-type GridFloors = { floors: Array<{ floor: number; rows: Array<{ label: string; min: number; max: number }> }> };
-function normalizeGridFloors(rawFloors: unknown): GridFloors {
-  const floors = Array.isArray(rawFloors) ? rawFloors : [];
-  return {
-    // deno-lint-ignore no-explicit-any
-    floors: floors.map((f: any) => ({
-      floor: Number(f?.floor) || 1,
-      // deno-lint-ignore no-explicit-any
-      rows: (Array.isArray(f?.rows) ? f.rows : []).map((r: any) => {
-        const mn = Math.max(1, Math.round(Number(r?.min) || 1));
-        let mx = Math.max(mn, Math.round(Number(r?.max) || mn));
-        if (mx - mn > 200) mx = mn + 200;
-        return { label: String(r?.label ?? "").trim(), min: mn, max: mx };
-      // deno-lint-ignore no-explicit-any
-      }).filter((r: any) => r.label),
-    // deno-lint-ignore no-explicit-any
-    })).filter((f: any) => f.rows.length),
-  };
-}
-
-/* =============================================================
-   parse-seatmap-grid 신규 경로 — OCR(텍스트+좌표) → 코드로 그리드 재구성
-
-   LLM 판단 없이 순수 코드로 한다: Google Vision(1차, 무료 월 1,000장) →
-   실패 시 Naver CLOVA OCR General(2차, 무료 월 100회)로 글자와 좌표를 읽고,
-   y 좌표로 열을 군집화 + 숫자 토큰의 최소·최대로 좌석범위를 잡는다.
-   Claude API 는 여기 안 쓴다 — 상담 에이전트 전용으로 남겨둔다. 두 OCR
-   전부 실패하거나(시크릿 없음 포함) 쓸만한 열을 하나도 못 찾으면 기존
-   Gemini 비전 경로로 폴백하고, 그마저 안 되면 admin.html 이 에러를 보여준다
-   (그러면 사람이 Claude 챗에 물어 결과를 메모칸에 붙여넣는다 — 아래 "붙여넣기" 참고).
-   ============================================================= */
-type OcrToken = { text: string; x: number; y: number; h: number };
-
-// 바운딩폴리곤 → 중심 좌표 + 높이(행 군집화 임계값에 씀)
-function bboxMetrics(vertices: unknown): { x: number; y: number; h: number } {
-  const vs = Array.isArray(vertices) ? vertices as Array<{ x?: number; y?: number }> : [];
-  if (!vs.length) return { x: 0, y: 0, h: 0 };
-  const xs = vs.map((v) => v.x || 0), ys = vs.map((v) => v.y || 0);
-  return {
-    x: Math.round(xs.reduce((s, v) => s + v, 0) / xs.length),
-    y: Math.round(ys.reduce((s, v) => s + v, 0) / ys.length),
-    h: Math.max(1, Math.max(...ys) - Math.min(...ys)),
-  };
-}
-
-// ---- OCR 1차: Google Cloud Vision (TEXT_DETECTION) ------------------------
-async function visionOcr(b64: string): Promise<OcrToken[]> {
-  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      requests: [{ image: { content: b64 }, features: [{ type: "TEXT_DETECTION" }] }],
-    }),
-  });
-  if (!res.ok) throw new Error(`Google Vision 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json();
-  const first = data?.responses?.[0];
-  if (first?.error) throw new Error(`Google Vision 오류: ${first.error.message ?? "알 수 없음"}`);
-  const ann = first?.textAnnotations;
-  if (!Array.isArray(ann) || ann.length < 2) return [];
-  // ann[0] 은 이미지 전체를 이어붙인 텍스트 뭉치 — 스킵하고 단어 단위(ann[1:])만 쓴다.
-  // deno-lint-ignore no-explicit-any
-  return ann.slice(1).map((a: any) => {
-    const m = bboxMetrics(a.boundingPoly?.vertices);
-    return { text: String(a.description ?? "").trim(), x: m.x, y: m.y, h: m.h };
-  }).filter((t: OcrToken) => t.text);
-}
-
-// ---- OCR 2차: Naver CLOVA OCR General ------------------------------------
-async function clovaOcr(b64: string, mime: string): Promise<OcrToken[]> {
-  const format = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
-  const res = await fetch(`${CLOVA_OCR_INVOKE_URL}/general`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "X-OCR-SECRET": CLOVA_OCR_SECRET_KEY },
-    body: JSON.stringify({
-      version: "V2",
-      requestId: crypto.randomUUID(),
-      timestamp: Date.now(),
-      lang: "ko",
-      images: [{ format, name: "seatmap", data: b64 }],
-    }),
-  });
-  if (!res.ok) throw new Error(`CLOVA OCR 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json();
-  const fields = data?.images?.[0]?.fields;
-  if (!Array.isArray(fields)) return [];
-  // deno-lint-ignore no-explicit-any
-  return fields.map((f: any) => {
-    const m = bboxMetrics(f.boundingPoly?.vertices);
-    return { text: String(f.inferText ?? "").trim(), x: m.x, y: m.y, h: m.h };
-  }).filter((t: OcrToken) => t.text);
-}
-
-// 안내 문구는 좌석번호가 아니니 행 군집화에서 뺀다 (숫자 토큰만 좌석번호로 본다).
-// ⚠ 등급코드(VIP·R·S·A·B·C)는 일부러 안 넣는다 — A,B,C 는 열 라벨(A열,B열…)로도
-// 흔히 쓰여서, 걸러내면 그 열의 label 을 못 잡는다. 등급은 어차피 여기서 안 읽는다
-// (사람이 그리드에서 색칠) — 등급 배지가 열 맨 왼쪽에 잘못 잡혀도 사람이 눈으로 확인한다.
-const OCR_IGNORE = /^(VIP|통로|시야제한|전석|입구|계단|화장실|매표소|무대|stage|출구)$/i;
-const FLOOR_RE = /^(\d+)\s*층$/;
-
-// y 좌표 기준 1차원 군집화 — 토큰 높이의 0.7배 이내면 같은 열로 본다.
-// 완전한 부채꼴·곡선 배치는 이 방식으로 못 잡는다 — 그런 경우는 admin.html 의
-// "직접 만들기" 나 Claude 챗 붙여넣기 경로로 사람이 채운다.
-function clusterRows(tokens: OcrToken[]): OcrToken[][] {
-  const sorted = [...tokens].sort((a, b) => a.y - b.y);
-  const hs = sorted.map((t) => t.h).filter((h) => h > 1);
-  hs.sort((a, b) => a - b);
-  const medianH = hs.length ? hs[Math.floor(hs.length / 2)] : 20;
-  const rows: OcrToken[][] = [];
-  for (const t of sorted) {
-    const last = rows[rows.length - 1];
-    if (last) {
-      const rowY = last.reduce((s, x) => s + x.y, 0) / last.length;
-      if (Math.abs(t.y - rowY) <= medianH * 0.7) { last.push(t); continue; }
-    }
-    rows.push([t]);
-  }
-  return rows;
-}
-
-// 한 열의 토큰들 → { label, min, max }. 라벨 후보 없으면 순번(seq)을 쓴다.
-function rowToRange(rowTokens: OcrToken[], seq: number): { label: string; min: number; max: number } | null {
-  const usable = rowTokens.filter((t) => !OCR_IGNORE.test(t.text) && !FLOOR_RE.test(t.text));
-  const byX = [...usable].sort((a, b) => a.x - b.x);
-  const numeric = byX.filter((t) => /^\d+$/.test(t.text));
-  if (!numeric.length) return null;
-
-  // 라벨 후보: 맨 왼쪽 토큰이 좌석번호 오름차순 흐름과 안 맞고(예: 다음 숫자보다 훨씬 왼쪽에
-  // 큰 간격을 두고 떨어져 있으면) 그게 열 이름(1,2… 또는 A,B…)일 가능성이 높다.
-  let label = String(seq);
-  let seatNums = numeric.map((t) => Number(t.text));
-
-  if (byX.length && !/^\d+$/.test(byX[0].text)) {
-    // 왼쪽 끝이 글자(A,B…) — 항상 라벨로 뗀다. 좌석번호일 수 없다.
-    label = byX[0].text;
-  } else if (byX.length >= 2) {
-    // 왼쪽 끝이 숫자인데 바로 다음 토큰과의 간격이 나머지 평균 간격보다 뚜렷이 크면
-    // 그 숫자는 좌석번호가 아니라 열 이름("1","2"…)일 가능성이 높다.
-    const gaps: number[] = [];
-    for (let i = 1; i < byX.length; i++) gaps.push(byX[i].x - byX[i - 1].x);
-    const restAvg = gaps.length > 1
-      ? gaps.slice(1).reduce((s, g) => s + g, 0) / gaps.slice(1).length
-      : gaps[0];
-    if (restAvg > 0 && gaps[0] > restAvg * 2) {
-      label = byX[0].text;
-      seatNums = numeric.filter((t) => t !== byX[0]).map((t) => Number(t.text));
-    }
-  }
-
-  if (!seatNums.length) return null;
-  const mn = Math.max(1, Math.min(...seatNums));
-  const mx = Math.min(mn + 200, Math.max(...seatNums));
-  return { label, min: mn, max: mx };
-}
-
-function gridFromOcrTokens(tokens: OcrToken[]): GridFloors {
-  const floorMarkers = tokens
-    .filter((t) => FLOOR_RE.test(t.text))
-    .map((t) => ({ floor: Number(FLOOR_RE.exec(t.text)![1]), y: t.y }))
-    .sort((a, b) => a.y - b.y);
-
-  const floorOf = (y: number): number => {
-    if (!floorMarkers.length) return 1;
-    let f = floorMarkers[0].floor;
-    for (const m of floorMarkers) { if (y >= m.y) f = m.floor; else break; }
-    return f;
-  };
-
-  const rowClusters = clusterRows(tokens);
-  const byFloor = new Map<number, Array<{ label: string; min: number; max: number }>>();
-  let seq = 1;
-  for (const cluster of rowClusters) {
-    const yAvg = cluster.reduce((s, t) => s + t.y, 0) / cluster.length;
-    const range = rowToRange(cluster, seq);
-    if (!range) continue;
-    seq++;
-    const floor = floorOf(yAvg);
-    if (!byFloor.has(floor)) byFloor.set(floor, []);
-    byFloor.get(floor)!.push(range);
-  }
-
-  return normalizeGridFloors(
-    [...byFloor.entries()].map(([floor, rows]) => ({ floor, rows })),
-  );
-}
-
-// ---- 액션 핸들러가 부르는 진입점 — Vision → CLOVA 순으로 그리드 재구성 시도 ----
-// (하나도 못 만들면 null → 호출부가 예전처럼 Gemini 비전으로 되돌아간다)
-async function tryOcrSeatmapGrid(b64: string, mime: string): Promise<{ grid: GridFloors; engine: string } | null> {
-  if (GOOGLE_VISION_KEY) {
-    try {
-      const tokens = await visionOcr(b64);
-      const grid = gridFromOcrTokens(tokens);
-      if (grid.floors.length) return { grid, engine: "google-vision" };
-      console.error("[admin] Vision OCR 로 열을 못 찾음, CLOVA 로 폴백");
-    } catch (e) {
-      console.error("[admin] Vision OCR 실패, CLOVA 로 폴백:", e);
-    }
-  }
-  if (CLOVA_OCR_INVOKE_URL && CLOVA_OCR_SECRET_KEY) {
-    try {
-      const tokens = await clovaOcr(b64, mime);
-      const grid = gridFromOcrTokens(tokens);
-      if (grid.floors.length) return { grid, engine: "clova-ocr" };
-      console.error("[admin] CLOVA OCR 로도 열을 못 찾음, Gemini 비전으로 폴백");
-    } catch (e) {
-      console.error("[admin] CLOVA OCR 실패, Gemini 비전으로 폴백:", e);
-    }
-  }
-  return null;
 }
 
 // deno-lint-ignore no-explicit-any
