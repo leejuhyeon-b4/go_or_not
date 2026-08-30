@@ -63,6 +63,11 @@ create table if not exists seasons (
 --     add column if not exists side_seats jsonb default '[]'::jsonb;
 
 -- ---------- 공연별 좌석배치도 오버레이 (PRD §8.4 season_seat_maps) ----------
+-- ⚠ 현재 아무 코드도 이 테이블에 쓰지 않는다 — admin.html/Edge Function 이
+--   좌석 정보를 venues.base_geometry + seasons.seat_grades 로 저장하도록
+--   바뀐 뒤로 미사용. data.js 의 SEATMAPS 오버레이 자리는 남겨뒀으니(향후
+--   공연별로 극장 기본 배치와 다른 좌석배치를 써야 할 때) 테이블은 지우지
+--   않되, 지금 당장은 항상 빈 결과다 (배포 전 점검 P0-3).
 create table if not exists seatmaps (
   season_id  text primary key references seasons(season_id),
   updated_at timestamptz,                    -- NULL 이면 미갱신 → base_geometry 폴백 + ⚠️

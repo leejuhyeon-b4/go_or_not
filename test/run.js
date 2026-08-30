@@ -68,7 +68,7 @@ eq(DB.discountRate(0, 100), null, 'discountRate 정가 0 → null');
 
 // 시즌 조회 + 진행도
 const haemong = DB.findSeason('해몽가', '2026-07-30');
-ok(haemong && haemong.season_id === 'haemong-2026', 'findSeason 해몽가 2026');
+ok(haemong && haemong.season_id === '1haemong', 'findSeason 해몽가 2026');
 eq(DB.findSeason('없는작품'), null, 'findSeason 미존재 → null');
 const prog = DB.seasonProgress({ open_date: '2026-06-25', close_date: '2026-09-13' }, '2026-07-25');
 ok(prog > 0.3 && prog < 0.45, `seasonProgress 한 달차 ≈ 0.37 (got ${prog})`);

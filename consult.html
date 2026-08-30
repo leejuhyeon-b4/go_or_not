@@ -1162,7 +1162,10 @@
   </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- 버전 고정 + SRI — 배포 전 점검 S-6 (index.html 과 동일 이유). -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"
+        integrity="sha384-yiVMs0R/Jyz7OhoXa/DsEMUSBLjEhr/QJta2ONO+zB6I8/GmNg/7AUFrZmAJV7KV"
+        crossorigin="anonymous"></script>
 <script src="data/supabase-config.js"></script>
 <script src="data/auth.js"></script>
 <script src="engine.js"></script>
@@ -1353,12 +1356,16 @@
      상단 정보 한 줄
   --------------------------------------------------------- */
   (function renderTicketInfo(){
+    // work_title 은 DB(관리자 도구가 씀), block 은 사용자 자유 입력 — 둘 다
+    // innerHTML 로 그대로 넣으면 안 된다 (배포 전 점검 S-3: XSS).
+    const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+      ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
     const b = bundle;
     const bits = [];
-    if(b.season.work_title) bits.push('<b>' + b.season.work_title + '</b>');
-    if(b.session.date) bits.push(b.session.date + (b.session.matinee_or_evening === 'MATINEE' ? ' 낮공' : ' 밤공'));
-    const seat = [b.seat.floor ? b.seat.floor + '층' : '', b.seat.block || '',
-                  b.seat.row ? b.seat.row + '열' : '', b.seat.number ? b.seat.number + '번' : '']
+    if(b.season.work_title) bits.push('<b>' + esc(b.season.work_title) + '</b>');
+    if(b.session.date) bits.push(esc(b.session.date) + (b.session.matinee_or_evening === 'MATINEE' ? ' 낮공' : ' 밤공'));
+    const seat = [b.seat.floor ? b.seat.floor + '층' : '', b.seat.block ? esc(b.seat.block) : '',
+                  b.seat.row ? esc(b.seat.row) + '열' : '', b.seat.number ? b.seat.number + '번' : '']
                  .filter(Boolean).join(' ');
     if(seat) bits.push(seat);
     if(b.payment.total_paid) bits.push(Number(b.payment.total_paid).toLocaleString('ko-KR') + '원');

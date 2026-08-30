@@ -5,22 +5,49 @@
 //   HTML 응답을 sandbox/text-plain 으로 강제해서, 이 함수는 JSON API 만 한다.
 //
 //   GET  /functions/v1/admin                  → 안내 JSON
-//   POST /functions/v1/admin?action=auth      → 비밀번호 확인만
+//   POST /functions/v1/admin?action=auth      → 비밀번호(최초) 또는 토큰 확인 → {ok,token}
 //   POST /functions/v1/admin?action=seasons   → 공연 목록 (할인 드롭다운용)
 //   POST /functions/v1/admin?action=venues    → 극장 목록 (좌석배치도 드롭다운용)
 //   POST /functions/v1/admin?action=parse         → 할인표 이미지 → Gemini → [{name,rate,type}]
 //   POST /functions/v1/admin?action=save          → 검토된 할인 목록 → seasons.discounts
 //   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {memo}
-//   POST /functions/v1/admin?action=parse-seatmap-grid → 배치도 이미지 → Gemini → {floors:[{floor,rows:[{label,min,max}]}]} (색칠용 뼈대)
+//   POST /functions/v1/admin?action=parse-seatmap-grid → 배치도 이미지 → {floors:[{floor,rows:[{label,min,max}]}]} (색칠용 뼈대)
 //   POST /functions/v1/admin?action=save-seatmap  → 검토된 배치도 → venues.base_geometry / restricted_seats
 //
-// 인증: POST 는 헤더 x-admin-password 가 ADMIN_PASSWORD 시크릿과 일치해야 통과.
-//       별도 계정 없음. GET(페이지)은 무인증 — 그래서 이 함수는 "Verify JWT" 를 꺼야 한다.
+// parse-seatmap-grid 판독 엔진 (배포 전 점검 후속 — "좌석배치도는 시도해보자"):
+//   OCR(글자 인식) 전용 엔진이 좌석 번호 같은 조밀한 숫자를 Gemini의 내장 비전보다
+//   더 정확히 읽는다는 전제로, 이미지 → OCR(텍스트+좌표) → 순수 코드(y좌표 군집화 +
+//   숫자 최소·최대)로 그리드를 재구성한다. LLM 판단은 안 쓴다 — Claude API 는 이
+//   프로젝트에서 상담 에이전트 전용이고 관리자 도구엔 붙이지 않기로 했다.
+//   OCR은 Google Vision 우선(무료 한도가 월등히 큼, 월 1,000장) → 실패 시 Naver
+//   CLOVA OCR 로 폴백(무료 월 100회) → 그마저 실패하거나 시크릿이 아예 없으면
+//   예전 Gemini 비전 단일 호출로 되돌아간다. 그것도 안 맞으면 사람이 Claude 챗에
+//   이미지를 직접 물어보고 결과를 "좌석배치도" 탭의 메모칸에 붙여넣는다 —
+//   그 형식은 admin.html 의 기존 파서(parseSeatMemo)가 그대로 읽는다.
+//
+// 인증 (배포 전 점검 S-1/S-2/S-5 대응으로 재작성):
+//   최초 로그인만 x-admin-password 헤더로 ADMIN_PASSWORD 시크릿과 비교한다.
+//   통과하면 만료시각을 담은 서명 토큰을 돌려주고, admin.html 은 그 뒤로
+//   비밀번호 원문이 아니라 x-admin-token 헤더만 보관·전송한다 — 세션스토리지가
+//   새더라도(XSS 등) 새는 건 몇 시간짜리 토큰이지 영구 공유 비밀번호가 아니다.
+//   비밀번호 시도에는 IP당 레이트리밋이 걸린다(admin_auth_attempts 테이블,
+//   data/admin_rate_limit.sql). 유효 토큰 경로는 그 테이블을 안 거친다.
+//   별도 계정 없음. GET(페이지)은 무인증 — 그래서 이 함수는 "Verify JWT" 를 꺼야 한다.
+//   CORS 는 ADMIN_ALLOWED_ORIGINS 시크릿(쉼표구분)에 있는 origin만 허용한다.
+//   file:// 로 여는 admin.html 은 Origin: null 을 보내므로 그건 항상 허용.
 //
 // 필요한 env (Edge Function Secrets):
-//   ADMIN_PASSWORD   ← 직접 등록. 폰에서 입력할 공유 비밀번호 하나.
-//   GEMINI_API_KEY   ← 직접 등록 (aistudio.google.com)
-//   GEMINI_MODEL     ← 선택, 기본 gemini-2.0-flash
+//   ADMIN_PASSWORD        ← 직접 등록. 폰에서 입력할 공유 비밀번호 하나.
+//   ADMIN_ALLOWED_ORIGINS ← 직접 등록. admin.html 을 올린 도메인, 쉼표로 여러 개
+//                           (예: https://example.github.io). 비워두면 file:// 만 허용.
+//   GEMINI_API_KEY   ← 직접 등록 (aistudio.google.com). parse/parse-seatmap(메모)와
+//                      parse-seatmap-grid 의 폴백 경로가 여전히 이걸 쓴다.
+//   GEMINI_MODEL     ← 선택, 기본 gemini-3.6-flash
+//   GOOGLE_VISION_API_KEY   ← 선택. parse-seatmap-grid 1차 OCR (Cloud Vision API 키,
+//                             Vision API 로 제한해서 발급). 없으면 CLOVA 로.
+//   CLOVA_OCR_INVOKE_URL    ← 선택. NCP 콘솔에서 CLOVA OCR General 도메인 생성 시
+//                             나오는 Invoke URL 그대로("/general" 은 코드가 붙임).
+//   CLOVA_OCR_SECRET_KEY    ← 선택. 그 도메인의 Secret Key.
 //   SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY ← 자동 주입됨
 // =============================================================
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -28,26 +55,36 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ADMIN_PASSWORD = Deno.env.get("ADMIN_PASSWORD") ?? "";
+const ALLOWED_ORIGINS = (Deno.env.get("ADMIN_ALLOWED_ORIGINS") ?? "")
+  .split(",").map((s) => s.trim()).filter(Boolean);
 const GEMINI_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const GEMINI_MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-3.6-flash";
+const GOOGLE_VISION_KEY = Deno.env.get("GOOGLE_VISION_API_KEY") ?? "";
+const CLOVA_OCR_INVOKE_URL = (Deno.env.get("CLOVA_OCR_INVOKE_URL") ?? "").replace(/\/$/, "");
+const CLOVA_OCR_SECRET_KEY = Deno.env.get("CLOVA_OCR_SECRET_KEY") ?? "";
 
 const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false } });
 
-const CORS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-headers": "content-type, x-admin-password",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-};
+// origin 별 CORS 헤더. file:// 는 Origin:"null" 을 보낸다 — 로컬 개발은 항상 허용하고
+// 그 밖엔 ADMIN_ALLOWED_ORIGINS 화이트리스트에 있을 때만 그 origin 을 반사한다.
+// "*" 를 쓰지 않는다 — 그러면 임의 사이트가 방문자 브라우저를 통해 비밀번호를
+// 무차별 대입해보고 응답까지 읽을 수 있다 (배포 전 점검 S-2).
+function corsHeadersFor(req: Request): Record<string, string> {
+  const origin = req.headers.get("origin");
+  const headers: Record<string, string> = {
+    "access-control-allow-headers": "content-type, x-admin-password, x-admin-token",
+    "access-control-allow-methods": "GET, POST, OPTIONS",
+    vary: "origin",
+  };
+  if (origin === "null" || (origin && ALLOWED_ORIGINS.includes(origin))) {
+    headers["access-control-allow-origin"] = origin as string;
+  }
+  return headers;
+}
 
 class HttpError extends Error {
   constructor(public status: number, msg: string) { super(msg); }
 }
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: { "content-type": "application/json; charset=utf-8", ...CORS },
-  });
 
 function timingSafeEqual(a: string, b: string) {
   const enc = new TextEncoder();
@@ -58,10 +95,83 @@ function timingSafeEqual(a: string, b: string) {
   return out === 0;
 }
 
-function requireAdmin(req: Request) {
+// ---- 세션 토큰: "만료시각.HMAC서명" — DB 없이 서버가 발급·검증한다 -----------
+// 키는 ADMIN_PASSWORD 자체를 재사용한다(별도 시크릿 불필요). 비밀번호가
+// 바뀌면 기존 토큰도 전부 즉시 무효화된다는 부수 효과가 있어 오히려 좋다.
+const TOKEN_TTL_MS = 6 * 60 * 60 * 1000; // 6시간
+const textEnc = new TextEncoder();
+async function hmac(data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw", textEnc.encode(ADMIN_PASSWORD), { name: "HMAC", hash: "SHA-256" }, false, ["sign"],
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, textEnc.encode(data));
+  return btoa(String.fromCharCode(...new Uint8Array(sig)));
+}
+async function issueToken(): Promise<string> {
+  const exp = String(Date.now() + TOKEN_TTL_MS);
+  return exp + "." + await hmac(exp);
+}
+async function verifyToken(token: string): Promise<boolean> {
+  const dot = token.indexOf(".");
+  if (dot < 0) return false;
+  const exp = token.slice(0, dot);
+  const sig = token.slice(dot + 1);
+  if (!Number.isFinite(Number(exp)) || Number(exp) < Date.now()) return false;
+  return timingSafeEqual(sig, await hmac(exp));
+}
+
+// ---- 로그인 시도 레이트리밋 (data/admin_rate_limit.sql) --------------------
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000; // 15분
+const RATE_LIMIT_MAX = 8;                     // 그 안에 8번까지만
+
+function clientIp(req: Request): string {
+  const fwd = req.headers.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim();
+  return req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip") || "unknown";
+}
+async function checkRateLimit(ip: string) {
+  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString();
+  const { count, error } = await admin
+    .from("admin_auth_attempts")
+    .select("id", { count: "exact", head: true })
+    .eq("ip", ip)
+    .gte("attempted_at", since);
+  // 마이그레이션 전이라 테이블이 없으면(에러) 레이트리밋 없이 통과시킨다 —
+  // 관리자 도구 자체가 먹통이 되는 것보단 낫다. data/admin_rate_limit.sql 을 돌리면 즉시 걸린다.
+  if (error) return;
+  if ((count ?? 0) >= RATE_LIMIT_MAX) {
+    throw new HttpError(429, "시도가 너무 많아요. 15분 뒤 다시 시도하세요.");
+  }
+}
+async function recordFailedAttempt(ip: string) {
+  try {
+    await admin.from("admin_auth_attempts").insert({ ip });
+    // 하는 김에 하루 지난 기록은 지운다 (테이블이 무한히 안 커지게).
+    await admin.from("admin_auth_attempts").delete()
+      .eq("ip", ip).lt("attempted_at", new Date(Date.now() - 24 * 3600 * 1000).toISOString());
+  } catch { /* 기록 실패해도 인증 실패 응답 자체는 그대로 나가야 한다 */ }
+}
+
+async function requireAdmin(req: Request) {
   if (!ADMIN_PASSWORD) throw new HttpError(500, "ADMIN_PASSWORD 시크릿이 설정되지 않았어요.");
+  const token = req.headers.get("x-admin-token");
+  if (token && await verifyToken(token)) return;   // 유효 토큰 — 레이트리밋 대상 아님
+
+  const ip = clientIp(req);
+  await checkRateLimit(ip);
   const given = req.headers.get("x-admin-password") ?? "";
-  if (!timingSafeEqual(given, ADMIN_PASSWORD)) throw new HttpError(401, "비밀번호가 틀렸어요.");
+  if (timingSafeEqual(given, ADMIN_PASSWORD)) return;
+  await recordFailedAttempt(ip);
+  throw new HttpError(401, "비밀번호가 틀렸어요.");
+}
+
+// ---- 업로드 이미지 검증 (배포 전 점검 S-8) ---------------------------------
+const ALLOWED_IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
+const MAX_B64_LEN = 10_000_000; // base64 기준 — 디코드하면 대략 7.3MB, 폰 스크린샷엔 넉넉함
+function validateImage(image_base64: unknown, mime_type: unknown): string {
+  if (!image_base64 || typeof image_base64 !== "string") throw new HttpError(400, "이미지가 없습니다.");
+  if (image_base64.length > MAX_B64_LEN) throw new HttpError(413, "이미지가 너무 커요 (최대 약 7MB).");
+  return typeof mime_type === "string" && ALLOWED_IMAGE_MIME.has(mime_type) ? mime_type : "image/jpeg";
 }
 
 // 블록 side → 통로/벽 위치. 기존 seed.js 규칙과 동일:
@@ -177,7 +287,14 @@ function aliasesFor(name: string, side: string, floor: string) {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  const cors = corsHeadersFor(req);
+  const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json; charset=utf-8", ...cors },
+    });
+
+  if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   const url = new URL(req.url);
   const action = url.searchParams.get("action");
 
@@ -192,11 +309,11 @@ Deno.serve(async (req) => {
 
     if (req.method !== "POST") return json({ error: "알 수 없는 요청" }, 404);
 
-    // 여기부터 전부 비밀번호 필요
-    requireAdmin(req);
+    // 여기부터 전부 인증 필요 (비밀번호 최초 1회 또는 발급된 토큰)
+    await requireAdmin(req);
 
-    // ---- 비밀번호 확인만 ----
-    if (action === "auth") return json({ ok: true });
+    // ---- 인증 확인 + 세션 토큰 발급/갱신 ----
+    if (action === "auth") return json({ ok: true, token: await issueToken() });
 
     // ---- 공연 목록 ----
     if (action === "seasons") {
@@ -229,8 +346,8 @@ Deno.serve(async (req) => {
     if (action === "parse") {
       if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
       const { image_base64, mime_type } = await req.json();
-      if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
-      const discounts = await geminiExtractDiscounts(image_base64, mime_type ?? "image/jpeg");
+      const mime = validateImage(image_base64, mime_type);
+      const discounts = await geminiExtractDiscounts(image_base64, mime);
       return json({ discounts });
     }
 
@@ -281,18 +398,31 @@ Deno.serve(async (req) => {
     if (action === "parse-seatmap") {
       if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
       const { image_base64, mime_type } = await req.json();
-      if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
-      const result = await geminiExtractSeatmapMemo(image_base64, mime_type ?? "image/jpeg");
+      const mime = validateImage(image_base64, mime_type);
+      const result = await geminiExtractSeatmapMemo(image_base64, mime);
       return json(result);
     }
 
     // ---- 좌석배치도 → 색칠용 그리드 뼈대 (층 / 열 목록 / 열별 좌석범위) ----
     if (action === "parse-seatmap-grid") {
-      if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
       const { image_base64, mime_type } = await req.json();
-      if (!image_base64) throw new HttpError(400, "이미지가 없습니다.");
-      const grid = await geminiExtractSeatmapGrid(image_base64, mime_type ?? "image/jpeg");
-      return json(grid);
+      const mime = validateImage(image_base64, mime_type);
+
+      // OCR(Vision→CLOVA) 시크릿이 있으면 그쪽을 먼저 쓰고, 열을 하나도 못 찾거나
+      // 시크릿이 없으면 예전 방식(Gemini 비전 단일 호출)으로 되돌아간다.
+      let grid: GridFloors | null = null;
+      let engineUsed = "gemini-vision";
+      try {
+        const ocrResult = await tryOcrSeatmapGrid(image_base64, mime);
+        if (ocrResult) { grid = ocrResult.grid; engineUsed = ocrResult.engine; }
+      } catch (e) {
+        console.error("[admin] OCR 경로 실패, Gemini 비전으로 폴백:", e);
+      }
+      if (!grid) {
+        if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
+        grid = await geminiExtractSeatmapGrid(image_base64, mime);
+      }
+      return json({ ...grid, engine: engineUsed });
     }
 
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
@@ -550,7 +680,14 @@ async function geminiExtractSeatmapGrid(b64: string, mime: string) {
 
   // deno-lint-ignore no-explicit-any
   const out = await geminiJson(body) as any;
-  const floors = Array.isArray(out?.floors) ? out.floors : [];
+  return normalizeGridFloors(out?.floors);
+}
+
+// geminiExtractSeatmapGrid 와 claudeExtractSeatmapGridFromTokens 가 공유하는
+// 후처리 — 어느 엔진이 만들었든 같은 모양·같은 안전장치로 admin.html 에 나간다.
+type GridFloors = { floors: Array<{ floor: number; rows: Array<{ label: string; min: number; max: number }> }> };
+function normalizeGridFloors(rawFloors: unknown): GridFloors {
+  const floors = Array.isArray(rawFloors) ? rawFloors : [];
   return {
     // deno-lint-ignore no-explicit-any
     floors: floors.map((f: any) => ({
@@ -566,6 +703,198 @@ async function geminiExtractSeatmapGrid(b64: string, mime: string) {
     // deno-lint-ignore no-explicit-any
     })).filter((f: any) => f.rows.length),
   };
+}
+
+/* =============================================================
+   parse-seatmap-grid 신규 경로 — OCR(텍스트+좌표) → 코드로 그리드 재구성
+
+   LLM 판단 없이 순수 코드로 한다: Google Vision(1차, 무료 월 1,000장) →
+   실패 시 Naver CLOVA OCR General(2차, 무료 월 100회)로 글자와 좌표를 읽고,
+   y 좌표로 열을 군집화 + 숫자 토큰의 최소·최대로 좌석범위를 잡는다.
+   Claude API 는 여기 안 쓴다 — 상담 에이전트 전용으로 남겨둔다. 두 OCR
+   전부 실패하거나(시크릿 없음 포함) 쓸만한 열을 하나도 못 찾으면 기존
+   Gemini 비전 경로로 폴백하고, 그마저 안 되면 admin.html 이 에러를 보여준다
+   (그러면 사람이 Claude 챗에 물어 결과를 메모칸에 붙여넣는다 — 아래 "붙여넣기" 참고).
+   ============================================================= */
+type OcrToken = { text: string; x: number; y: number; h: number };
+
+// 바운딩폴리곤 → 중심 좌표 + 높이(행 군집화 임계값에 씀)
+function bboxMetrics(vertices: unknown): { x: number; y: number; h: number } {
+  const vs = Array.isArray(vertices) ? vertices as Array<{ x?: number; y?: number }> : [];
+  if (!vs.length) return { x: 0, y: 0, h: 0 };
+  const xs = vs.map((v) => v.x || 0), ys = vs.map((v) => v.y || 0);
+  return {
+    x: Math.round(xs.reduce((s, v) => s + v, 0) / xs.length),
+    y: Math.round(ys.reduce((s, v) => s + v, 0) / ys.length),
+    h: Math.max(1, Math.max(...ys) - Math.min(...ys)),
+  };
+}
+
+// ---- OCR 1차: Google Cloud Vision (TEXT_DETECTION) ------------------------
+async function visionOcr(b64: string): Promise<OcrToken[]> {
+  const res = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${GOOGLE_VISION_KEY}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      requests: [{ image: { content: b64 }, features: [{ type: "TEXT_DETECTION" }] }],
+    }),
+  });
+  if (!res.ok) throw new Error(`Google Vision 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  const first = data?.responses?.[0];
+  if (first?.error) throw new Error(`Google Vision 오류: ${first.error.message ?? "알 수 없음"}`);
+  const ann = first?.textAnnotations;
+  if (!Array.isArray(ann) || ann.length < 2) return [];
+  // ann[0] 은 이미지 전체를 이어붙인 텍스트 뭉치 — 스킵하고 단어 단위(ann[1:])만 쓴다.
+  // deno-lint-ignore no-explicit-any
+  return ann.slice(1).map((a: any) => {
+    const m = bboxMetrics(a.boundingPoly?.vertices);
+    return { text: String(a.description ?? "").trim(), x: m.x, y: m.y, h: m.h };
+  }).filter((t: OcrToken) => t.text);
+}
+
+// ---- OCR 2차: Naver CLOVA OCR General ------------------------------------
+async function clovaOcr(b64: string, mime: string): Promise<OcrToken[]> {
+  const format = mime === "image/png" ? "png" : mime === "image/webp" ? "webp" : "jpg";
+  const res = await fetch(`${CLOVA_OCR_INVOKE_URL}/general`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-OCR-SECRET": CLOVA_OCR_SECRET_KEY },
+    body: JSON.stringify({
+      version: "V2",
+      requestId: crypto.randomUUID(),
+      timestamp: Date.now(),
+      lang: "ko",
+      images: [{ format, name: "seatmap", data: b64 }],
+    }),
+  });
+  if (!res.ok) throw new Error(`CLOVA OCR 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  const fields = data?.images?.[0]?.fields;
+  if (!Array.isArray(fields)) return [];
+  // deno-lint-ignore no-explicit-any
+  return fields.map((f: any) => {
+    const m = bboxMetrics(f.boundingPoly?.vertices);
+    return { text: String(f.inferText ?? "").trim(), x: m.x, y: m.y, h: m.h };
+  }).filter((t: OcrToken) => t.text);
+}
+
+// 안내 문구는 좌석번호가 아니니 행 군집화에서 뺀다 (숫자 토큰만 좌석번호로 본다).
+// ⚠ 등급코드(VIP·R·S·A·B·C)는 일부러 안 넣는다 — A,B,C 는 열 라벨(A열,B열…)로도
+// 흔히 쓰여서, 걸러내면 그 열의 label 을 못 잡는다. 등급은 어차피 여기서 안 읽는다
+// (사람이 그리드에서 색칠) — 등급 배지가 열 맨 왼쪽에 잘못 잡혀도 사람이 눈으로 확인한다.
+const OCR_IGNORE = /^(VIP|통로|시야제한|전석|입구|계단|화장실|매표소|무대|stage|출구)$/i;
+const FLOOR_RE = /^(\d+)\s*층$/;
+
+// y 좌표 기준 1차원 군집화 — 토큰 높이의 0.7배 이내면 같은 열로 본다.
+// 완전한 부채꼴·곡선 배치는 이 방식으로 못 잡는다 — 그런 경우는 admin.html 의
+// "직접 만들기" 나 Claude 챗 붙여넣기 경로로 사람이 채운다.
+function clusterRows(tokens: OcrToken[]): OcrToken[][] {
+  const sorted = [...tokens].sort((a, b) => a.y - b.y);
+  const hs = sorted.map((t) => t.h).filter((h) => h > 1);
+  hs.sort((a, b) => a - b);
+  const medianH = hs.length ? hs[Math.floor(hs.length / 2)] : 20;
+  const rows: OcrToken[][] = [];
+  for (const t of sorted) {
+    const last = rows[rows.length - 1];
+    if (last) {
+      const rowY = last.reduce((s, x) => s + x.y, 0) / last.length;
+      if (Math.abs(t.y - rowY) <= medianH * 0.7) { last.push(t); continue; }
+    }
+    rows.push([t]);
+  }
+  return rows;
+}
+
+// 한 열의 토큰들 → { label, min, max }. 라벨 후보 없으면 순번(seq)을 쓴다.
+function rowToRange(rowTokens: OcrToken[], seq: number): { label: string; min: number; max: number } | null {
+  const usable = rowTokens.filter((t) => !OCR_IGNORE.test(t.text) && !FLOOR_RE.test(t.text));
+  const byX = [...usable].sort((a, b) => a.x - b.x);
+  const numeric = byX.filter((t) => /^\d+$/.test(t.text));
+  if (!numeric.length) return null;
+
+  // 라벨 후보: 맨 왼쪽 토큰이 좌석번호 오름차순 흐름과 안 맞고(예: 다음 숫자보다 훨씬 왼쪽에
+  // 큰 간격을 두고 떨어져 있으면) 그게 열 이름(1,2… 또는 A,B…)일 가능성이 높다.
+  let label = String(seq);
+  let seatNums = numeric.map((t) => Number(t.text));
+
+  if (byX.length && !/^\d+$/.test(byX[0].text)) {
+    // 왼쪽 끝이 글자(A,B…) — 항상 라벨로 뗀다. 좌석번호일 수 없다.
+    label = byX[0].text;
+  } else if (byX.length >= 2) {
+    // 왼쪽 끝이 숫자인데 바로 다음 토큰과의 간격이 나머지 평균 간격보다 뚜렷이 크면
+    // 그 숫자는 좌석번호가 아니라 열 이름("1","2"…)일 가능성이 높다.
+    const gaps: number[] = [];
+    for (let i = 1; i < byX.length; i++) gaps.push(byX[i].x - byX[i - 1].x);
+    const restAvg = gaps.length > 1
+      ? gaps.slice(1).reduce((s, g) => s + g, 0) / gaps.slice(1).length
+      : gaps[0];
+    if (restAvg > 0 && gaps[0] > restAvg * 2) {
+      label = byX[0].text;
+      seatNums = numeric.filter((t) => t !== byX[0]).map((t) => Number(t.text));
+    }
+  }
+
+  if (!seatNums.length) return null;
+  const mn = Math.max(1, Math.min(...seatNums));
+  const mx = Math.min(mn + 200, Math.max(...seatNums));
+  return { label, min: mn, max: mx };
+}
+
+function gridFromOcrTokens(tokens: OcrToken[]): GridFloors {
+  const floorMarkers = tokens
+    .filter((t) => FLOOR_RE.test(t.text))
+    .map((t) => ({ floor: Number(FLOOR_RE.exec(t.text)![1]), y: t.y }))
+    .sort((a, b) => a.y - b.y);
+
+  const floorOf = (y: number): number => {
+    if (!floorMarkers.length) return 1;
+    let f = floorMarkers[0].floor;
+    for (const m of floorMarkers) { if (y >= m.y) f = m.floor; else break; }
+    return f;
+  };
+
+  const rowClusters = clusterRows(tokens);
+  const byFloor = new Map<number, Array<{ label: string; min: number; max: number }>>();
+  let seq = 1;
+  for (const cluster of rowClusters) {
+    const yAvg = cluster.reduce((s, t) => s + t.y, 0) / cluster.length;
+    const range = rowToRange(cluster, seq);
+    if (!range) continue;
+    seq++;
+    const floor = floorOf(yAvg);
+    if (!byFloor.has(floor)) byFloor.set(floor, []);
+    byFloor.get(floor)!.push(range);
+  }
+
+  return normalizeGridFloors(
+    [...byFloor.entries()].map(([floor, rows]) => ({ floor, rows })),
+  );
+}
+
+// ---- 액션 핸들러가 부르는 진입점 — Vision → CLOVA 순으로 그리드 재구성 시도 ----
+// (하나도 못 만들면 null → 호출부가 예전처럼 Gemini 비전으로 되돌아간다)
+async function tryOcrSeatmapGrid(b64: string, mime: string): Promise<{ grid: GridFloors; engine: string } | null> {
+  if (GOOGLE_VISION_KEY) {
+    try {
+      const tokens = await visionOcr(b64);
+      const grid = gridFromOcrTokens(tokens);
+      if (grid.floors.length) return { grid, engine: "google-vision" };
+      console.error("[admin] Vision OCR 로 열을 못 찾음, CLOVA 로 폴백");
+    } catch (e) {
+      console.error("[admin] Vision OCR 실패, CLOVA 로 폴백:", e);
+    }
+  }
+  if (CLOVA_OCR_INVOKE_URL && CLOVA_OCR_SECRET_KEY) {
+    try {
+      const tokens = await clovaOcr(b64, mime);
+      const grid = gridFromOcrTokens(tokens);
+      if (grid.floors.length) return { grid, engine: "clova-ocr" };
+      console.error("[admin] CLOVA OCR 로도 열을 못 찾음, Gemini 비전으로 폴백");
+    } catch (e) {
+      console.error("[admin] CLOVA OCR 실패, Gemini 비전으로 폴백:", e);
+    }
+  }
+  return null;
 }
 
 // deno-lint-ignore no-explicit-any

@@ -223,7 +223,7 @@ window.GON_SEATMAPS = {};
 ------------------------------------------------------------- */
 window.GON_SEASONS = [
   {
-    season_id: 'haemong-2026',
+    season_id: '1haemong',   // Supabase 라이브 시즌 ID와 일치시킴 — 다르면 admin.html 저장이 앱에 반영 안 됨
     work_title: '해몽가',
     season_label: '2026',
     venue_id: 'yes24-stage-1',

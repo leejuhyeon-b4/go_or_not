@@ -637,12 +637,11 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
           <div class="field">
             <label class="field-label" for="workTitle">공연 제목<span class="req">*</span></label>
             <input list="workList" id="workTitle" type="text" placeholder="작품명을 검색하세요" autocomplete="off">
+            <!-- 자동완성은 실제 정가·할인 데이터가 있는 공연만. 웨스턴 스토리/알라딘/라흐마니노프는
+                 개발용 임시 데이터라 여기서 뺐다(seed.js 는 테스트 픽스처로 남겨둠) — 배포 전 점검 P0-3. -->
             <datalist id="workList">
-              <option value="웨스턴 스토리">
               <option value="해몽가">
-              <option value="알라딘">
               <option value="엘리자벳">
-              <option value="라흐마니노프">
             </datalist>
           </div>
         </div>
@@ -996,7 +995,12 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
 </div>
 
 <!-- Supabase 클라이언트 (로그인 + 상담기록 저장). file:// 에서도 동작하려면 인터넷 필요. -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- 버전 고정 + SRI — 배포 전 점검 S-6. 로그인 폼과 같은 페이지에서 세션 토큰을
+     다루는 스크립트라 부동 태그(@2)로 두면 공급망 오염 시 전 사용자 자격증명이
+     털린다. 올릴 때 버전 올리려면: 새 버전 받아서 sha384 다시 계산 후 같이 바꿀 것. -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4"
+        integrity="sha384-yiVMs0R/Jyz7OhoXa/DsEMUSBLjEhr/QJta2ONO+zB6I8/GmNg/7AUFrZmAJV7KV"
+        crossorigin="anonymous"></script>
 <script src="data/supabase-config.js"></script>
 
 <!-- 수집 데이터 (PRD §9.2) — 예매처 크롤링은 안 하고, 우리 Supabase 조회만 한다.
@@ -1662,7 +1666,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         }
         return '<div class="hist-row">'
           + '<span class="hist-title">'+esc(r.work_title||'?')+(r.season_label?' · '+esc(r.season_label):'')+'</span>'
-          + '<span class="hist-verdict '+vcls+'">'+(V[r.verdict]||r.verdict||'-')+'</span>'
+          + '<span class="hist-verdict '+vcls+'">'+esc(V[r.verdict]||r.verdict||'-')+'</span>'
           + '<span class="hist-meta">'+esc(seatStr)+(paid?' · '+paid:'')
           + (r.session_date?' · 관람 '+r.session_date:'')+' · 상담 '+d
           + (statusStr?' · '+statusStr:'')+'</span>'
@@ -1792,8 +1796,12 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   // ?preview 또는 #preview — 로그인 없이 화면/폼을 켜서 확인하는 개발용 모드.
   // (file:// 에서 쿼리스트링이 잘리는 브라우저가 있어 해시·href 도 함께 본다.)
   // 상담기록은 세션이 없어 저장되지 않는다 (consult.html 이 알아서 스킵).
-  state.preview = /(\?|&|#)preview\b/.test(location.href) ||
-                  new URLSearchParams(location.search).has('preview');
+  // 로컬 개발(file:// · localhost)에서만 허용 — 배포 전 점검 P0-4:
+  // 호스팅한 도메인에서는 URL 한 줄로 로그인 게이트를 우회할 수 없어야 한다.
+  const isLocalDev = location.protocol === 'file:' ||
+                      location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  state.preview = isLocalDev && (/(\?|&|#)preview\b/.test(location.href) ||
+                  new URLSearchParams(location.search).has('preview'));
   if(state.preview){
     $('consultForm').classList.add('is-lit');
     const chip = $('userChip');

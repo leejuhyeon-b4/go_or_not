@@ -5,8 +5,9 @@
 
    ▶ 무엇을 하나
      .env 의 SUPABASE_URL + publishable 키로 REST(PostgREST)를 읽어
-     venues / seasons / seatmaps 세 테이블을 당긴 뒤,
+     venues / seasons 두 테이블을 당긴 뒤,
      브라우저가 <script> 로 읽는 data/seed.remote.js 를 새로 쓴다.
+     (seatmaps 테이블은 안 읽는다 — 아무도 안 써서 항상 비어 있다. seed.live.js 참고.)
 
    ▶ 왜 이런 구조인가 (PRD §9.2)
      "상담 시점에는 크롤링하지 않고 DB 조회만 한다."
@@ -81,8 +82,7 @@ const pick = (row, keys) => {
   // 순차 조회 — 첫 실패에서 나머지 요청이 붕 뜬 채 종료되는 것을 피한다.
   const venues = await rest(base, key, 'venues');
   const seasons = await rest(base, key, 'seasons');
-  const seatmaps = await rest(base, key, 'seatmaps');
-  console.log(`· venues ${venues.length} · seasons ${seasons.length} · seatmaps ${seatmaps.length}`);
+  console.log(`· venues ${venues.length} · seasons ${seasons.length}`);
   if (!venues.length && !seasons.length) {
     die('테이블이 비어 있습니다. data/schema.sql 을 먼저 실행하고 작품을 넣으세요.');
   }
@@ -90,10 +90,6 @@ const pick = (row, keys) => {
   const V = {};
   for (const r of venues) V[r.venue_id] = pick(r, VENUE_KEYS);
   const S = seasons.map((r) => pick(r, SEASON_KEYS));
-  const M = {};
-  for (const r of seatmaps) {
-    M[r.season_id] = { updated_at: r.updated_at, source: r.source, floors: r.floors || {} };
-  }
 
   const banner =
 `/* ⚠ 자동 생성 — 직접 편집 금지. 'npm run pull' 이 Supabase 에서 새로 씁니다.
@@ -107,10 +103,8 @@ const pick = (row, keys) => {
   "use strict";
   var V = ${JSON.stringify(V, null, 2)};
   var S = ${JSON.stringify(S, null, 2)};
-  var M = ${JSON.stringify(M, null, 2)};
 
-  window.GON_VENUES   = Object.assign({}, window.GON_VENUES   || {}, V);
-  window.GON_SEATMAPS = Object.assign({}, window.GON_SEATMAPS || {}, M);
+  window.GON_VENUES = Object.assign({}, window.GON_VENUES || {}, V);
 
   var byId = {};
   (window.GON_SEASONS || []).forEach(function (s) { byId[s.season_id] = s; });

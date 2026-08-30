@@ -12,6 +12,11 @@
 
    완료되면 window 'gon:data' 이벤트를 쏜다. index.html 이 폼을 다시 그린다.
    window.GON_LIVE 는 Promise<boolean> — true 면 라이브 데이터 적용됨.
+
+   ⚠ seatmaps 테이블은 조회하지 않는다 — admin.html/Edge Function 이 좌석
+     정보를 venues.base_geometry + seasons.seat_grades 에 저장하도록 바뀐
+     뒤로 그 테이블엔 아무도 쓰지 않는다(배포 전 점검 P0-3). 조회해봐야
+     항상 빈 배열이라 매 로드마다 헛 요청만 하나 늘던 것을 뺐다.
    ============================================================= */
 (function () {
   "use strict";
@@ -27,20 +32,34 @@
       .catch(function () { return []; });
   }
 
-  window.GON_LIVE = Promise.all([get("venues"), get("seasons"), get("seatmaps")])
+  // 같은 공연(work_title)이 seed.js 와 라이브 DB에 서로 다른 season_id 로
+  // 존재하면 병합이 안 되고 관리자 저장이 조용히 무시된다 (해몽가 사고 — P0-1).
+  // 재발하면 최소한 콘솔에는 뜨게 해 둔다.
+  function warnIfDuplicateWorkTitle(fallbackSeasons, liveSeasons) {
+    liveSeasons.forEach(function (live) {
+      var dup = fallbackSeasons.find(function (s) {
+        return s.season_id !== live.season_id && s.work_title === live.work_title;
+      });
+      if (dup && typeof console !== "undefined") {
+        console.warn(
+          "[GON] '" + live.work_title + "' 의 season_id 가 seed.js(" + dup.season_id +
+          ")와 라이브 DB(" + live.season_id + ")에서 다릅니다 — 관리자 저장이 앱에 반영되지 않습니다. " +
+          "data/seed.js 의 season_id 를 라이브 값으로 맞추세요."
+        );
+      }
+    });
+  }
+
+  window.GON_LIVE = Promise.all([get("venues"), get("seasons")])
     .then(function (res) {
-      var venues = res[0] || [], seasons = res[1] || [], seatmaps = res[2] || [];
+      var venues = res[0] || [], seasons = res[1] || [];
       if (!venues.length && !seasons.length) return false;
+
+      warnIfDuplicateWorkTitle(window.GON_SEASONS || [], seasons);
 
       var V = {};
       venues.forEach(function (r) { V[r.venue_id] = r; });
-      var M = {};
-      seatmaps.forEach(function (r) {
-        M[r.season_id] = { updated_at: r.updated_at, source: r.source, floors: r.floors || {} };
-      });
-
-      window.GON_VENUES   = Object.assign({}, window.GON_VENUES   || {}, V);
-      window.GON_SEATMAPS = Object.assign({}, window.GON_SEATMAPS || {}, M);
+      window.GON_VENUES = Object.assign({}, window.GON_VENUES || {}, V);
 
       var byId = {};
       (window.GON_SEASONS || []).forEach(function (s) { byId[s.season_id] = s; });

@@ -5,69 +5,148 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>갈까말까 · 관리자</title>
 <style>
-  :root { color-scheme: light dark; --bg:#faf9f7; --fg:#1c1a17; --mut:#6b655c; --line:#e2ddd4;
-          --card:#fff; --accent:#2f6f4f; --danger:#b23b3b; }
+  :root {
+    color-scheme: light dark;
+    --bg:      #F7F2E7;
+    --bg-2:    #FBF8F1;
+    --card:    #FFFFFF;
+    --fg:      #241F17;
+    --mut:     #7C7161;
+    --line:    #E6DCC3;
+    --accent:      #A9701F;
+    --accent-fg:   #FFFBF3;
+    --danger:      #AA4230;
+    --danger-bg:   #F5DED2;
+    --ok:          #4B7F4E;
+    --ok-bg:       #E3EEDF;
+    --warn:        #92671B;
+    --warn-bg:     #F1E3C6;
+    --mut-bg:      #ECE6D6;
+    --shadow: 0 1px 2px rgba(40,30,10,.07), 0 4px 14px rgba(40,30,10,.05);
+  }
   @media (prefers-color-scheme: dark) { :root {
-    --bg:#161513; --fg:#eceae6; --mut:#9a938a; --line:#333029; --card:#211f1c; --accent:#5fbd99; --danger:#e07a7a; } }
+    --bg:    #17140F;
+    --bg-2:  #1C1913;
+    --card:  #211D16;
+    --fg:    #EFE8D9;
+    --mut:   #A6987F;
+    --line:  #372F22;
+    --accent:      #D9A64E;
+    --accent-fg:   #241C0D;
+    --danger:      #D98269;
+    --danger-bg:   #3A2019;
+    --ok:          #8FB088;
+    --ok-bg:       #243424;
+    --warn:        #D9A257;
+    --warn-bg:     #332711;
+    --mut-bg:      #2A251A;
+    --shadow: none;
+  } }
   * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
-  body { margin:0; font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
-         background:var(--bg); color:var(--fg); padding:max(16px,env(safe-area-inset-top)) 16px 40px; }
-  h1 { font-size:18px; margin:4px 0 16px; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
-  label { display:block; font-size:13px; color:var(--mut); margin:0 0 6px; }
-  input, select, button, textarea { font:inherit; width:100%; padding:12px; border-radius:10px;
-         border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-  button { background:var(--accent); color:#fff; border:none; font-weight:600; margin-top:10px; }
-  button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:400; }
-  button:disabled { opacity:.5; }
-  .drow { border:1px solid var(--line); border-radius:10px; padding:8px; margin-bottom:8px; }
+  body {
+    margin:0;
+    font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    background:var(--bg); color:var(--fg);
+    padding:max(18px,env(safe-area-inset-top)) 16px 48px;
+  }
+  ::selection { background:var(--accent); color:var(--accent-fg); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+  h1 {
+    font-size:19px; font-weight:800; letter-spacing:-.01em; color:var(--fg);
+    margin:2px 0 20px;
+  }
+  h1 span { color:var(--accent); }
+  .card {
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:18px; margin-bottom:14px; box-shadow:var(--shadow);
+  }
+  label {
+    display:block; font-size:12.5px; font-weight:600; letter-spacing:.01em;
+    color:var(--mut); margin:0 0 7px;
+  }
+  input, select, button, textarea {
+    font:inherit; width:100%; padding:12px; border-radius:10px;
+    border:1px solid var(--line); background:var(--bg-2); color:var(--fg);
+    transition:border-color .12s ease;
+  }
+  input:hover, select:hover, textarea:hover { border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  button {
+    background:var(--accent); color:var(--accent-fg); border:1px solid transparent;
+    font-weight:700; margin-top:10px; cursor:pointer; transition:filter .12s ease, transform .05s ease;
+  }
+  button:hover:not(:disabled) { filter:brightness(1.06); }
+  button:active:not(:disabled) { transform:translateY(1px); }
+  button.ghost { background:transparent; color:var(--mut); border:1px solid var(--line); font-weight:600; }
+  button.ghost:hover:not(:disabled) { color:var(--fg); border-color:var(--mut); filter:none; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+
+  /* ---- 상태 배지 — 검증됨/임시/없음을 한눈에 ---- */
+  .chip {
+    display:inline-flex; align-items:center; font-size:12px; font-weight:700;
+    padding:3px 9px; border-radius:999px; line-height:1.5; white-space:nowrap;
+  }
+  .chip.ok   { background:var(--ok-bg);   color:var(--ok); }
+  .chip.warn { background:var(--warn-bg); color:var(--warn); }
+  .chip.mut  { background:var(--mut-bg);  color:var(--mut); }
+
+  .drow { border:1px solid var(--line); border-radius:10px; padding:8px; margin-bottom:8px; background:var(--bg-2); }
   .drow .l1 { display:grid; grid-template-columns:1fr 54px 120px 32px; gap:5px; align-items:center; }
   .drow .l2 { display:grid; grid-template-columns:78px 70px 1fr; gap:5px; margin-top:5px; align-items:center; }
-  .drow .lim { display:flex; align-items:center; gap:3px; font-size:12px; color:var(--mut); }
-  .drow .lim input { width:auto; padding:0; }
-  .drow input, .drow select { padding:8px; font-size:14px; }
+  .drow .lim { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--mut); }
+  .drow .lim input { width:auto; padding:0; accent-color:var(--accent); }
+  .drow input, .drow select { padding:8px; font-size:14px; background:var(--card); }
   .srow { display:grid; grid-template-columns:30px 1fr 40px 40px 42px 46px 46px 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .srow input, .srow select { padding:8px; font-size:14px; }
-  .rrow { display:grid; grid-template-columns:40px 1fr 44px 52px 1fr 32px; gap:5px; align-items:center; margin-bottom:6px; }
-  .rrow input { padding:8px; font-size:14px; }
   /* ---- 그리드 칠하기 ---- */
-  .gpal { display:flex; flex-wrap:wrap; gap:5px; margin:8px 0; }
-  .gpal button { width:auto; margin:0; padding:6px 10px; font-size:12px; font-weight:600; border:2px solid transparent; }
-  .gpal button.on { border-color:var(--fg); }
-  .gwrap { overflow:auto; border:1px solid var(--line); border-radius:8px; padding:6px; max-height:60vh; }
+  .gpal { display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+  .gpal button { width:auto; margin:0; padding:6px 11px; font-size:12px; font-weight:700; border:2px solid transparent; }
+  .gpal button.on { border-color:var(--fg); box-shadow:0 0 0 2px var(--card) inset; }
+  .gwrap { overflow:auto; border:1px solid var(--line); border-radius:10px; padding:8px; max-height:60vh; background:var(--bg-2); }
   .grid { display:grid; gap:1px; width:max-content; user-select:none; touch-action:none; }
   .grid .gr { display:flex; gap:1px; align-items:center; }
-  .grid .grl { width:34px; flex:0 0 34px; font-size:10px; color:var(--mut); text-align:right; padding-right:3px; }
+  .grid .grl { width:34px; flex:0 0 34px; font-size:10px; color:var(--mut); text-align:right; padding-right:3px; font-variant-numeric:tabular-nums; }
   .cell { width:13px; height:13px; flex:0 0 13px; background:var(--line); border-radius:2px; box-sizing:border-box; }
-  .cell.mk-AISLE { outline:2px solid #111; outline-offset:-2px; }
+  .cell.mk-AISLE { outline:2px solid var(--fg); outline-offset:-2px; }
   .cell.mk-RESTR { background-image:repeating-linear-gradient(45deg,transparent,transparent 2px,rgba(0,0,0,.5) 2px,rgba(0,0,0,.5) 4px); }
-  .cell.mk-EDGE  { border:2px solid #e11; }
-  .cell.mk-SIDE  { border:2px dashed #e11; }
-  .cell.sel { box-shadow:0 0 0 2px #06f inset; }
+  .cell.mk-EDGE  { border:2px solid var(--danger); }
+  .cell.mk-SIDE  { border:2px dashed var(--danger); }
+  .cell.sel { box-shadow:0 0 0 2px var(--accent) inset; }
   .cell.absent { background:transparent; pointer-events:none; opacity:.12; }
-  .ghead { font-size:9px; color:var(--mut); }
+  .ghead { font-size:9px; color:var(--mut); font-variant-numeric:tabular-nums; }
   .grow { display:grid; grid-template-columns:30px 42px 1fr 1fr 42px 42px 48px 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .grow input, .grow select { padding:7px 4px; font-size:13px; }
   .nrow { display:grid; grid-template-columns:30px 42px 1fr 1fr 1.5fr 22px; gap:3px; align-items:center; margin-bottom:6px; }
   .nrow input, .nrow select { padding:7px 4px; font-size:13px; }
   textarea { min-height:auto; }
-  .del { background:transparent; color:var(--danger); border:1px solid var(--line); padding:9px 0; margin:0; }
+  .del {
+    background:transparent; color:var(--danger); border:1px solid var(--line);
+    padding:9px 0; margin:0; font-weight:700;
+  }
+  .del:hover:not(:disabled) { background:var(--danger-bg); border-color:var(--danger); filter:none; }
   .msg { font-size:14px; padding:10px 12px; border-radius:10px; margin:10px 0 0; white-space:pre-wrap; }
-  .msg.err { background:color-mix(in srgb,var(--danger) 12%,transparent); color:var(--danger); }
-  .msg.ok  { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); }
-  .hint { font-size:12px; color:var(--mut); margin-top:8px; }
+  .msg.err { background:var(--danger-bg); color:var(--danger); }
+  .msg.ok  { background:var(--ok-bg); color:var(--ok); }
+  .hint { font-size:12px; color:var(--mut); margin-top:8px; line-height:1.6; }
   .previews { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
   .previews:empty { display:none; }
   .previews img { height:64px; width:auto; border-radius:8px; border:1px solid var(--line); }
   .hidden { display:none; }
   .between { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
-  .tabs { display:flex; gap:6px; margin-bottom:14px; }
-  .tabs button { margin:0; background:transparent; color:var(--mut); border:1px solid var(--line); }
-  .tabs button.on { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .tabs { display:flex; gap:6px; margin-bottom:16px; }
+  .tabs button {
+    margin:0; background:transparent; color:var(--mut); border:1px solid var(--line);
+    font-weight:600; padding:10px 14px;
+  }
+  .tabs button.on { background:var(--accent); color:var(--accent-fg); border-color:var(--accent); }
+
+  /* ---- 로그인 화면 ---- */
+  #loginCard { max-width:360px; margin:min(14vh,120px) auto 0; }
+  #loginCard label { text-align:center; }
 </style>
 </head>
 <body>
-<h1>이 회차 갈까말까 · 관리자</h1>
+<h1>이 회차 갈까말까 <span>관리자</span></h1>
 
 <div id="loginCard" class="card">
   <label for="pw">관리자 비밀번호</label>
@@ -161,6 +240,15 @@
         통로 <code>A-B열 통로 8,9</code> · 시야제한 <code>A-B열 시야제한 1,2</code> ·
         극싸/사이드 <code>4열 극싸 40,41</code> <code>4열 사이드 38,39</code> · <code>짝수열</code>/<code>홀수열</code> 지원. 열범위 생략 = 전 열.</div>
       <div id="seatMemoMsg" class="msg hidden"></div>
+      <details style="margin-top:10px">
+        <summary class="hint" style="cursor:pointer">스캔·Gemini 다 안 맞으면 — Claude 챗에 물어보고 여기 붙여넣기</summary>
+        <div class="hint" style="margin-top:6px">
+          이 프롬프트와 배치도 이미지를 <a href="https://claude.ai" target="_blank" rel="noopener">claude.ai</a> 챗에 올리면
+          위 메모칸 문법 그대로 답이 나온다. 그 답을 위 메모칸에 붙여넣고 "표 채우기"만 누르면 됨 — 저장 방식은 동일.</div>
+        <textarea id="claudePromptBox" rows="6" readonly style="margin-top:6px;font-size:12px"></textarea>
+        <button id="claudePromptCopy" class="ghost" type="button" style="margin-top:6px">프롬프트 복사</button>
+        <div id="claudePromptMsg" class="msg hidden"></div>
+      </details>
     </div>
     <div id="seditCard" class="card hidden">
       <div class="between"><label>블록 (층/이름/위치/좌석범위)</label>
@@ -194,18 +282,36 @@ const show = (el, on) => el.classList.toggle("hidden", !on);
 const setMsg = (el, text, kind) => { el.textContent = text; el.className = "msg " + (kind||""); show(el, !!text); };
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 
-let PW = null;
-try { PW = sessionStorage.getItem("gon:admin:pw"); } catch (e) {}
+// 비밀번호는 최초 로그인 순간에만 쓰고 버린다 — 그 뒤로는 서버가 발급한
+// 세션 토큰만 저장·전송한다 (배포 전 점검 S-5: 세션스토리지에 원문 비번 보관 금지).
+let TOKEN = null;
+try { TOKEN = sessionStorage.getItem("gon:admin:token"); } catch (e) {}
 
-async function api(action, payload) {
+async function api(action, payload, loginPassword) {
+  const headers = { "content-type": "application/json" };
+  if (loginPassword != null) headers["x-admin-password"] = loginPassword;
+  else headers["x-admin-token"] = TOKEN || "";
   const res = await fetch(FN + "?action=" + action, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-admin-password": PW || "" },
+    headers: headers,
     body: JSON.stringify(payload || {}),
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
   return data;
+}
+
+function setToken(t) {
+  TOKEN = t || null;
+  try {
+    if (TOKEN) sessionStorage.setItem("gon:admin:token", TOKEN);
+    else sessionStorage.removeItem("gon:admin:token");
+  } catch (e) {}
+}
+
+// 검증됨/임시/없음 상태 배지 — 관리자가 어느 공연 데이터를 믿어도 되는지 한눈에 보게.
+function chip(kind, text) {
+  return '<span class="chip ' + kind + '">' + esc(text) + '</span>';
 }
 
 function fileToB64(f) {
@@ -241,27 +347,34 @@ async function boot() {
     setMsg($("loginMsg"), "data/supabase-config.js 를 못 읽었어요. 파일 위치를 확인하세요.", "err");
     return;
   }
-  if (!PW) return;
-  try { await api("auth"); enterApp(); } catch (e) { PW = null; }
+  if (!TOKEN) return;
+  try {
+    const r = await api("auth");     // 토큰이 아직 유효하면 새 토큰으로 갱신(슬라이딩 세션)
+    setToken(r.token);
+    enterApp();
+  } catch (e) {
+    setToken(null);
+  }
 }
 
 $("loginBtn").onclick = async () => {
   setMsg($("loginMsg"), "", "");
   $("loginBtn").disabled = true;
-  PW = $("pw").value;
+  const pw = $("pw").value;
   try {
-    await api("auth");
-    try { sessionStorage.setItem("gon:admin:pw", PW); } catch (e) {}
+    const r = await api("auth", null, pw);
+    setToken(r.token);
+    $("pw").value = "";
     enterApp();
   } catch (e) {
-    PW = null;
+    setToken(null);
     setMsg($("loginMsg"), e.message, "err");
   } finally {
     $("loginBtn").disabled = false;
   }
 };
 
-$("logout").onclick = () => { try { sessionStorage.removeItem("gon:admin:pw"); } catch (e) {} location.reload(); };
+$("logout").onclick = () => { setToken(null); location.reload(); };
 
 document.querySelectorAll(".tabs [data-tab]").forEach((b) => {
   b.onclick = () => {
@@ -320,9 +433,9 @@ function renderCurSeason() {
   const s = $("season").selectedOptions[0] && $("season").selectedOptions[0]._s;
   if (!s) return;
   const d = s.discounts;
-  $("curInfo").textContent = d
-    ? "현재 " + d.length + "개" + (s.discounts_verified ? " (검증됨)" : " (임시)")
-    : "현재 할인 정보 없음";
+  $("curInfo").innerHTML = d
+    ? chip(s.discounts_verified ? "ok" : "warn", (s.discounts_verified ? "검증됨" : "임시값") + " · " + d.length + "개")
+    : chip("mut", "할인 정보 없음");
   // 기존 할인을 검토표에 미리 채운다 — 판독은 여기에 더해진다 (덮어쓰기 아님)
   setMsg($("dparseMsg"), "", "");
   setMsg($("dsaveMsg"), "", "");
@@ -436,8 +549,12 @@ function renderCurSeatSeason() {
   const ai = Array.isArray(s.aisle_seats) ? s.aisle_seats : [];
   const rs = Array.isArray(s.restricted_seats) ? s.restricted_seats : [];
   const sd = Array.isArray(s.side_seats) ? s.side_seats : [];
-  $("vcurInfo").textContent = "현재 — 등급 " + zg.length + " · 통로 " + ai.length + " · 시야제한 " + rs.length + " · 극싸/사이드 " + sd.length +
-    (zg.length ? "" : " (등급 비면 상담 때 사용자에게 물음)");
+  $("vcurInfo").innerHTML =
+    chip(zg.length ? "ok" : "mut", "등급 " + zg.length) + " " +
+    chip(ai.length ? "ok" : "mut", "통로 " + ai.length) + " " +
+    chip(rs.length ? "ok" : "mut", "시야제한 " + rs.length) + " " +
+    chip(sd.length ? "ok" : "mut", "극싸/사이드 " + sd.length) +
+    (zg.length ? "" : ' <span class="hint" style="display:inline">등급 비면 상담 때 사용자에게 물음</span>');
   setMsg($("sparseMsg"), "", ""); setMsg($("seatMemoMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
   renderSBlocks([]);
   renderSGrades(zg);
@@ -657,6 +774,27 @@ function parseSeatMemo(text) {
   });
   return out;
 }
+
+// Claude 챗에 물어볼 프롬프트 — 위 메모칸 문법과 정확히 맞춰뒀다 (DEPLOY.md 와 동일 문구).
+$("claudePromptBox").value =
+`이 이미지는 한국 공연장의 좌석배치도야. 아래 형식의 줄로만 답해줘. 설명 없이.
+
+1층                                    ← 층은 단독 줄로
+블록 좌 1-8 / 중 9-40 / 우 41-48       ← 블록(왼쪽 통로/가운데/오른쪽 통로) 좌석범위
+1-15열 9-14번 R / 15-34번 VIP / 35-40번 R   ← 열범위 좌석번호범위 등급 (등급 보이면)
+1-15열 통로 8,9,40,41                  ← 통로석 있으면
+1-15열 시야제한 1,2                    ← 시야제한석 있으면
+
+여러 층이면 층마다 반복. 실제로 보이는 것만 적고, 안 보이면 그 줄은 빼.`;
+$("claudePromptCopy").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("claudePromptBox").value);
+    setMsg($("claudePromptMsg"), "복사했어요. claude.ai 에 붙여넣고 이미지도 같이 올리세요.", "ok");
+  } catch (e) {
+    $("claudePromptBox").select();
+    setMsg($("claudePromptMsg"), "자동 복사가 안 돼서 텍스트를 선택해뒀어요 — 직접 복사(길게 눌러 복사)하세요.", "err");
+  }
+};
 
 $("seatMemoParse").onclick = () => {
   const p = parseSeatMemo($("seatMemo").value);

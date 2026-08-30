@@ -5,7 +5,9 @@
 - **관리자 화면 = 앱의 `admin.html`** (index.html 과 같은 폴더). Supabase 가 Edge Function 의
   HTML 응답을 sandbox 로 막아서, 화면은 정적 파일로 두고 함수는 JSON API 만 한다.
 - 진입: 상담 앱 랜딩페이지 우하단의 작은 **⚙ 톱니** → `admin.html`
-- 인증: **공유 비밀번호 하나** (`ADMIN_PASSWORD`). 별도 계정 없음.
+- 인증: **공유 비밀번호 하나** (`ADMIN_PASSWORD`)를 최초 1회만 보낸다. 서버가 그 자리에서
+  몇 시간짜리 세션 토큰을 발급하고, 그 뒤로 `admin.html` 은 비밀번호 원문이 아니라
+  이 토큰만 저장·전송한다. 별도 계정 없음. 로그인 시도에는 IP당 레이트리밋이 걸린다.
 - 키(Gemini·service_role)는 전부 Edge Function 시크릿에만. `admin.html` 은 비번·이미지만 보낸다.
 
 ---
@@ -18,9 +20,17 @@
 
 ## 2. 관리자 비밀번호 정하기
 
-아무 문자열이나. 길게. 폰에서 한 번 입력하면 세션 동안 유지된다(`sessionStorage`).
+아무 문자열이나. 길게. 폰에서 한 번 입력하면 그 자리에서 세션 토큰을 받아
+`sessionStorage` 에 저장하고(비밀번호 자체는 저장하지 않음), 토큰이 만료되면(6시간)
+다시 물어본다.
 
-## 3. Edge Function 배포 — CLI 로 (웹 에디터는 한글 깨짐)
+## 3. 레이트리밋 테이블 만들기 (1회, 배포 전에)
+
+대시보드 → **SQL Editor** → `data/admin_rate_limit.sql` 내용을 붙여넣고 Run.
+비밀번호 무차별 대입을 막는 테이블이다 — 안 돌려도 함수는 동작하지만 그동안은
+레이트리밋 없이 열려 있다.
+
+## 4. Edge Function 배포 — CLI 로 (웹 에디터는 한글 깨짐)
 
 ```
 npm i -g supabase
@@ -34,10 +44,14 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 
 > 웹 에디터(대시보드)로 붙여넣으면 큰 파일의 멀티바이트(한글)가 깨진다. 반드시 CLI.
 
-## 4. 시크릿 등록
+## 5. 시크릿 등록
 
 대시보드 → **Edge Functions** → **Secrets** (또는 Project Settings → Edge Functions)
 - `ADMIN_PASSWORD` = 2번에서 정한 비밀번호
+- `ADMIN_ALLOWED_ORIGINS` = `admin.html` 을 올릴 도메인. 예:
+  `https://example.github.io` (여러 개면 쉼표로). **비워두면 file:// 로 여는 것만 되고,
+  호스팅한 admin.html 에서는 API 호출이 CORS 로 막힌다** — 앱을 실제로 배포하면 그
+  도메인을 여기 반드시 추가할 것.
 - `GEMINI_API_KEY` = 1번에서 받은 키
 - (선택) `GEMINI_MODEL` = 기본 `gemini-3.6-flash` 외 다른 모델 쓸 때만
   (모델이 또 사라지면 API 404 에러가 대체 모델명을 알려준다 → 그 값으로 이 시크릿 설정)
@@ -45,7 +59,70 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 > `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` 는 자동 주입되므로 등록 불필요.
 > (`SUPABASE_ANON_KEY` 는 이제 안 쓴다.)
 
-## 5. 사용
+## (선택) 좌석배치도 OCR 판독 켜기
+
+기본값은 지금처럼 Gemini 비전 한 번으로 배치도를 읽는다. 아래 시크릿을 채우면
+`parse-seatmap-grid`(그리드 스캔)만 OCR(글자 인식 전용 엔진)로 좌석 번호를 읽고,
+**코드가**(LLM 아님) y좌표로 줄을 묶고 숫자 최소·최대로 열을 재구성한다. 조밀한
+좌석 번호는 범용 비전 모델보다 OCR이 더 정확히 읽는다는 전제의 실험이다 — 안
+맞으면 시크릿을 지우면 즉시 예전 방식(Gemini 비전)으로 돌아간다.
+
+> Claude API 는 이 관리자 도구엔 안 쓴다(상담 에이전트 전용으로 남겨둠). OCR이
+> 전부 실패하면(또는 시크릿을 안 채웠으면) Gemini 비전으로, 그마저 안 맞으면
+> **사람이 Claude 챗에 이미지를 직접 물어보고 결과를 붙여넣는다** — 아래
+> "Claude 챗으로 수동 판독" 참고.
+
+Google Vision, CLOVA 둘 다 무료 한도 안에서만 쓸 생각이면 **Vision만 등록해도 된다**
+(무료 한도가 10배 크다 — 월 1,000장 vs CLOVA 월 100회). CLOVA는 Vision이 실패했거나
+열을 하나도 못 찾았을 때만 쓰는 2차 폴백이라 없어도 동작한다.
+
+1. **Google Cloud Vision API 키** (`GOOGLE_VISION_API_KEY`)
+   - <https://console.cloud.google.com> → 프로젝트 생성 → **API 및 서비스 → 라이브러리**에서
+     "Cloud Vision API" 사용 설정 → **사용자 인증 정보**에서 API 키 발급
+   - 키를 만든 뒤 **키 제한**에서 "Cloud Vision API"로만 쓰게 제한해 둘 것(다른 API 도용 방지)
+   - 무료 한도: 월 1,000장(TEXT_DETECTION 기준), 영구 무료 — 초과분만 과금
+2. **Naver CLOVA OCR** (`CLOVA_OCR_INVOKE_URL`, `CLOVA_OCR_SECRET_KEY`) — 선택
+   - <https://console.ncloud.com> → **AI·Application Service → CLOVA OCR** → 도메인 생성
+     → 타입 **General(일반)** 선택
+   - 생성된 **Invoke URL**을 그대로 `CLOVA_OCR_INVOKE_URL`에 (끝에 `/general`은 코드가 붙임)
+   - 그 도메인의 **Secret Key**를 `CLOVA_OCR_SECRET_KEY`에
+   - 무료 한도: 월 100회, 초과분 회당 3원
+3. 위 시크릿을 5번의 시크릿 등록과 같은 방법으로 등록하고 재배포. `parse-seatmap-grid`
+   응답의 `engine` 필드로 어느 경로를 탔는지 확인 가능
+   (`"google-vision"` / `"clova-ocr"` / `"gemini-vision"`).
+
+### 한계 (코드로 재구성하는 방식의 트레이드오프)
+좌석이 완전한 직사각형 그리드가 아니라 부채꼴로 크게 휘는 극장, 또는 열 라벨이
+애매한 배치도는 y좌표 군집화가 잘못 나눌 수 있다. 결과는 항상 그리드로 화면에
+뜨니 색칠하기 전에 눈으로 열 수·범위가 말이 되는지 확인할 것 — 이상하면 "직접
+만들기"나 메모칸으로 넘어가면 된다.
+
+## Claude 챗으로 수동 판독 (OCR·Gemini 다 안 맞을 때)
+
+세 자동 경로(Vision·CLOVA·Gemini)가 전부 실패하거나 결과가 못 미더우면, 배치도
+이미지를 <https://claude.ai> 챗에 직접 올려서 아래 프롬프트로 물어보고, 답을
+**"좌석배치도" 탭 → 메모칸**(Gemini 초안이 들어가는 그 textarea)에 그대로
+붙여넣은 뒤 **"↓ 이 메모대로 아래 표 채우기"**를 누르면 된다 — 이 형식은
+`admin.html` 이 이미 파싱하는 문법이라 코드를 더 손볼 필요가 없다.
+
+```
+이 이미지는 한국 공연장의 좌석배치도야. 아래 형식의 줄로만 답해줘. 설명 없이.
+
+1층                                    ← 층은 단독 줄로
+블록 좌 1-8 / 중 9-40 / 우 41-48       ← 블록(왼쪽 통로/가운데/오른쪽 통로) 좌석범위
+1-15열 9-14번 R / 15-34번 VIP / 35-40번 R   ← 열범위 좌석번호범위 등급 (등급 보이면)
+1-15열 통로 8,9,40,41                  ← 통로석 있으면
+1-15열 시야제한 1,2                    ← 시야제한석 있으면
+
+여러 층이면 층마다 반복. 실제로 보이는 것만 적고, 안 보이면 그 줄은 빼.
+```
+
+메모칸 하단의 문법 설명(블록/등급/통로/시야제한/극싸·사이드, 홀수열·짝수열)이
+곧 이 프롬프트가 기대하는 문법이니, Claude 답이 표로 안 채워지면 그 설명과
+비교해서 형식을 맞추면 된다. 표 채우기 후에는 다른 판독 경로와 똑같이 확인 →
+**"이 공연 배치도로 저장"**.
+
+## 6. 사용
 
 상담 앱 랜딩페이지 우하단 **⚙** → `admin.html` (또는 앱을 호스팅한 주소 뒤에 `/admin.html`)
 
@@ -60,7 +137,7 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 어딘가 호스팅돼 있어야 한다(`file://` 는 폰 접근 불가). 데스크탑은 `file://` 로도 됨.
 홈 화면에 추가해두면 앱처럼 쓸 수 있다.
 
-## 6. 앱에 반영
+## 7. 앱에 반영
 
 저장은 Supabase 에 바로 들어가고, 상담 앱은 **새로고침만** 하면 반영된다
 (`data/seed.live.js` 가 로드 시 Supabase 를 직접 읽음). `npm run pull` 은
@@ -76,6 +153,8 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 - 저장하면 `discounts_verified = true`.
 
 ### 좌석배치도 — 거칠다. 검토 필수
+- OCR 시크릿을 등록했으면 그리드 스캔(①)만 그 경로를 타고(코드가 재구성, LLM 아님),
+  블록/등급/통로 텍스트 판독(메모 초안)은 여전히 Gemini다. 어느 쪽이든 사람이 확인 후 저장.
 - Gemini 가 뽑는 건 **층 / 블록명 / 위치 / 좌석번호 범위** + **등급 구역(열 범위)** + 시야제한 구역.
 - 통로·벽 위치와 별칭은 위치값에서 **자동 생성**된다 (좌블=번호 큰 쪽이 통로 …).
 - 등급 구역은 `{층, 열범위, 좌석번호범위, 등급}` — 구역 그대로 `seasons.seat_grades` 에 저장.

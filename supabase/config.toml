@@ -3,5 +3,6 @@ project_id = "ewemqbatkrmvzevmlteo"
 
 [functions.admin]
 # 관리자 페이지(GET)는 무인증으로 서빙하고, POST 는 함수 안에서
-# x-admin-password 헤더(ADMIN_PASSWORD 시크릿)를 직접 검증한다.
+# x-admin-password/x-admin-token 헤더를 직접 검증한다(레이트리밋 포함).
+# CORS 는 "*" 가 아니라 ADMIN_ALLOWED_ORIGINS 시크릿 화이트리스트 — DEPLOY.md 참고.
 verify_jwt = false
