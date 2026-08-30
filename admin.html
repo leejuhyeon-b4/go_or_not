@@ -185,6 +185,8 @@
   .gp-cell.side-edge-auto { outline:2px dashed var(--gp-edge); outline-offset:-2px; }
   .gp-cell.side-side-auto { outline:2px dashed var(--gp-side); outline-offset:-2px; }
   .gp-cell.cut { border-right-width:3px; border-right-color:var(--accent); }
+  /* 번호를 따로 지정한 칸(트리플클릭) — 예: 장애인석이 이어진 번호를 쓸 때 */
+  .gp-cell.renum { text-decoration:underline dotted; text-underline-offset:2px; text-decoration-thickness:1.5px; }
   .gp-cell.sel { outline:2px solid var(--accent); outline-offset:-2px; }
   /* 고속도로(가로통로) 경계 — 평소엔 자리를 차지하지 않다가, "고속도로" 붓을 고르면
      열 사이에 얇은 클릭 자리가 나타난다. 이미 놓은 자리는 그 위 열의 밑줄로 항상 보인다. */
@@ -332,6 +334,10 @@
           <b>고속도로(가로통로)</b>: 평소엔 안 보여요 — <b>고속도로</b> 붓을 고르면 열 사이에 클릭 자리가 생기고,
           원하는 한 곳만 클릭하면 굵은 줄이 생겨요(예: 7열-8열 사이). 다른 붓으로 바꾸면 클릭 자리는 사라지고
           이미 놓은 곳은 그 열 밑줄로만 남아요.<br>
+          <b>번호 재지정</b>: 장애인석처럼 이어진 번호를 따로 쓰는 칸은 그 칸을 <b>트리플클릭</b>(더블클릭은
+          손이 자주 가서 불편하니 세 번)하면 실제 좌석번호를 입력할 수 있어요(점선 밑줄로 표시). 빈칸으로
+          저장하면 원래 번호로 되돌아갑니다. 표에는 이 번호로 나가고, 블록(좌/중/우) 폭은 물리적 칸 위치
+          그대로 유지돼요(벽·통로 거리는 실제 자리 기준).<br>
           칠한 결과는 <b>격자 → 아래 표 채우기</b>로 열범위·번호범위로 압축돼 표에 들어가고, 저장은 기존과 동일합니다 (그 층만 갱신).
         </div>
         <div id="gpMsg" class="msg hidden"></div>
@@ -1041,7 +1047,15 @@ let gpErase = false, gpFree = false, gpDrag = null, gpSel = [];
 let gpMirror = true;   // 좌우대칭 — 대부분 극장이 좌우 대칭이라 기본 켜짐, 앞열 부채꼴 등 비대칭이면 꺼서 씀
 let gpRowTrs = [];     // 실제 좌석 행 <tr> — 고속도로 밑줄(.gp-row-hwy) 토글용
 
-const gpNewCell = () => ({ grade: null, aisle: false, restr: false, side: null, off: false });
+const gpNewCell = () => ({ grade: null, aisle: false, restr: false, side: null, off: false, num: null });
+// 칸의 실제 좌석번호 — 보통 번호칸 그대로(c+1)지만, 장애인석처럼 이어진 번호를 쓰는 예외는
+// num 에 지정한 값을 쓴다(트리플클릭으로 지정). 저장(등급/통로/시야제한/극싸·사이드)엔 이 번호가
+// 나가고 — 실제 티켓 번호와 맞아야 상담 때 조회가 되니까 — 블록 기하(좌/중/우 폭)는 항상 물리적
+// 칸 위치(c+1) 기준으로 그대로 둔다(벽·통로 거리는 실제 자리 기준이라 번호와 무관해야 해서).
+function gpSeatNumAt(r, c) {
+  const n = gpCells[r][c].num;
+  return n != null ? n : c + 1;
+}
 function gpColor(g) { const i = gpGrades.indexOf(g); return GP_PALETTE[(i < 0 ? 0 : i) % GP_PALETTE.length]; }
 function gpFloor() { return Number(gpActiveFloor); }
 function gpCurrent() { return gpFloors[gpActiveFloor]; }
@@ -1262,7 +1276,7 @@ function gpPaintRow(r) {
     const st = row[c], td = els[c], nx = c + 1 < gpCols ? row[c + 1] : null;
     // 나란한 두 통로석 사이(또는 좌석없음 경계) = 블록이 갈리는 자리
     const cut = !!(nx && !st.off && (nx.off ? true : (st.aisle && nx.aisle)));
-    let cls = "gp-cell" + (st.off ? " off" : "") + (st.aisle ? " aisle" : "") + (st.restr ? " restr" : "") + (cut ? " cut" : "");
+    let cls = "gp-cell" + (st.off ? " off" : "") + (st.aisle ? " aisle" : "") + (st.restr ? " restr" : "") + (cut ? " cut" : "") + (st.num != null ? " renum" : "");
     if (st.side === "EDGE") cls += " side-edge-manual";
     else if (st.side === "SIDE") cls += " side-side-manual";
     else if (!st.off) {
@@ -1273,11 +1287,14 @@ function gpPaintRow(r) {
     }
     td.className = cls;
     td.style.background = (!st.off && st.grade) ? gpColor(st.grade) : "";
-    td.textContent = st.off ? "" : String(c + 1);   // 번호는 항상 표시 — 행/열 헷갈림 방지
+    td.textContent = st.off ? "" : String(gpSeatNumAt(r, c));   // 번호는 항상 표시 — 행/열 헷갈림 방지
   }
 }
 function gpSetCell(st) {
   const t = gpTool;
+  // 좌석없음이던 칸에 다른 걸 칠하면(지우개 아닌 정칠) 좌석이 있다는 뜻이니 좌석없음부터 풀어준다 —
+  // 안 풀면 .off 가 배경을 강제로 지워버려서 등급을 칠해도 안 채워진 것처럼 보인다.
+  if (t.type !== "off" && !gpErase) st.off = false;
   if (t.type === "grade") st.grade = gpErase ? null : t.value;
   else if (t.type === "aisle") st.aisle = !gpErase;
   else if (t.type === "restr") st.restr = !gpErase;
@@ -1318,13 +1335,38 @@ function gpShowSel() {
 // 다른 붓일 땐 자리가 사라져서(높이 0) 실수로 눌릴 일이 없다.
 $("gpWrap").addEventListener("click", (e) => {
   const hw = e.target.closest(".gp-hwrow");
-  if (!hw || gpTool.type !== "highway") return;
-  const r = +hw.dataset.after;
-  const i = gpHighways.indexOf(r);
-  if (i > -1) gpHighways.splice(i, 1); else gpHighways.push(r);
-  hw.classList.toggle("on", i === -1);
-  if (gpRowTrs[r]) gpRowTrs[r].classList.toggle("gp-row-hwy", i === -1);
+  if (hw) {
+    if (gpTool.type !== "highway") return;
+    const r = +hw.dataset.after;
+    const i = gpHighways.indexOf(r);
+    if (i > -1) gpHighways.splice(i, 1); else gpHighways.push(r);
+    hw.classList.toggle("on", i === -1);
+    if (gpRowTrs[r]) gpRowTrs[r].classList.toggle("gp-row-hwy", i === -1);
+    return;
+  }
+  // 트리플클릭 = 이 칸의 실제 좌석번호를 따로 지정 (장애인석처럼 이어진 번호를 쓸 때).
+  // 더블클릭은 손이 많이 가서 세 번으로 — MouseEvent.detail 이 브라우저가 세어주는 연속 클릭 수.
+  if (e.detail === 3) {
+    const td = e.target.closest(".gp-cell");
+    if (td) gpRenumber(+td.dataset.r, +td.dataset.c);
+  }
 });
+function gpRenumber(r, c) {
+  const st = gpCells[r][c];
+  const cur = gpSeatNumAt(r, c);
+  const raw = window.prompt(
+    gpRows[r] + "열 " + (c + 1) + "번째 칸의 실제 좌석번호\n(장애인석 등 이어진 번호일 때만 — 비우면 원래 번호 " + (c + 1) + "로 되돌림)",
+    String(cur));
+  if (raw == null) return;
+  const trimmed = raw.trim();
+  if (!trimmed) { st.num = null; }
+  else {
+    const n = Number(trimmed);
+    if (!Number.isFinite(n) || n <= 0) { window.alert("양의 숫자를 입력하세요."); return; }
+    st.num = n;
+  }
+  gpPaintRow(r);
+}
 $("gpWrap").addEventListener("pointerdown", (e) => {
   if (gpTool.type === "highway") return;   // 고속도로는 위 click 핸들러가 처리 — 칸 칠하기 없음
   const th = e.target.closest("th");
@@ -1370,21 +1412,24 @@ function gpFoldRows(perRow, emit) {
     i = j + 1;
   }
 }
+// 번호를 따로 지정한 칸(장애인석 등)은 표에 실제 티켓 번호로 나가야 상담 때 조회가 되므로
+// gpSeatNumAt() 을 쓴다 — 그런 칸은 이웃과 번호가 안 이어지니 항상 자기 혼자 구간이 된다.
 function gpGradeSegs(r) {
   const out = []; let cur = null;
   for (let c = 0; c < gpCols; c++) {
     const st = gpCells[r][c];
+    const num = gpSeatNumAt(r, c);
     const g = (!st.off && st.grade) ? st.grade : null;
-    if (cur && g === cur.grade) { cur.to = c + 1; continue; }
+    if (cur && st.num == null && g === cur.grade && num === cur.to + 1) { cur.to = num; continue; }
     if (cur) out.push(cur);
-    cur = g ? { grade: g, from: c + 1, to: c + 1 } : null;
+    cur = g ? { grade: g, from: num, to: num } : null;
   }
   if (cur) out.push(cur);
   return out;
 }
 function gpNums(r, pick) {
   const out = [];
-  for (let c = 0; c < gpCols; c++) { const st = gpCells[r][c]; if (!st.off && pick(st)) out.push(c + 1); }
+  for (let c = 0; c < gpCols; c++) { const st = gpCells[r][c]; if (!st.off && pick(st)) out.push(gpSeatNumAt(r, c)); }
   return out;
 }
 function gpFillTables() {
@@ -1422,6 +1467,8 @@ function gpFillTables() {
     });
   });
   const highways = gpHighways.slice().sort((a, b) => a - b).map((r) => ({ floor: f, after_row: gpRows[r] }));
+  let renum = 0;
+  gpCells.forEach((row) => row.forEach((st) => { if (st.num != null) renum++; }));
 
   renderSBlocks(other(readBlockRows()).concat(blocks));
   renderSGrades(other(readGradeRows()).concat(grades));
@@ -1434,7 +1481,9 @@ function gpFillTables() {
     f + "층 → 등급 " + grades.length + " · 통로 " + aisles.length + " · 시야제한 " + restr.length +
     " · 극싸/사이드(수동) " + sides.length + " · 블록 " + blocks.length + " · 고속도로 " + highways.length +
     " 줄 (아래 표 확인 후 저장)" +
-    (single ? "\n통로가 표시되지 않은 열 묶음 " + single + "개는 블록(좌/중/우)을 만들지 않았어요." : ""), "ok");
+    (single ? "\n통로가 표시되지 않은 열 묶음 " + single + "개는 블록(좌/중/우)을 만들지 않았어요." : "") +
+    (renum ? "\n번호 재지정(트리플클릭) " + renum + "칸 반영 — 나중에 \"아래 표 → 격자\"로 이 층을 다시 불러오면" +
+      " 그 특수 번호는 원래 칸이 아니라 그 번호의 칸으로 표시되니, 필요하면 다시 트리플클릭으로 지정하세요." : ""), "ok");
 }
 
 /* ---- 표 → 격자 (이미 넣어둔 배치도를 다시 칠할 때) ---- */
