@@ -149,8 +149,9 @@
   <!-- ============ 할인정보 ============ -->
   <section id="tab-disc">
     <div class="card">
-      <label for="season">공연 (시즌)</label>
-      <select id="season"></select>
+      <label for="season">공연 (시즌) — 목록에 없으면 새 이름을 입력하세요</label>
+      <input id="season" list="seasonList" placeholder="공연명 입력 또는 목록에서 선택" autocomplete="off">
+      <datalist id="seasonList"></datalist>
       <div id="curInfo" class="hint"></div>
     </div>
     <div class="card">
@@ -178,9 +179,14 @@
   <!-- ============ 좌석배치도 ============ -->
   <section id="tab-seat" class="hidden">
     <div class="card">
-      <label for="seatSeason">공연 (시즌)</label>
-      <select id="seatSeason"></select>
+      <label for="seatSeason">공연 (시즌) — 목록에 없으면 새 이름을 입력하세요</label>
+      <input id="seatSeason" list="seatSeasonList" placeholder="공연명 입력 또는 목록에서 선택" autocomplete="off">
+      <datalist id="seatSeasonList"></datalist>
       <div id="vcurInfo" class="hint"></div>
+      <div id="seatVenueRow" class="hidden" style="margin-top:10px">
+        <label for="seatVenueSelect">극장 — 새 공연일 때만 (나중에 바꿀 수도 있음)</label>
+        <select id="seatVenueSelect"><option value="">— 아직 정하지 않음 —</option></select>
+      </div>
     </div>
     <div class="card">
       <label for="sfile">좌석배치도 이미지 (여러 장 가능)</label>
@@ -351,35 +357,47 @@ async function enterApp() {
 }
 
 /* ---------------- 할인정보 ---------------- */
+// "공연 (시즌)" 칸은 자유입력 — 목록에 없는 이름을 타이핑하면 저장 시점에
+// action=create-season 이 새 시즌을 만든다. SEASONS 는 그 목록/조회용 캐시.
+let SEASONS = [];
+let VENUES = [];
+
+// 입력창의 현재 글자와 work_title 이 일치하는(대소문자 무시) 기존 시즌을 찾는다.
+// 못 찾으면 null — "아직 없는 공연"이라는 뜻이고, 저장 시 새로 만들어진다.
+function currentSeason(inputEl) {
+  const title = inputEl.value.trim();
+  if (!title) return null;
+  return SEASONS.find((s) => (s.work_title || "").trim().toLowerCase() === title.toLowerCase()) || null;
+}
+
+// 저장 직전에 부른다 — 이미 있으면 그 season_id, 없으면 새로 만들고 목록을 새로고침한다.
+async function resolveSeasonId(inputEl, venueId) {
+  const title = inputEl.value.trim();
+  if (!title) throw new Error("공연명을 입력하세요.");
+  const hit = currentSeason(inputEl);
+  if (hit) return hit.season_id;
+  const r = await api("create-season", { work_title: title, venue_id: venueId || null });
+  await loadSeasons();
+  return r.season_id;
+}
+
 async function loadSeasons() {
   try {
-    const { seasons } = await api("seasons");
-    const list = seasons || [];
+    const [{ seasons }, { venues }] = await Promise.all([api("seasons"), api("venues")]);
+    SEASONS = seasons || [];
+    VENUES = venues || [];
 
-    const sel = $("season");
-    sel.innerHTML = "";
-    list.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.season_id;
-      const mark = s.discounts_verified ? " ✓" : (s.discounts ? " (임시)" : "");
-      o.textContent = s.work_title + " " + (s.season_label || "") + mark;
-      o._s = s;
-      sel.appendChild(o);
-    });
-    sel.onchange = renderCurSeason;
+    const dl = $("seasonList");
+    dl.innerHTML = SEASONS.map((s) => '<option value="' + esc(s.work_title) + '">').join("");
+
+    const sdl = $("seatSeasonList");
+    sdl.innerHTML = SEASONS.map((s) => '<option value="' + esc(s.work_title) + '">').join("");
+
+    const vsel = $("seatVenueSelect");
+    vsel.innerHTML = '<option value="">— 아직 정하지 않음 —</option>' +
+      VENUES.map((v) => '<option value="' + esc(v.venue_id) + '">' + esc(v.name) + '</option>').join("");
+
     renderCurSeason();
-
-    const vsel = $("seatSeason");
-    vsel.innerHTML = "";
-    list.forEach((s) => {
-      const o = document.createElement("option");
-      o.value = s.season_id;
-      const n = Array.isArray(s.seat_grades) ? s.seat_grades.length : 0;
-      o.textContent = s.work_title + " " + (s.season_label || "") + (n ? " ✓등급" : " (등급 미수집)");
-      o._s = s;
-      vsel.appendChild(o);
-    });
-    vsel.onchange = renderCurSeatSeason;
     renderCurSeatSeason();
   } catch (e) {
     setMsg($("dparseMsg"), e.message, "err");
@@ -390,15 +408,18 @@ const dKey = (d) =>
   (Array.isArray(d.grades) ? [...d.grades].map((g) => String(g).toUpperCase()).sort().join(",") : "");
 
 function renderCurSeason() {
-  const s = $("season").selectedOptions[0] && $("season").selectedOptions[0]._s;
-  if (!s) return;
+  const s = currentSeason($("season"));
+  setMsg($("dparseMsg"), "", "");
+  setMsg($("dsaveMsg"), "", "");
+  if (!s) {
+    $("curInfo").innerHTML = $("season").value.trim() ? chip("mut", "새 공연 — 이미지 판독 후 저장하면 만들어져요") : "";
+    return;
+  }
   const d = s.discounts;
   $("curInfo").innerHTML = d
     ? chip(s.discounts_verified ? "ok" : "warn", (s.discounts_verified ? "검증됨" : "임시값") + " · " + d.length + "개")
     : chip("mut", "할인 정보 없음");
   // 기존 할인을 검토표에 미리 채운다 — 판독은 여기에 더해진다 (덮어쓰기 아님)
-  setMsg($("dparseMsg"), "", "");
-  setMsg($("dsaveMsg"), "", "");
   if (d && d.length) {
     renderDRows(d);
     show($("deditCard"), true);
@@ -407,6 +428,7 @@ function renderCurSeason() {
     show($("deditCard"), false);
   }
 }
+$("season").oninput = renderCurSeason;
 
 $("dfile").onchange = () => {
   const files = $("dfile").files;
@@ -483,15 +505,14 @@ function addDRow(d) {
 $("daddRow").onclick = () => addDRow();
 
 $("dsaveBtn").onclick = async () => {
-  const season_id = $("season").value;
   const discounts = dedupeByKey(readDRows(), dKey);
   if (!discounts.length) { setMsg($("dsaveMsg"), "저장할 행이 없어요.", "err"); return; }
   $("dsaveBtn").disabled = true;
   setMsg($("dsaveMsg"), "저장 중…", "");
   try {
+    const season_id = await resolveSeasonId($("season"));
     await api("save", { season_id, discounts });
     await loadSeasons();
-    $("season").value = season_id;   // 방금 저장한 시즌 유지
     renderCurSeason();
     setMsg($("dsaveMsg"), discounts.length + "개 저장 완료. 상담 앱을 새로고침하면 반영돼요.", "ok");
   } catch (e) {
@@ -503,8 +524,19 @@ $("dsaveBtn").onclick = async () => {
 
 /* ---------------- 좌석배치도 ---------------- */
 function renderCurSeatSeason() {
-  const s = $("seatSeason").selectedOptions[0] && $("seatSeason").selectedOptions[0]._s;
-  if (!s) return;
+  setMsg($("sparseMsg"), "", ""); setMsg($("seatMemoMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
+  const s = currentSeason($("seatSeason"));
+  renderSBlocks([]);
+  if (!s) {
+    // 목록에 없는 이름 — 새 공연. 빈 표를 보여줘서 바로 메모/손입력을 시작할 수 있게 하고,
+    // 극장 선택칸을 노출한다(저장 시 새 시즌에 함께 붙는다).
+    $("vcurInfo").innerHTML = $("seatSeason").value.trim() ? chip("mut", "새 공연 — 저장하면 만들어져요") : "";
+    show($("seatVenueRow"), !!$("seatSeason").value.trim());
+    renderSGrades([]); renderSAisle([]); renderSRestr([]); renderSSides([]);
+    show($("seditCard"), true);
+    return;
+  }
+  show($("seatVenueRow"), false);
   const zg = Array.isArray(s.seat_grades) ? s.seat_grades : [];
   const ai = Array.isArray(s.aisle_seats) ? s.aisle_seats : [];
   const rs = Array.isArray(s.restricted_seats) ? s.restricted_seats : [];
@@ -515,14 +547,13 @@ function renderCurSeatSeason() {
     chip(rs.length ? "ok" : "mut", "시야제한 " + rs.length) + " " +
     chip(sd.length ? "ok" : "mut", "극싸/사이드 " + sd.length) +
     (zg.length ? "" : ' <span class="hint" style="display:inline">등급 비면 상담 때 사용자에게 물음</span>');
-  setMsg($("sparseMsg"), "", ""); setMsg($("seatMemoMsg"), "", ""); setMsg($("ssaveMsg"), "", "");
-  renderSBlocks([]);
   renderSGrades(zg);
   renderSAisle(ai);
   renderSRestr(rs);
   renderSSides(sd);
   show($("seditCard"), true);
 }
+$("seatSeason").oninput = renderCurSeatSeason;
 
 $("sfile").onchange = () => {
   const files = $("sfile").files;
@@ -769,7 +800,6 @@ $("seatMemoParse").onclick = () => {
 };
 
 $("ssaveBtn").onclick = async () => {
-  const season_id = $("seatSeason").value;
   const floors = {};
   [...document.querySelectorAll("#sblocks .srow")].forEach((r) => {
     const f = String(parseInt(r.querySelector(".f").value, 10) || "");
@@ -809,13 +839,17 @@ $("ssaveBtn").onclick = async () => {
   $("ssaveBtn").disabled = true;
   setMsg($("ssaveMsg"), "저장 중…", "");
   try {
+    const venueId = $("seatVenueSelect").value || null;
+    if (Object.keys(floors).length && !currentSeason($("seatSeason")) && !venueId) {
+      throw new Error("새 공연에 블록(좌석 기하)을 저장하려면 극장을 먼저 골라주세요.");
+    }
+    const season_id = await resolveSeasonId($("seatSeason"), venueId);
     const payload = { season_id, grade_zones, aisle_seats, restricted_zones, side_seats };
     if (Object.keys(floors).length) payload.floors = floors;
     const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
       "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 시야제한 " + (res.restricted || 0) + " · 극싸/사이드 " + (res.side_seats || 0) + ". 상담 앱 새로고침하면 반영.", "ok");
     await loadSeasons();
-    $("seatSeason").value = season_id;
     renderCurSeatSeason();
   } catch (e) {
     setMsg($("ssaveMsg"), e.message, "err");

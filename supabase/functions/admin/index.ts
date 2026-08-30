@@ -327,6 +327,47 @@ Deno.serve(async (req) => {
       return json({ venues: data });
     }
 
+    // ---- 새 공연(시즌) 만들기 — work_title 로 찾아보고 없으면 생성 ----
+    // "공연 (시즌)" 칸이 자유입력이라, 저장 버튼을 누르는 시점에 시즌이 아직
+    // DB에 없으면 여기서 만들고 그 season_id 로 저장을 이어간다.
+    if (action === "create-season") {
+      const { work_title, season_label, venue_id } = await req.json();
+      const title = String(work_title ?? "").trim();
+      if (!title) throw new HttpError(400, "공연명이 필요합니다.");
+
+      // 같은 이름이 이미 있으면(대소문자 무시) 새로 안 만들고 그걸 재사용한다.
+      const found = await admin.from("seasons").select("season_id").ilike("work_title", title).limit(1);
+      if (found.error) throw new HttpError(500, found.error.message);
+      if (found.data?.length) return json({ season_id: found.data[0].season_id, created: false });
+
+      const base = title.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-+|-+$/g, "") || "season";
+      let season_id = base;
+      for (let n = 2; ; n++) {
+        const hit = await admin.from("seasons").select("season_id").eq("season_id", season_id).limit(1);
+        if (hit.error) throw new HttpError(500, hit.error.message);
+        if (!hit.data?.length) break;
+        season_id = `${base}-${n}`;
+      }
+
+      const row = {
+        season_id,
+        work_title: title,
+        season_label: String(season_label ?? "").trim() || null,
+        venue_id: venue_id ? String(venue_id) : null,
+        prices: {},
+        prices_verified: false,
+        discounts: null,
+        discounts_verified: false,
+        seat_grades: [],
+        aisle_seats: [],
+        restricted_seats: [],
+        side_seats: [],
+      };
+      const { error } = await admin.from("seasons").insert(row);
+      if (error) throw new HttpError(500, error.message);
+      return json({ season_id, created: true });
+    }
+
     // ---- 할인표 판독 (저장 X) ----
     if (action === "parse") {
       if (!GEMINI_KEY) throw new HttpError(500, "GEMINI_API_KEY 가 설정되지 않았어요.");
