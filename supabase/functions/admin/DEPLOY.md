@@ -1,6 +1,7 @@
-# 관리자 도구 배포 (CLI 없이 대시보드로)
+# 관리자 도구 배포
 
-폰에서 **할인정보 / 좌석배치도** 이미지 → Gemini 판독 → 검토 → Supabase 저장.
+폰·데스크탑에서 **기본정보 손입력 + 할인정보 / 좌석배치도** (이미지 → Gemini 초안 → 검토) → Supabase 저장.
+관리자 페이지(`admin.html`)는 정적 파일이라 재배포 불필요(새로고침만) — 이 문서의 배포는 **Edge Function** 얘기다.
 
 - **관리자 화면 = 앱의 `admin.html`** (index.html 과 같은 폴더). Supabase 가 Edge Function 의
   HTML 응답을 sandbox 로 막아서, 화면은 정적 파일로 두고 함수는 JSON API 만 한다.
@@ -30,19 +31,31 @@
 비밀번호 무차별 대입을 막는 테이블이다 — 안 돌려도 함수는 동작하지만 그동안은
 레이트리밋 없이 열려 있다.
 
-## 4. Edge Function 배포 — CLI 로 (웹 에디터는 한글 깨짐)
+## 4. Edge Function 배포
 
+### CLI (기본)
 ```
 npm i -g supabase
 supabase login
 supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --no-verify-jwt
 ```
+- `--use-api` : Docker 없이 서버에서 번들 / `--no-verify-jwt` : GET·POST 무인증 게이트(POST 는 코드가 `x-admin-password` 검증)
+- Windows PowerShell 은 `.ps1` 실행정책에 막힐 수 있다 → `supabase.cmd functions deploy ...` 또는
+  `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force` 후 실행.
 
-- `--use-api` : Docker 없이 서버에서 번들
-- `--no-verify-jwt` : GET 안내·POST 를 무인증 게이트로 (POST 는 코드가 `x-admin-password` 검증)
-- `config.toml` 의 `[functions.admin] verify_jwt=false` 도 같은 효과
+### Management API (CLI 가 막힐 때 — 토큰만 있으면 됨)
+```
+curl -X POST "https://api.supabase.com/v1/projects/ewemqbatkrmvzevmlteo/functions/deploy?slug=admin" \
+  -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+  -F 'metadata={"name":"admin","entrypoint_path":"index.ts","verify_jwt":false};type=application/json' \
+  -F 'file=@index.ts;filename=index.ts;type=application/typescript'
+```
+(`supabase/functions/admin/` 에서 실행. 토큰: <https://supabase.com/dashboard/account/tokens>, 쓰고 revoke.)
+같은 엔드포인트 `POST /v1/projects/{ref}/database/query` `{"query":"..."}` 로 SQL(마이그레이션·pg_cron)도 실행.
 
-> 웹 에디터(대시보드)로 붙여넣으면 큰 파일의 멀티바이트(한글)가 깨진다. 반드시 CLI.
+> 웹 에디터(대시보드)로 붙여넣으면 큰 파일의 멀티바이트(한글)가 깨진다. CLI 나 Management API 만.
+> ⚠ 한글이 든 요청 본문은 파일에 UTF-8 로 써서 `curl --data-binary @file` — 인라인 `-d '{"k":"한글"}'` 은
+>   Windows 셸에서 깨진다 (라이브 데이터 한 번 손상됐던 적 있음).
 
 ## 5. 시크릿 등록
 
@@ -63,10 +76,10 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
 
 ## Claude 챗으로 수동 판독 (Gemini 초안이 안 맞을 때)
 
-좌석배치도는 이미지 → **Gemini** 가 메모 초안(문단)을 뽑고, 사람이 그 메모를
-고쳐서 저장한다 — 색칠용 그리드 스캔 기능은 폐지했다(Claude API 도 이 관리자
-도구엔 안 쓴다, 상담 에이전트 전용). Gemini 초안이 부실하면, 배치도 이미지를
-<https://claude.ai> 챗에 직접 올려서 아래 프롬프트로 물어보고, 답을
+좌석배치도는 이미지 → **Gemini** 가 메모 초안(문단)을 뽑고, 사람이 그 메모를 고쳐서 저장한다.
+(이미지에서 격자를 **자동 재구성**하던 Vision/OCR 경로는 폐지 — Claude API 는 이 관리자 도구엔 안 쓴다,
+상담 에이전트 전용. 사람이 손으로 칠하는 **격자 색칠판**은 그대로 있다.)
+Gemini 초안이 부실하면, 배치도 이미지를 <https://claude.ai> 챗에 직접 올려서 아래 프롬프트로 물어보고, 답을
 **"좌석배치도" 탭 → 메모칸**(Gemini 초안이 들어가는 그 textarea)에 그대로
 붙여넣은 뒤 **"↓ 이 메모대로 아래 표 채우기"**를 누르면 된다 — 이 형식은
 `admin.html` 이 이미 파싱하는 문법이라 코드를 더 손볼 필요가 없다.
@@ -145,8 +158,10 @@ supabase functions deploy admin --project-ref ewemqbatkrmvzevmlteo --use-api --n
   같은 열에서 가운데 VIP·양끝 R 이면 좌석번호 범위로 구역을 쪼갠다 (좁은 구역 우선).
   색↔등급은 범례를 읽는다. 틀리면 행을 고치면 됨.
 - 좌석번호 범위를 못 읽은 블록, 등급 없는 zone 은 저장 시 버려진다. 손으로 채워도 된다.
-- `venues.base_geometry.floors` 덮임 + `is_estimate=false` + `collected=true`. 세부(specs·verified_seats)는 그대로.
-- 미묘한 값은 데스크탑에서 `data/seed.js` 를 직접 손보는 게 낫다.
+- `venues.base_geometry.floors` 덮임(층별 병합) + `is_estimate=false` + `collected=true`. 세부(specs·verified_seats)는 그대로.
+- **공연을 다시 고르면** 저장된 블록·등급·통로·장애인석·극싸/사이드·고속도로가 표·메모에 자동으로 뜬다 —
+  "저장된 표에서 격자 만들기" 로 격자도 복원. 거기서 고쳐 다시 저장.
+- 미묘한 값은 라이브(Supabase) 를 SQL Editor 나 관리자 도구로 직접 손본다. `data/seed.js` 는 폴백·테스트용이라 안 건드린다.
 
 ## 재배포 (코드 고쳤을 때)
 

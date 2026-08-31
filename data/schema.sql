@@ -47,10 +47,11 @@ create table if not exists seasons (
   discount_proof_policy text,                           -- FULL_PRICE | GRADE_CHANGE | UNKNOWN
   seat_grades           jsonb   default '[]'::jsonb,    -- 등급 구역: [{floor, row_from?, row_to?, seat_from?, seat_to?, grade, source}]
                                                         --   같은 열 가운데 VIP·양끝 R 같은 경우를 seat 범위로. 구식 {floor,row,grade} 도 지원. 좁은 구역 우선
-  aisle_seats           jsonb   default '[]'::jsonb,    -- 통로 인접 좌석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 문단 입력
-  restricted_seats      jsonb   default '[]'::jsonb,    -- 시야제한(공연별): [{floor, row_from?, row_to?, numbers:[...]}] · venue.restricted_seats 와 별개, 있으면 우선
-  side_seats            jsonb   default '[]'::jsonb,    -- 극싸/사이드: [{floor, row_from?, row_to?, row_parity?, numbers:[...], zone:'EDGE'|'SIDE'}] · 있으면 블럭 기하보다 우선
+  aisle_seats           jsonb   default '[]'::jsonb,    -- 통로 인접 좌석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 입력
+  restricted_seats      jsonb   default '[]'::jsonb,    -- [레거시] 시야제한석은 이제 seat_grades 의 "시야제한" 등급. data.js 가 옛 데이터 호환으로만 읽음
+  side_seats            jsonb   default '[]'::jsonb,    -- 극싸/사이드(수동): [{floor, row_from?, row_to?, row_parity?, numbers:[...], zone:'EDGE'|'SIDE'}] · 그 층에 있으면 명단 밖은 일반
   wheelchair_seats      jsonb   default '[]'::jsonb,    -- 장애인석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 좌석배치도에서 표시
+  cross_aisles          jsonb   default '[]'::jsonb,    -- 고속도로(가로통로): [{floor, after_row}] · 그 열 바로 뒤에 좌석 없이 가로지르는 통로
   cancellation_policy   jsonb,
   source                text,
   created_at            timestamptz default now()
@@ -62,7 +63,9 @@ create table if not exists seasons (
 --     add column if not exists aisle_seats jsonb default '[]'::jsonb,
 --     add column if not exists restricted_seats jsonb default '[]'::jsonb,
 --     add column if not exists side_seats jsonb default '[]'::jsonb,
---     add column if not exists wheelchair_seats jsonb default '[]'::jsonb;
+--     add column if not exists wheelchair_seats jsonb default '[]'::jsonb,
+--     add column if not exists cross_aisles jsonb default '[]'::jsonb;
+--   (open_date / close_date / running_time / has_intermission / prices / prices_verified 는 원래 CREATE 에 있음)
 
 -- ---------- 폐막 공연 자동 정리 (무료플랜 용량 절약) --------------------------
 -- 폐막일 7일 뒤 seasons 행을 삭제한다. venues(극장 기하)·consultations(상담기록·

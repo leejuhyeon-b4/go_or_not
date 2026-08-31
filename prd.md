@@ -472,9 +472,9 @@
 >
 > R-7의 `ACTOR_PATH` 선호가 이 역할을 대신한다. 시야는 "이 자리가 무대 어느 쪽인지"만 알려주고, 사용자가 자기 애배 동선과 맞춰 본다.
 
-#### 사이드 감점 [2026-08-27 구현 완료]
+#### 사이드 감점 [2026-08-27 구현 완료 · 2026-08-31 데이터 경로 갱신]
 
-> 구현: `data/seed.js` `venue.base_geometry` / `GON_SEATMAPS` · `data.js` `classifySide`/`sideZoneFor` → `resolveSeat.side_zone` · `engine.js` `agentSiya` 사이드 감점 블록. `axis_score`가 소수로 나올 수 있다(§7.1).
+> 구현: **`venues.base_geometry`** (관리자 도구가 격자/메모로 입력 → Supabase, `is_estimate=false`) + **`seasons.side_seats`** (수동 극싸/사이드 명단 — 그 층에 하나라도 있으면 명단 밖 좌석은 일반) · `data.js` `classifySide`/`sideZoneFor` → `resolveSeat.side_zone` · `engine.js` `agentSiya` 사이드 감점 블록. `axis_score`가 소수로 나올 수 있다(§7.1). `data/seed.js` 는 이제 폴백·테스트 픽스처 전용, `GON_SEATMAPS`(season_seat_maps) 오버레이는 미사용(§8.4).
 
 **"좌/우 우열 판단 안 함"과는 별개다.** 앞의 것은 *같은 깊이에서 왼블이 나은지 오른블이 나은지* — 연출에 달렸으니 판단 안 함. 이건 *열의 끝쪽 좌석은 무대 옆이 잘린다*는 좌석 위치 문제.
 
@@ -1085,21 +1085,30 @@ venue_base_geometry (
 )
 
 -- [2026-08-27 신설] 공연별 좌석배치도 오버레이 — 갱신되면 base_geometry를 덮는다
+-- [2026-08-31 갱신] 이 별도 테이블은 미사용. 관리자 도구가 아래처럼 바꿈:
+--   블록 기하 → venues.base_geometry (관리자가 격자/메모로 직접 입력, is_estimate=false)
+--   등급/통로/장애인석/극싸사이드/고속도로 → seasons.{seat_grades,aisle_seats,wheelchair_seats,side_seats,cross_aisles}
+--   시야제한석 → seat_grades 의 "시야제한" 등급 (정가가 따로라서). restricted_seats 는 레거시.
 season_seat_maps (
   season_id FK, floor,
   block_boundaries JSON,      -- 실측 블럭 경계
-  restricted_seats JSON,      -- 이 연출의 시야제한석
-  side_overrides JSON,        -- 이 무대 세트 기준 side 재분류
-  updated_at,                 -- NULL 이면 미갱신 → base_geometry 폴백 + ⚠️
+  restricted_seats JSON,      -- [레거시] → 이제 "시야제한" 등급
+  side_overrides JSON,        -- → seasons.side_seats
+  updated_at,
   source
 )
 ```
 
-**폴백 규칙:** `season_seat_maps.updated_at` 이 있으면 그것을 쓰고, 없으면 `venue_base_geometry`(항상 존재)로 판단하되 `missing_info`에 `"이 공연 좌석배치도 미갱신"`을 넣어 `⚠️`를 띄운다. 사이드 감점 폭(§5.2 표)은 베이스든 오버레이든 동일하고, 베이스만 쓴 불확실성은 `⚠️`로만 표시한다.
+**폴백 규칙 [2026-08-31 갱신]:** 관리자가 좌석배치도를 입력하면 `venues.base_geometry.is_estimate=false` 가 되고, `seasons.side_seats` 명단이 그 층에 있으면 그걸 신뢰(명단 밖 = 일반). 둘 다 없으면 극장 기하 추정으로 판단하고 `⚠️`. 감점 폭(§5.2 표)은 동일.
 
-**프로토타입 구현 형태 (`data/seed.js`):** SQL 대신 중첩 객체. `venue.base_geometry = { is_estimate, note, floors:{ <floor>:[ { name, side, seat_min, seat_max, aisle_end:'min'|'max'|null, wall_end:'min'|'max'|null, aliases:[] } ] } }` (중앙 블럭은 `wall_end:null`). `window.GON_SEATMAPS = { <season_id>:{ updated_at, source, floors:{…같은 형식…} } }` — 현재 비어 있어 전부 베이스 폴백. `data.js classifySide()`가 좌석의 `zone`/`block` 표기 또는 좌석번호로 블럭을 찾아 `dWall`·`dAisle`·`width`를 재고 `sideZoneFor()`로 `EDGE`/`SIDE`/`null` 을 낸다.
+**구현 형태:** `venue.base_geometry = { is_estimate, note, floors:{ <floor>:[ { name, side, seat_min, seat_max, aisle_end:'min'|'max'|null, wall_end:'min'|'max'|null, row_from?, row_to?, aliases:[] } ] } }` (중앙 블럭은 `wall_end:null`, 앞열 부채꼴이면 `row_from`/`row_to` 로 열범위별 블럭 세트). `data.js classifySide()`가 좌석의 `zone`/`block` 표기 또는 좌석번호로 블럭을 찾아 `dWall`·`dAisle`·`width`를 재고 `sideZoneFor()`로 `EDGE`/`SIDE`/`null` 을 낸다. `window.GON_SEATMAPS` 오버레이 자리는 코드에 남아 있으나 항상 빈 결과.
 
 ### 8.5 작품 — 2단 구조
+
+> **구현 [2026-08-31]:** 아래 정규화 스케치 대신 `data/schema.sql` 은 이걸 **`seasons` 한 테이블로 평탄화**
+> (`works` 없음 — `work_title` 텍스트 컬럼, `season_prices`→`prices jsonb`, `season_seat_grades`→`seat_grades jsonb`,
+> `season_restricted_seats`→"시야제한" 등급, 통로/장애인석/극싸사이드/고속도로 각 jsonb). 관리자 "기본정보" 탭이
+> `work_title`·`season_label`·`venue_id`·`open_date`·`close_date`·`prices` 를 손입력한다.
 
 ```sql
 works (
