@@ -8,6 +8,9 @@
 //   POST /functions/v1/admin?action=auth      → 비밀번호(최초) 또는 토큰 확인 → {ok,token}
 //   POST /functions/v1/admin?action=seasons   → 공연 목록 (할인 드롭다운용)
 //   POST /functions/v1/admin?action=venues    → 극장 목록 (좌석배치도 드롭다운용)
+//   POST /functions/v1/admin?action=create-venue  → 목록에 없는 극장명 → 새 극장 생성 → {venue_id}
+//   POST /functions/v1/admin?action=create-season → 목록에 없는 공연명 → 새 시즌 생성 → {season_id}
+//   POST /functions/v1/admin?action=save-season-meta → 극장·등급별 정가·개막/폐막일 → seasons 한 행
 //   POST /functions/v1/admin?action=parse         → 할인표 이미지 → Gemini → [{name,rate,type}]
 //   POST /functions/v1/admin?action=save          → 검토된 할인 목록 → seasons.discounts
 //   POST /functions/v1/admin?action=parse-seatmap → 좌석배치도 이미지 → Gemini → {memo}
@@ -28,7 +31,8 @@
 //   data/admin_rate_limit.sql). 유효 토큰 경로는 그 테이블을 안 거친다.
 //   별도 계정 없음. GET(페이지)은 무인증 — 그래서 이 함수는 "Verify JWT" 를 꺼야 한다.
 //   CORS 는 ADMIN_ALLOWED_ORIGINS 시크릿(쉼표구분)에 있는 origin만 허용한다.
-//   file:// 로 여는 admin.html 은 Origin: null 을 보내므로 그건 항상 허용.
+//   단, 로컬 개발(file:// → Origin:null, 그리고 localhost/127.0.0.1 임의 포트 —
+//   Live Server·vite dev 등)은 화이트리스트 없이 항상 허용한다.
 //
 // 필요한 env (Edge Function Secrets):
 //   ADMIN_PASSWORD        ← 직접 등록. 폰에서 입력할 공유 비밀번호 하나.
@@ -54,6 +58,19 @@ const admin = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: 
 // 그 밖엔 ADMIN_ALLOWED_ORIGINS 화이트리스트에 있을 때만 그 origin 을 반사한다.
 // "*" 를 쓰지 않는다 — 그러면 임의 사이트가 방문자 브라우저를 통해 비밀번호를
 // 무차별 대입해보고 응답까지 읽을 수 있다 (배포 전 점검 S-2).
+// 로컬 개발 origin: file://(Origin:"null") 과 localhost/127.0.0.1(임의 포트) — Live Server,
+// vite dev 등. 이건 공격자가 임의로 못 만드는 origin 이라(피해자 브라우저가 로컬에
+// 그 서버를 띄우고 있어야 함) 화이트리스트 없이 항상 허용한다.
+function isLocalDevOrigin(origin: string): boolean {
+  if (origin === "null") return true;
+  try {
+    const h = new URL(origin).hostname;
+    return h === "localhost" || h === "127.0.0.1" || h === "[::1]" || h === "::1";
+  } catch {
+    return false;
+  }
+}
+
 function corsHeadersFor(req: Request): Record<string, string> {
   const origin = req.headers.get("origin");
   const headers: Record<string, string> = {
@@ -61,8 +78,8 @@ function corsHeadersFor(req: Request): Record<string, string> {
     "access-control-allow-methods": "GET, POST, OPTIONS",
     vary: "origin",
   };
-  if (origin === "null" || (origin && ALLOWED_ORIGINS.includes(origin))) {
-    headers["access-control-allow-origin"] = origin as string;
+  if (origin && (isLocalDevOrigin(origin) || ALLOWED_ORIGINS.includes(origin))) {
+    headers["access-control-allow-origin"] = origin;
   }
   return headers;
 }
@@ -192,7 +209,8 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
       from_seat?: unknown; to_seat?: unknown; grade?: unknown;
     };
     const floor = Number(zz?.floor);
-    const grade = String(zz?.grade ?? "").trim().toUpperCase();
+    // 끝의 "석" 제거 — 메모 파서·정가 키와 동일 규칙 ("시야제한석"→"시야제한", "R석"→"R")
+    const grade = String(zz?.grade ?? "").trim().toUpperCase().replace(/석$/, "");
     if (!Number.isFinite(floor) || !grade) continue;
     const rowFrom = String(zz?.from_row ?? "").trim().toUpperCase();
     const rowTo = String(zz?.to_row ?? "").trim().toUpperCase();
@@ -215,7 +233,7 @@ function cleanGradeZones(zones: unknown): GradeZone[] {
   return out;
 }
 
-// [{floor, row_from?/from_row?, row_to?/to_row?, numbers:[...]}] 정리 (통로·시야제한 공용)
+// [{floor, row_from?/from_row?, row_to?/to_row?, numbers:[...]}] 정리 (통로·장애인석 공용)
 function cleanNumberZones(zones: unknown) {
   if (!Array.isArray(zones)) return [];
   const out: Array<{ floor: number; row_from: string | null; row_to: string | null; row_parity: "even" | "odd" | null; numbers: number[]; source: string }> = [];
@@ -322,9 +340,9 @@ Deno.serve(async (req) => {
     if (action === "seasons") {
       // aisle_seats / restricted_seats / side_seats / cross_aisles 는 신규 컬럼 —
       // 아직 마이그레이션 안 했어도 목록은 떠야 하므로 넓은 것부터 단계적으로 시도.
-      const cols = "season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades";
+      const cols = "season_id, work_title, season_label, venue_id, discounts, discounts_verified, seat_grades, prices, prices_verified, open_date, close_date";
       const widest = await admin.from("seasons")
-        .select(cols + ", aisle_seats, restricted_seats, side_seats, cross_aisles").order("work_title");
+        .select(cols + ", aisle_seats, restricted_seats, side_seats, cross_aisles, wheelchair_seats").order("work_title");
       if (!widest.error) return json({ seasons: widest.data });
       const wide = await admin.from("seasons")
         .select(cols + ", aisle_seats, restricted_seats, side_seats").order("work_title");
@@ -334,14 +352,45 @@ Deno.serve(async (req) => {
       return json({ seasons: narrow.data, needs_migration: true });
     }
 
-    // ---- 극장 목록 ----
+    // ---- 극장 목록 (base_geometry 포함 — 좌석배치도 탭에서 저장된 블록을 되불러온다) ----
     if (action === "venues") {
       const { data, error } = await admin
         .from("venues")
-        .select("venue_id, name, collected")
+        .select("venue_id, name, collected, base_geometry")
         .order("name");
       if (error) throw new HttpError(500, error.message);
       return json({ venues: data });
+    }
+
+    // ---- 새 극장 만들기 — name 으로 찾아보고 없으면 생성 ----
+    // "극장" 칸도 자유입력이라(공연 칸과 동일 UX), 목록에 없는 이름을 타이핑하면
+    // 저장 시점에 여기서 만든다. 열 표기(ALPHA/NUMERIC)는 안 주면 null — data.js
+    // rowIndex 가 라벨 모양으로 추론한다. base_geometry 는 좌석배치도 저장 때 채워진다.
+    if (action === "create-venue") {
+      const { name, row_label_system } = await req.json();
+      const nm = String(name ?? "").trim();
+      if (!nm) throw new HttpError(400, "극장 이름이 필요합니다.");
+
+      const found = await admin.from("venues").select("venue_id").ilike("name", nm).limit(1);
+      if (found.error) throw new HttpError(500, found.error.message);
+      if (found.data?.length) return json({ venue_id: found.data[0].venue_id, created: false });
+
+      const base = nm.toLowerCase().replace(/[^a-z0-9가-힣]+/g, "-").replace(/^-+|-+$/g, "") || "venue";
+      let venue_id = base;
+      for (let n = 2; ; n++) {
+        const hit = await admin.from("venues").select("venue_id").eq("venue_id", venue_id).limit(1);
+        if (hit.error) throw new HttpError(500, hit.error.message);
+        if (!hit.data?.length) break;
+        venue_id = `${base}-${n}`;
+      }
+
+      const rls = (row_label_system === "ALPHA" || row_label_system === "NUMERIC") ? row_label_system : null;
+      const { error } = await admin.from("venues").insert({
+        venue_id, name: nm, row_label_system: rls,
+        specs: {}, base_geometry: {}, verified_seats: [], restricted_seats: [], collected: false,
+      });
+      if (error) throw new HttpError(500, error.message);
+      return json({ venue_id, created: true });
     }
 
     // ---- 새 공연(시즌) 만들기 — work_title 로 찾아보고 없으면 생성 ----
@@ -383,6 +432,40 @@ Deno.serve(async (req) => {
       const { error } = await admin.from("seasons").insert(row);
       if (error) throw new HttpError(500, error.message);
       return json({ season_id, created: true });
+    }
+
+    // ---- 공연 기본정보 저장 — 극장 · 등급별 정가 · 개막/폐막일 (한 seasons 레코드) ----
+    if (action === "save-season-meta") {
+      const { season_id, work_title, venue_id, prices, open_date, close_date, season_label } = await req.json();
+      if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
+
+      const upd: Record<string, unknown> = {};
+      if (typeof work_title === "string" && work_title.trim()) upd.work_title = work_title.trim();
+      if (venue_id !== undefined) upd.venue_id = venue_id ? String(venue_id) : null;
+      if (season_label !== undefined) upd.season_label = String(season_label ?? "").trim() || null;
+
+      if (prices && typeof prices === "object") {
+        const clean: Record<string, number> = {};
+        for (const [k, v] of Object.entries(prices as Record<string, unknown>)) {
+          // seat_grades 등급 코드와 맞춘다 — 끝의 "석" 제거 ("시야제한석"→"시야제한", "R석"→"R")
+          const g = String(k).trim().toUpperCase().replace(/석$/, "");
+          const n = Number(v);
+          if (g && Number.isFinite(n) && n >= 0) clean[g] = Math.round(n);
+        }
+        upd.prices = clean;
+        upd.prices_verified = true;   // 사람이 직접 입력·확인한 값
+      }
+      // 'YYYY-MM-DD' 만 통과, 그 외/빈값은 null
+      const asDate = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)) ? v : null;
+      if (open_date !== undefined) upd.open_date = asDate(open_date);
+      if (close_date !== undefined) upd.close_date = asDate(close_date);
+
+      if (!Object.keys(upd).length) throw new HttpError(400, "저장할 내용이 없습니다.");
+
+      const { data, error } = await admin.from("seasons").update(upd).eq("season_id", season_id).select("season_id");
+      if (error) throw new HttpError(500, error.message);
+      if (!data?.length) throw new HttpError(404, `'${season_id}' 시즌이 없어요.`);
+      return json({ ok: true, season_id, saved: upd });
     }
 
     // ---- 할인표 판독 (저장 X) ----
@@ -446,9 +529,9 @@ Deno.serve(async (req) => {
       return json(result);
     }
 
-    // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로·시야제한은 시즌) ----
+    // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로는 시즌) ----
     if (action === "save-seatmap") {
-      const { season_id, floors, grade_zones, aisle_seats, restricted_zones, side_seats, cross_aisles } = await req.json();
+      const { season_id, venue_id: venueIdIn, floors, grade_zones, aisle_seats, side_seats, cross_aisles, wheelchair_zones } = await req.json();
       if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
       const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
@@ -456,9 +539,13 @@ Deno.serve(async (req) => {
         .select("season_id, venue_id")
         .eq("season_id", season_id)
         .single();
-      const venue_id = (seasonRow as { venue_id?: string } | null)?.venue_id;
-      if (seErr || !venue_id) {
-        throw new HttpError(404, `'${season_id}' 시즌 또는 그 극장을 찾을 수 없어요.`);
+      if (seErr || !seasonRow) throw new HttpError(404, `'${season_id}' 시즌을 찾을 수 없어요.`);
+      let venue_id = (seasonRow as { venue_id?: string } | null)?.venue_id ?? null;
+      // 시즌에 극장이 아직 없으면, 클라이언트가 보낸 극장을 붙인다 (좌석배치도 탭의 극장 자유입력).
+      if (!venue_id && venueIdIn) {
+        const up = await admin.from("seasons").update({ venue_id: String(venueIdIn) }).eq("season_id", season_id);
+        if (up.error) throw new HttpError(500, up.error.message);
+        venue_id = String(venueIdIn);
       }
 
       const cleanFloors: Record<string, unknown[]> = {};
@@ -492,8 +579,11 @@ Deno.serve(async (req) => {
       }
       const hasGeometry = Object.keys(cleanFloors).length > 0;
 
-      // 블록(기하)이 있을 때만 극장 정보를 갱신한다.
+      // 블록(기하)이 있을 때만 극장 정보를 갱신한다 — 이땐 극장이 반드시 있어야 한다.
       if (hasGeometry) {
+        if (!venue_id) {
+          throw new HttpError(400, "블록(좌석 기하)을 저장하려면 이 공연에 극장이 있어야 해요. 좌석배치도 탭에서 극장을 입력하세요.");
+        }
         const { data: cur, error: curErr } = await admin
           .from("venues")
           .select("base_geometry")
@@ -517,31 +607,36 @@ Deno.serve(async (req) => {
         if (error) throw new HttpError(500, error.message);
       }
 
-      // 등급·통로·시야제한 → 시즌. 배열을 명시적으로 보냈으면(빈 배열 포함) 그대로 반영.
+      // 등급·통로 → 시즌. 배열을 명시적으로 보냈으면(빈 배열 포함) 그대로 반영.
       const seasonUpdate: Record<string, unknown> = {};
       const seatGrades = cleanGradeZones(grade_zones);
-      if (Array.isArray(grade_zones)) seasonUpdate.seat_grades = seatGrades;
+      if (Array.isArray(grade_zones)) {
+        seasonUpdate.seat_grades = seatGrades;
+        // 시야제한석은 이제 등급("시야제한")이다 — 레거시 seasons.restricted_seats 는 비운다.
+        seasonUpdate.restricted_seats = [];
+      }
       const aisleZones = cleanNumberZones(aisle_seats);
       if (Array.isArray(aisle_seats)) seasonUpdate.aisle_seats = aisleZones;
-      const restrZones = cleanNumberZones(restricted_zones);
-      if (Array.isArray(restricted_zones)) seasonUpdate.restricted_seats = restrZones;
       const sideZones = cleanSideZones(side_seats);
       if (Array.isArray(side_seats)) seasonUpdate.side_seats = sideZones;
       const crossAisles = cleanCrossAisles(cross_aisles);
       if (Array.isArray(cross_aisles)) seasonUpdate.cross_aisles = crossAisles;
+      const wheelZones = cleanNumberZones(wheelchair_zones);
+      if (Array.isArray(wheelchair_zones)) seasonUpdate.wheelchair_seats = wheelZones;
 
       if (Object.keys(seasonUpdate).length) {
         const { error: seuErr } = await admin
           .from("seasons").update(seasonUpdate).eq("season_id", season_id);
         if (seuErr) {
-          if (/aisle_seats|restricted_seats|side_seats|cross_aisles|column/i.test(seuErr.message)) {
+          if (/aisle_seats|restricted_seats|side_seats|cross_aisles|wheelchair_seats|column/i.test(seuErr.message)) {
             throw new HttpError(400,
               "seasons 에 신규 컬럼이 없어요. SQL Editor 에서:\n" +
               "alter table seasons\n" +
               "  add column if not exists aisle_seats jsonb default '[]'::jsonb,\n" +
               "  add column if not exists restricted_seats jsonb default '[]'::jsonb,\n" +
               "  add column if not exists side_seats jsonb default '[]'::jsonb,\n" +
-              "  add column if not exists cross_aisles jsonb default '[]'::jsonb;");
+              "  add column if not exists cross_aisles jsonb default '[]'::jsonb,\n" +
+              "  add column if not exists wheelchair_seats jsonb default '[]'::jsonb;");
           }
           throw new HttpError(500, seuErr.message);
         }
@@ -554,8 +649,8 @@ Deno.serve(async (req) => {
       return json({
         ok: true, season_id, venue_id,
         seat_grades: seatGrades.length, aisle_seats: aisleZones.length,
-        restricted: restrZones.length, side_seats: sideZones.length,
-        cross_aisles: crossAisles.length,
+        side_seats: sideZones.length,
+        cross_aisles: crossAisles.length, wheelchair: wheelZones.length,
       });
     }
 
@@ -633,12 +728,13 @@ async function geminiExtractSeatmapMemo(b64: string, mime: string) {
 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
 <시작열>-<끝열>열 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>
 
-# 등급 (열범위 생략 = 전 열, 등급만 쓰면 그 열 전체)
+# 등급 (열범위 생략 = 전 열, 등급만 쓰면 그 열 전체). 시야제한석도 등급 "시야제한" 으로.
 <시작열>-<끝열>열 <시작번>-<끝번>번 <등급> / <시작번>-<끝번>번 <등급> / <등급>
+<시작열>-<끝열>열 <시작번>-<끝번>번 시야제한
 
-# 통로 / 시야제한 / 극싸·사이드 (그 열범위의 해당 좌석번호)
+# 통로 / 장애인석 / 극싸·사이드 (그 열범위의 해당 좌석번호)
 <시작열>-<끝열>열 통로 <번호>,<번호>
-<시작열>-<끝열>열 시야제한 <번호>,<번호>
+<시작열>-<끝열>열 장애인석 <번호>,<번호>   (휠체어석·장애인석 표시가 있을 때만)
 <시작열>-<끝열>열 극싸 <번호>,<번호>       (벽 쪽 끝 1~2자리)
 <시작열>-<끝열>열 사이드 <번호>,<번호>     (벽 쪽 안쪽)
 

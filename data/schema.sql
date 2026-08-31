@@ -50,6 +50,7 @@ create table if not exists seasons (
   aisle_seats           jsonb   default '[]'::jsonb,    -- 통로 인접 좌석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 문단 입력
   restricted_seats      jsonb   default '[]'::jsonb,    -- 시야제한(공연별): [{floor, row_from?, row_to?, numbers:[...]}] · venue.restricted_seats 와 별개, 있으면 우선
   side_seats            jsonb   default '[]'::jsonb,    -- 극싸/사이드: [{floor, row_from?, row_to?, row_parity?, numbers:[...], zone:'EDGE'|'SIDE'}] · 있으면 블럭 기하보다 우선
+  wheelchair_seats      jsonb   default '[]'::jsonb,    -- 장애인석: [{floor, row_from?, row_to?, row_parity?, numbers:[...]}] · 관리자 좌석배치도에서 표시
   cancellation_policy   jsonb,
   source                text,
   created_at            timestamptz default now()
@@ -60,7 +61,21 @@ create table if not exists seasons (
 --     add column if not exists discounts_updated_at timestamptz,
 --     add column if not exists aisle_seats jsonb default '[]'::jsonb,
 --     add column if not exists restricted_seats jsonb default '[]'::jsonb,
---     add column if not exists side_seats jsonb default '[]'::jsonb;
+--     add column if not exists side_seats jsonb default '[]'::jsonb,
+--     add column if not exists wheelchair_seats jsonb default '[]'::jsonb;
+
+-- ---------- 폐막 공연 자동 정리 (무료플랜 용량 절약) --------------------------
+-- 폐막일 7일 뒤 seasons 행을 삭제한다. venues(극장 기하)·consultations(상담기록·
+-- 시야만족도 outcome)는 season_id 문자열만 참조하므로 자동삭제와 무관하게 남는다.
+-- (시야제한석은 이제 seat_grades 의 "시야제한" 등급이라 함께 사라진다.)
+--
+--   create extension if not exists pg_cron;
+--   select cron.schedule(
+--     'purge-closed-seasons', '17 3 * * *',        -- 매일 03:17 (KST 아님, UTC)
+--     $$ delete from seasons where close_date is not null and close_date < current_date - 7 $$
+--   );
+-- 해제:  select cron.unschedule('purge-closed-seasons');
+-- 현황:  select * from cron.job;
 
 -- ---------- 공연별 좌석배치도 오버레이 (PRD §8.4 season_seat_maps) ----------
 -- ⚠ 현재 아무 코드도 이 테이블에 쓰지 않는다 — admin.html/Edge Function 이

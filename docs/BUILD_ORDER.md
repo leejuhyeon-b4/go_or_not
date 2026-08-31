@@ -76,6 +76,7 @@ KOPIS ─(node data/kopis.js)→ SQL ─┐
   대상별 율·등급 다르면(대학생/초중고) 별도 항목.
 - **degraded 할인율** — 정가는 있고 할인 목록 미수집이면 "정가 X에서 Z% 할인받으셨습니다 (최선 여부 판단 안 함)".
 - **통로(`is_aisle`)** — `season.aisle_seats` 명단 있으면 `true`/`false` 확정, 없으면 "모름". 선호좌석 '통로석' 사용.
+- **장애인석(`is_wheelchair`)** — `season.wheelchair_seats` 명단 있으면 `true`/`false`, 없으면 `null`(unknown 에도 안 넣음). 관리자 좌석배치도에서 표시.
 - 시야축 사이드/중앙/엣지(`side_zone`)는 블록 구조에서 계산 — 좌석배치도만 있으면 됨.
 
 ### 인프라

@@ -1178,8 +1178,11 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
   function currentList(){
     const season = currentSeason();
     if(!season) return null;
-    // 시야제한석은 정가 비교 대상이 없다 — 지불액을 정가로 본다 (BUILD_ORDER 결정)
+    // 시야제한석은 이제 '시야제한' 등급 — 공연에 그 정가가 있으면 그걸 쓴다.
+    // 정가를 모를 때만 옛 폴백: 지불액을 정가로 본다 (BUILD_ORDER 결정).
     if(state.seatRestricted){
+      const lp = GON_DB.listPrice(season, '시야제한');
+      if(lp) return lp;
       const paid = Number($('paidAmount').value) || 0;
       return paid ? { price: paid, grade: null, verified: false } : null;
     }
@@ -1215,10 +1218,13 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
       box.dataset.keys = priceKeys.join(',');
       box.innerHTML = '';
       const rank = { VIP:0, R:1, S:2, A:3, B:4, C:5 };
-      priceKeys.slice().sort((a,b)=> (rank[a]??9) - (rank[b]??9)).forEach(g=>{
-        addSeatGradeBtn(g, g + ' ' + Number(season.prices[g]).toLocaleString() + '원', 'grade');
-      });
-      addSeatGradeBtn('__RESTRICTED__', '시야제한석', 'restricted');
+      priceKeys.slice()
+        .filter(g => g !== '시야제한')   // 시야제한은 아래 전용 버튼이 담당
+        .sort((a,b)=> (rank[a]??9) - (rank[b]??9)).forEach(g=>{
+          addSeatGradeBtn(g, g + ' ' + Number(season.prices[g]).toLocaleString() + '원', 'grade');
+        });
+      const rp = season.prices['시야제한'];
+      addSeatGradeBtn('시야제한', rp != null ? '시야제한석 ' + Number(rp).toLocaleString() + '원' : '시야제한석', 'restricted');
     }
   }
   function addSeatGradeBtn(value, label, kind){
@@ -1228,7 +1234,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
     b.textContent = label;
     b.addEventListener('click', ()=>{
       $('seatGradeBtns').querySelectorAll('.pill').forEach(x=> x.classList.toggle('active', x === b));
-      if(kind === 'restricted'){ state.seatRestricted = true; state.seatGrade = null; }
+      if(kind === 'restricted'){ state.seatRestricted = true; state.seatGrade = '시야제한'; }
       else { state.seatRestricted = false; state.seatGrade = value; }
       resolveSelectedDiscount();
       syncTicketFields();
@@ -1945,6 +1951,7 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         grade_source: seatInfo.grade ? 'venue' : (state.seatGrade ? 'user' : null),
         is_aisle: seatInfo.is_aisle,
         is_restricted: seatInfo.is_restricted || state.seatRestricted || null,
+        is_wheelchair: seatInfo.is_wheelchair,
         zone: seatInfo.zone,
         side_zone: seatInfo.side_zone,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
         side_block: seatInfo.side_block,

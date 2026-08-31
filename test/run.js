@@ -108,6 +108,25 @@ const asz = { venue_id: 'yes24-stage-1', aisle_seats: [{ floor: 1, row_from: 'A'
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 11 }).is_aisle, true, 'aisle_seats 매칭 → true');
 eq(DB.resolveSeat(asz, { floor: 1, row: 'C', number: 15 }).is_aisle, false, 'aisle_seats 명단 있으면 false 도 확정');
 
+// 시야제한석 = 등급 "시야제한" — resolveSeat.is_restricted 도 true, listPrice 는 그 정가
+const siyaSeason = {
+  venue_id: 'yes24-stage-1',
+  prices: { R: 70000, '시야제한': 45000 },
+  seat_grades: [{ floor: 1, row_from: 'A', row_to: 'C', seat_from: 1, seat_to: 2, grade: '시야제한' }],
+};
+eq(DB.resolveSeat(siyaSeason, { floor: 1, row: 'B', number: 1 }).grade, '시야제한', 'seat_grades 시야제한 매칭');
+eq(DB.resolveSeat(siyaSeason, { floor: 1, row: 'B', number: 1 }).is_restricted, true, '시야제한 등급이면 is_restricted true');
+eq(DB.listPrice(siyaSeason, '시야제한').price, 45000, 'listPrice 시야제한 = 45000');
+eq(DB.listPrice({ prices: { R: 70000, '시야제한석': 77000 }, prices_verified: true }, '시야제한').price, 77000,
+   'listPrice: 등급 "시야제한" 인데 정가 키가 "시야제한석" 이어도 잡힌다 (끝 석 보정)');
+
+// season.wheelchair_seats — 관리자가 배치도에서 표시한 장애인석 명단
+const wcz = { venue_id: 'yes24-stage-1', wheelchair_seats: [{ floor: 1, row_from: 'A', row_to: 'A', numbers: [1, 2] }] };
+eq(DB.resolveSeat(wcz, { floor: 1, row: 'A', number: 1 }).is_wheelchair, true, 'wheelchair_seats 매칭 → true');
+eq(DB.resolveSeat(wcz, { floor: 1, row: 'A', number: 5 }).is_wheelchair, false, 'wheelchair_seats 명단 있으면 false 도 확정');
+eq(DB.resolveSeat({ venue_id: 'yes24-stage-1' }, { floor: 1, row: 'A', number: 1 }).is_wheelchair, null, '명단 없으면 null (모름)');
+ok(!DB.resolveSeat({ venue_id: 'yes24-stage-1' }, { floor: 1, row: 'A', number: 1 }).unknown.some(u => u.indexOf('장애인') > -1), '장애인석 미수집은 unknown 에 안 넣는다');
+
 // season.side_seats — 관리자가 직접 표시한 극싸/사이드가 블럭 기하보다 우선
 const ssz = { venue_id: 'yes24-stage-1',
   side_seats: [{ floor: 1, row_from: 'D', row_to: 'D', numbers: [4, 24], zone: 'EDGE' }] };

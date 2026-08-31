@@ -263,6 +263,7 @@ window.GON_DB = (function(){
       grade: null,
       is_aisle: null,
       is_restricted: null,
+      is_wheelchair: null,      // 장애인석(휠체어석) — season.wheelchair_seats 명단에 있을 때만 true/false
       zone: null,
       side_zone: null,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
       side_block: null,
@@ -308,19 +309,31 @@ window.GON_DB = (function(){
     }
     if(out.is_aisle == null) out.unknown.push('통로 인접 여부 (좌석배치도 미수집)');
 
-    // ③ 시야제한석 — 공연/극장 명단이 있으면 false 도 확정할 수 있다
+    // ③ 시야제한석 — 이제 "등급"이다 (정가가 따로라서). grade === '시야제한' 이면 is_restricted 도 참.
+    //    레거시: season.restricted_seats / venue.restricted_seats 명단도 계속 읽는다 (옛 데이터 호환).
+    if(out.grade === '시야제한'){
+      out.is_restricted = true;
+    }
     const restrList = (season && season.restricted_seats && season.restricted_seats.length)
       ? season.restricted_seats
       : ((venue && venue.collected) ? (venue.restricted_seats || []) : null);
     if(restrList){
-      out.is_restricted = restrList.some(function(z){
+      if(restrList.some(function(z){
         if(z.row_from != null || z.row_to != null) return seatInZone(z, seat, venue);
         return z.floor === seat.floor &&
           String(z.row).toUpperCase() === String(seat.row).toUpperCase() &&
           (z.numbers || []).indexOf(seat.number) > -1;
-      });
-    } else {
+      })) out.is_restricted = true;
+      else if(out.is_restricted == null) out.is_restricted = false;
+    } else if(out.is_restricted == null){
       out.unknown.push('시야제한석 명단 (미수집)');
+    }
+
+    // ③-b 장애인석(휠체어석) — 관리자가 좌석배치도에서 표시한 명단 (season.wheelchair_seats).
+    //   명단이 있으면 false 도 확정. 없으면 null 로 두고 unknown 에도 안 넣는다 —
+    //   장애인석 분리 표기가 있는 극장 자체가 드물어서, 매 상담에 "미수집" 을 띄우면 소음이다.
+    if(season && Array.isArray(season.wheelchair_seats) && season.wheelchair_seats.length){
+      out.is_wheelchair = season.wheelchair_seats.some(function(z){ return seatInZone(z, seat, venue); });
     }
 
     // ④ 사이드 구간 (PRD §5.2)
@@ -361,6 +374,13 @@ window.GON_DB = (function(){
     if(!season || !season.prices) return null;
     if(grade && season.prices[grade] != null){
       return { price: season.prices[grade], grade: grade, verified: !!season.prices_verified };
+    }
+    // 등급 표기 흔들림 보정 — "시야제한" ↔ "시야제한석", "R" ↔ "R석" 등 끝의 '석' 유무
+    if(grade){
+      var alt = /석$/.test(grade) ? grade.replace(/석$/, '') : grade + '석';
+      if(season.prices[alt] != null){
+        return { price: season.prices[alt], grade: grade, verified: !!season.prices_verified };
+      }
     }
     // 등급을 모를 때: 시즌에 등급이 하나뿐이면 그것으로 본다.
     // 여러 등급이 있는데 어느 것인지 모르면 추측하지 않는다.

@@ -12,7 +12,7 @@ create table if not exists consultations (
   work_title   text,
   season_id    text,
   season_label text,
-  seat         jsonb,          -- {floor,row,number,block,grade,is_restricted,side_zone,...}
+  seat         jsonb,          -- {floor,row,number,block,grade,is_restricted,is_wheelchair,side_zone,...}
   paid         integer,        -- 지불액
   verdict      text,           -- GO | NO_GO | ...
   axis_scores  jsonb,          -- {DEOKSIM,SIYA,COST,EVENT,CONDITION}  (muted 는 null)
