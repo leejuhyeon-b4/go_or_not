@@ -440,6 +440,10 @@ window.GON = (function(){
        선호 예외: FRONT면 감점 없음 / ACTOR_PATH면 EDGE만 -0.5·SIDE 0 /
                   VALUE인데 극싸라 등급이 낮아진 경우 감점 없음. */
     const sideZone = b.seat.side_zone || null;
+    const blockSide = b.seat.side_block_side || null;   // 'left'|'center'|'right' — 물리 위치
+    let lean = (b.seat.side_lean != null) ? b.seat.side_lean : null;   // 0(중앙쪽)~1(벽쪽)
+    if(lean == null && sideZone) lean = sideZone === 'EDGE' ? 1 : 0.6;  // 명단만 있고 기하 없을 때
+    const sideLabel = s => s === 'left' ? '좌측' : s === 'right' ? '우측' : '중앙';
     let sidePenalty = 0, sideNote = '';
     if(sideZone === 'EDGE' || sideZone === 'SIDE'){
       const wantsFront = prefs.includes('FRONT');
@@ -470,6 +474,28 @@ window.GON = (function(){
       }
       if(sidePenalty < 0) drivers.push('SEAT_QUALITY');
       if(b.seat.side_estimate) sideNote += ' (극장 기본 배치 기준이라 확실하지 않습니다.)';
+    } else if(blockSide && blockSide !== 'center' && lean != null){
+      /* ── 극싸/사이드로 못박히진 않았지만 중앙에서 벗어난 사이드 블럭 (§5.2 연속 확장)
+         "왼블이 오른블보다 낫다" 는 여전히 안 매긴다. "중앙에서 얼마나 벗어났나" 만 위치에 비례해
+         완만하게 본다. lean 이 낮으면(통로·중앙 쪽 안쪽) 감점 없이 사실만 서술. */
+      const wantsFront = prefs.includes('FRONT');
+      const wantsPath  = prefs.includes('ACTOR_PATH');
+      const graded = (lean >= 0.3 && !wantsFront && !wantsPath)
+        ? Math.round(-0.6 * lean * 10) / 10 : 0;
+      sidePenalty = graded;
+      sideNote = ' ' + sideLabel(blockSide) + (lean < 0.3
+        ? ' 블럭이지만 중앙 통로 쪽에 가까운 안쪽 자리라 치우침은 크지 않습니다.'
+        : lean < 0.6
+          ? ' 블럭 가운데쯤이라 무대가 조금 치우쳐 보입니다.'
+          : ' 블럭 벽 쪽에 가까워 무대 안쪽이 조금 잘릴 수 있습니다.');
+      if(wantsFront || wantsPath){
+        sideNote += (wantsFront ? ' 앞을 최우선으로 고르셨어서' : ' 동선 선호라') + ' 점수엔 넣지 않았습니다.';
+      } else if(graded < 0){
+        drivers.push('SEAT_QUALITY');
+      }
+      if(b.seat.side_estimate) sideNote += ' (극장 기본 배치 기준입니다.)';
+    } else if(blockSide === 'center' && prefs.includes('CENTER')){
+      sideNote = ' 중앙 블럭이라 무대를 정면으로 봅니다.';
     }
 
     const axisScore = clamp(score + sidePenalty, -2, 2);
@@ -492,7 +518,10 @@ window.GON = (function(){
     // 좌석배치도로 아직 못 채운 것만 골라 한 문장으로. 채워졌으면 아무 말 안 한다.
     const gaps = [];
     if(paidGrade == null)            gaps.push('좌석 등급');
-    if(sideZone == null && b.seat.side_block == null) gaps.push('블럭 경계');
+    if(sideZone == null && b.seat.side_block == null && !blockSide) gaps.push('블럭 경계');
+    // 블럭 위치를 아는 경우엔 "좌우 판단 안 함" 문구를 빼고 sideNote 가 위치를 짚게 둔다
+    const dirPunt = blockSide ? '' : ' 좌우 어느 블럭이 유리한지는 오늘 연출에 달린 문제라 판단하지 않았습니다.';
+    const dirPuntFar = blockSide ? '' : ' 다만 어느 쪽 블럭이 유리한지는 오늘 연출을 모르므로 판단하지 않았습니다.';
     const dataCaveat = gaps.length
       ? ' ' + gaps.join('과 ') + ' 정보는 이 공연 좌석배치도에 아직 없어 그 부분은 판단에 넣지 않았습니다.'
       : '';
@@ -506,10 +535,10 @@ window.GON = (function(){
       detail = where + ' 자리입니다. 오늘 목적에 크게 어긋나지 않는 위치이고, 아쉬운 부분이 있더라도 관람 자체를 방해할 정도는 아닙니다. 시야 축에서는 무난한 쪽으로 봅니다.' + glassNote + dataCaveat;
     } else if(tier === 0){
       placard = place('입니다');
-      detail = where + ' 자리입니다. 시야 축에서 특별히 좋다고도 나쁘다고도 말하기 어려운 구간이라 중립으로 두었습니다. 좌우 어느 블럭이 유리한지는 오늘 연출에 달린 문제라 판단하지 않았습니다.' + glassNote + dataCaveat;
+      detail = where + ' 자리입니다. 시야 축에서 특별히 좋다고도 나쁘다고도 말하기 어려운 구간이라 중립으로 두었습니다.' + dirPunt + glassNote + dataCaveat;
     } else if(tier === -1){
       placard = place(', 조금 멀어요');
-      detail = where + ' 자리입니다. 무대와 거리가 있어 표정 단위의 관찰은 어려운 구간이고, 오늘 고르신 선호와도 조금 어긋납니다. 다만 어느 쪽 블럭이 유리한지는 오늘 연출을 모르므로 판단하지 않았습니다.' + glassNote + dataCaveat;
+      detail = where + ' 자리입니다. 무대와 거리가 있어 표정 단위의 관찰은 어려운 구간이고, 오늘 고르신 선호와도 조금 어긋납니다.' + dirPuntFar + glassNote + dataCaveat;
     } else {
       placard = place(', 각도 아쉬워요');
       detail = where + ' 자리입니다. 거리보다 내려다보는 각도가 이 자리의 성격을 결정하는 구간이고, 시야 축에서는 오늘 목적과 가장 멀다고 봅니다. 이 자리가 오늘 연출과 어떻게 맞물리는지까지는 판단하지 않았습니다.' + glassNote + dataCaveat;
@@ -554,7 +583,8 @@ window.GON = (function(){
                   (0.4 + (b.seat.is_aisle !== null ? 0.15 : 0)
                       + (paidGrade != null ? 0.15 : 0)
                       + (b.seat.zone ? 0.1 : 0)
-                      + (b.seat.side_zone && !b.seat.side_estimate ? 0.1 : 0)),
+                      + (b.seat.side_zone && !b.seat.side_estimate ? 0.1 : 0)
+                      + (b.seat.side_block_side ? 0.05 : 0)),
       placard: placard,
       detail: detail,
       missing_info: Array.from(new Set(missing)),

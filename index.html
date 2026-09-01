@@ -1955,6 +1955,8 @@ textarea{ resize:none; height:78px; font-size:14px; line-height:1.5; }
         zone: seatInfo.zone,
         side_zone: seatInfo.side_zone,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
         side_block: seatInfo.side_block,
+        side_block_side: seatInfo.side_block_side,   // 'left'|'center'|'right' — 물리 위치
+        side_lean: seatInfo.side_lean,          // 0(중앙쪽)~1(벽쪽) 치우침 정도
         side_source: seatInfo.side_source,      // 'season' | 'venue' | null
         side_estimate: seatInfo.side_estimate,
         row_index: GON_DB.rowIndex(seatIn.row, venue),

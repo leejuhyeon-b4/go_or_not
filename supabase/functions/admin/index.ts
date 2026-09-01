@@ -178,9 +178,11 @@ function validateImage(image_base64: unknown, mime_type: unknown): string {
 
 // 블록 side → 통로/벽 위치. 기존 seed.js 규칙과 동일:
 //   좌블 = 좌석번호 큰 쪽이 통로, 작은 쪽이 벽 / 우블은 반대 / 중블은 둘 다 없음
-function blockDefaults(side: string) {
-  if (side === "left") return { aisle_end: "max", wall_end: "min" };
-  if (side === "right") return { aisle_end: "min", wall_end: "max" };
+//   reverse(역순 번호 — 오른쪽이 1번인 극장)면 좌/우 블록의 번호 방향이 뒤집히므로 min↔max 를 바꾼다.
+//   side(물리 좌/우)는 그대로다 — 물리적으로 왼쪽 벽은 여전히 왼쪽 벽.
+function blockDefaults(side: string, reverse = false) {
+  if (side === "left")  return reverse ? { aisle_end: "min", wall_end: "max" } : { aisle_end: "max", wall_end: "min" };
+  if (side === "right") return reverse ? { aisle_end: "max", wall_end: "min" } : { aisle_end: "min", wall_end: "max" };
   return { aisle_end: null, wall_end: null };
 }
 type GradeZone = {
@@ -531,7 +533,8 @@ Deno.serve(async (req) => {
 
     // ---- 좌석배치도 저장 (공연 기준 — 기하는 극장, 등급·통로는 시즌) ----
     if (action === "save-seatmap") {
-      const { season_id, venue_id: venueIdIn, floors, grade_zones, aisle_seats, side_seats, cross_aisles, wheelchair_zones } = await req.json();
+      const { season_id, venue_id: venueIdIn, floors, grade_zones, aisle_seats, side_seats, cross_aisles, wheelchair_zones, reverse_numbering } = await req.json();
+      const reverseNum = reverse_numbering === true;   // 역순 번호(오른쪽 1번) — 좌/우 블록 통로·벽 방향이 뒤집힌다
       if (!season_id) throw new HttpError(400, "season_id 가 필요합니다.");
       const floorsObj = (floors && typeof floors === "object") ? floors : {};
       const { data: seasonRow, error: seErr } = await admin
@@ -557,7 +560,7 @@ Deno.serve(async (req) => {
             const side = ["left", "center", "right"].includes((b as { side?: string })?.side ?? "")
               ? (b as { side: string }).side
               : "center";
-            const d = blockDefaults(side);
+            const d = blockDefaults(side, reverseNum);
             const bb = b as { name?: string; seat_min?: unknown; seat_max?: unknown; row_from?: unknown; row_to?: unknown };
             const rf = String(bb?.row_from ?? "").trim().toUpperCase();
             const rt = String(bb?.row_to ?? "").trim().toUpperCase();
@@ -597,6 +600,9 @@ Deno.serve(async (req) => {
         // 층별 병합 — 메모에 없는 층의 블록은 그대로 둔다 (한 층만 고칠 때 나머지가 안 날아감)
         const prevFloors = (bg.floors && typeof bg.floors === "object") ? bg.floors as Record<string, unknown> : {};
         bg.floors = { ...prevFloors, ...cleanFloors };
+        // 역순 번호 힌트 — 관리자 도구가 이 배치도를 다시 격자로 불러올 때 토글을 복원하는 데 쓴다.
+        // (블록의 aisle_end/wall_end 는 이미 위에서 뒤집어 저장했으므로 data.js 는 이 값을 안 봐도 된다.)
+        bg.reverse_numbering = reverseNum;
         bg.is_estimate = false;
         bg.note = "관리자 좌석배치도 판독 (검토 완료) " + new Date().toISOString().slice(0, 10);
 
@@ -723,6 +729,12 @@ async function geminiExtractSeatmapMemo(b64: string, mime: string) {
   const prompt =
 `이 이미지는 한국 공연장의 좌석배치도다. 보이는 것만, 아래 형식의 줄로만 출력하라. 못 읽으면 그 줄은 생략. 설명·머리말 없이.
 한 줄 = 한 층·한 열컨텍스트. 층은 단독 줄로 "1층" 처럼.
+
+# 무시할 것 (절대 등급·블록으로 내보내지 마라)
+- 예매처/예매사이트/판매처 범례와 그 색상 구분: 인터파크, 인터파크티켓, NOL·놀·놀티켓, 예스24·YES24·예스24스테이지, 티켓링크, 멜론티켓, 하나티켓, 클립서비스, 플레이티켓, 대학로티켓, 스마트티켓, 사랑티켓, 나눔티켓 등.
+  좌석배치도에 "예매처별 잔여석" 색상 안내가 있어도 그건 좌석 등급이 아니다 — 등급 줄에 넣지 마라.
+- 제작사·극장 로고, 무대 방향 표시, 안내 문구.
+등급은 VIP·R·S·A·OP·시야제한 처럼 "가격 등급"으로 표시된 것만 낸다. 판단이 서지 않으면 등급 줄을 생략하라.
 
 # 블록 (앞열이 좁은 부채꼴이면 열범위별로 여러 줄)
 블록 좌 <시작>-<끝> / 중 <시작>-<끝> / 우 <시작>-<끝>

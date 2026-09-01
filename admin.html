@@ -363,6 +363,10 @@
           한 열 안에서 그을 땐 경계에서 살짝 떨려도 옆 열로 안 새요 — 일부러 옆 열로 가려면 그 열 안쪽까지 커서를 옮기세요.
           <b>지우개</b>를 켜면 같은 붓이 지우개가 돼요. <b>좌우대칭</b>을 켜두면 한쪽에 칠한 게 반대쪽 대칭 자리에도
           그대로 칠해져요(대부분 극장이 좌우 대칭이라 기본 켜짐 — 앞열 부채꼴처럼 비대칭이면 꺼두세요).<br>
+          <b>역순 번호</b>: 좌석번호가 <u>오른쪽부터 1번</u>인 극장이면 켜세요(왼쪽 끝이 제일 큰 번호 — 예: 아나키스트).
+          격자에 보이는 번호와 표로 나가는 번호(등급·통로·장애인석·극싸/사이드·블록 범위)가 전부 뒤집혀요.
+          좌/우 블록 위치는 그대로예요(왼쪽은 계속 "좌"). 세션에만 유지되니 <b>역순으로 저장한 배치도를
+          "아래 표 → 격자"로 다시 부를 땐 역순 번호를 먼저 켜세요.</b><br>
           <b>통로</b>는 통로에 <u>맞닿은 좌석</u>에 칠하세요 — 나란한 두 좌석이 통로면 그 사이가 블록 경계(좌/중/우)로 잡힙니다.
           번호 자체가 없는 자리는 <b>좌석없음</b>으로.<br>
           <b>극싸/사이드는 칠할 필요 없어요</b> — 통로 위치로 블록이 갈리면 PRD §5.2 규칙(벽·통로까지 거리)대로
@@ -797,6 +801,11 @@ function geoFloorsFor(venueId) {
   const bg = v && v.base_geometry;
   return (bg && bg.floors && typeof bg.floors === "object") ? bg.floors : {};
 }
+// 저장된 역순 번호 힌트 — 격자로 다시 불러올 때 '역순 번호' 토글을 복원한다.
+function geoReverseFor(venueId) {
+  const v = VENUES.find((x) => x.venue_id === venueId);
+  return !!(v && v.base_geometry && v.base_geometry.reverse_numbering);
+}
 
 // 저장된 정보 → 사람이 읽을 메모 (parseSeatMemo 문법). 고속도로는 파서가 안 읽어 주석(#)으로만.
 let seatMemoAuto = "";   // 마지막으로 자동 생성한 메모 — 사용자가 안 고쳤을 때만 덮는다
@@ -884,6 +893,12 @@ function renderCurSeatSeason() {
   const hw = Array.isArray(s.cross_aisles) ? s.cross_aisles : [];
   const geoFloors = geoFloorsFor(s.venue_id);
   const blocks = blocksFromGeo(geoFloors);
+  // 저장된 블록이 있는 배치도면 그때 쓴 역순 여부에 토글을 맞춰 둔다 (다시 칠하거나 저장할 때 방향이 안 뒤집히게).
+  // 저장된 게 없으면(새 배치도) 사용자가 세션에서 켠 토글을 건드리지 않는다.
+  if (blocks.length) {
+    gpReverse = geoReverseFor(s.venue_id);
+    if (gpRows.length) { gpRenderTools(); gpRenderGrid(); }
+  }
   $("vcurInfo").innerHTML =
     chip(blocks.length ? "ok" : "mut", "블록 " + blocks.length) + " " +
     chip(zg.length ? "ok" : "mut", "등급 " + zg.length) + " " +
@@ -1146,6 +1161,9 @@ function readNumRows(box) {
      A-B열 통로 8,9,40,41                        (통로석/통로)
      A-B열 1-2번 시야제한                        (시야제한석 = 등급. "A-B열 시야제한 1,2" 옛 표기도 받는다)
 */
+// 예매처 이름이 등급으로 새어드는 걸 막는다 — 좌석배치도에 "예매처별 잔여석" 색상 범례가 있으면
+// 제미나이/클로드가 그 색을 등급으로 읽어오는 일이 있다. 알려진 예매처는 등급에서 걷어낸다.
+const VENDOR_RE = /인터파크|예스\s*24|yes\s*24|예스24스테이지|티켓링크|멜론\s*티켓|하나\s*티켓|클립서비스|플레이\s*티켓|대학로티켓|스마트\s*티켓|사랑\s*티켓|나눔\s*티켓|놀\s*티켓|놀티켓|예매처|예매사이트|판매처/i;
 function parseSeatMemo(text) {
   const out = { blocks: [], grades: [], aisles: [], wheel: [], sides: [] };
   let floor = 1;
@@ -1214,6 +1232,8 @@ function parseSeatMemo(text) {
       if (g) out.grades.push({ floor, from_row: rf, to_row: rt, row_parity: parity, from_seat: fs, to_seat: ts, grade: g });
     }
   });
+  out.grades = out.grades.filter((z) => !VENDOR_RE.test(z.grade));
+  out.blocks = out.blocks.filter((z) => !VENDOR_RE.test(z.name));
   return out;
 }
 
@@ -1228,7 +1248,8 @@ $("claudePromptBox").value =
 1-15열 통로 8,9,40,41                  ← 통로석 있으면
 1열 장애인석 1,2                       ← 휠체어석/장애인석 표시 있으면
 
-여러 층이면 층마다 반복. 실제로 보이는 것만 적고, 안 보이면 그 줄은 빼.`;
+여러 층이면 층마다 반복. 실제로 보이는 것만 적고, 안 보이면 그 줄은 빼.
+※ 예매처(인터파크·NOL·예스24·티켓링크·멜론티켓 등) 색상 범례나 "예매처별 잔여석" 안내는 등급이 아니야 — 무시하고 절대 등급 줄에 넣지 마.`;
 $("claudePromptCopy").onclick = async () => {
   try {
     await navigator.clipboard.writeText($("claudePromptBox").value);
@@ -1326,6 +1347,11 @@ let gpEls = [];         // 같은 좌표의 <td>
 let gpTool = { type: "grade", value: "VIP" };
 let gpErase = false, gpFree = false, gpDrag = null, gpSel = [];
 let gpMirror = true;   // 좌우대칭 — 대부분 극장이 좌우 대칭이라 기본 켜짐, 앞열 부채꼴 등 비대칭이면 꺼서 씀
+let gpReverse = false; // 역순 번호 — 좌석번호가 오른쪽부터 1번인 극장(왼쪽 끝이 큰 번호, 예: 아나키스트).
+                       //   물리 열 인덱스는 그대로 두고 "번호"만 뒤집는다: 격자 표시·표 압축(등급/통로/장애인석/
+                       //   극싸·사이드/블록)에 나가는 좌석번호가 전부 gpCols-c 로 바뀐다. 블록 좌/우 "위치"는
+                       //   물리 기준이라 안 바뀌고(왼쪽은 계속 "좌"), seat_min/max 범위만 뒤집힌 번호로 나간다.
+                       //   세션 한정 — 저장 안 되니 역순으로 저장한 배치도를 "아래 표 → 격자"로 다시 부를 땐 먼저 켤 것.
 let gpRowTrs = [];     // 실제 좌석 행 <tr> — 고속도로 밑줄(.gp-row-hwy) 토글용
 
 // side: 수동 극싸/사이드('EDGE'|'SIDE'), null=미지정(자동 미리보기 표시).
@@ -1335,9 +1361,11 @@ const gpNewCell = () => ({ grade: null, aisle: false, wheel: false, side: null, 
 // num 에 지정한 값을 쓴다(트리플클릭으로 지정). 저장(등급/통로/장애인석/극싸·사이드)엔 이 번호가
 // 나가고 — 실제 티켓 번호와 맞아야 상담 때 조회가 되니까 — 블록 기하(좌/중/우 폭)는 항상 물리적
 // 칸 위치(c+1) 기준으로 그대로 둔다(벽·통로 거리는 실제 자리 기준이라 번호와 무관해야 해서).
+function gpDefaultNum(c) { return gpReverse ? gpCols - c : c + 1; }   // 재지정 안 한 칸의 원래 좌석번호
+function gpColOfNum(n) { return gpReverse ? gpCols - n : n - 1; }     // 좌석번호 → 물리 열 인덱스 (역함수)
 function gpSeatNumAt(r, c) {
   const n = gpCells[r][c].num;
-  return n != null ? n : c + 1;
+  return n != null ? n : gpDefaultNum(c);
 }
 function gpColor(g) { const i = gpGrades.indexOf(g); return GP_PALETTE[(i < 0 ? 0 : i) % GP_PALETTE.length]; }
 function gpFloor() { return Number(gpActiveFloor); }
@@ -1463,6 +1491,7 @@ function gpRenderTools() {
   h += btn("highway", "고속도로", "", gpTool.type === "highway");
   h += '<span class="gp-sep"></span>';
   h += btn("mirror", "좌우대칭", "", gpMirror);
+  h += btn("reverse", "역순 번호", "", gpReverse);
   h += btn("free", "자유칠", "", gpFree);
   h += btn("erase", "지우개", "", gpErase);
   $("gpTools").innerHTML = h;
@@ -1475,6 +1504,7 @@ $("gpTools").addEventListener("click", (e) => {
   if (k === "erase") gpErase = !gpErase;
   else if (k === "free") gpFree = !gpFree;
   else if (k === "mirror") gpMirror = !gpMirror;
+  else if (k === "reverse") { gpReverse = !gpReverse; if (gpRows.length) gpRenderGrid(); }
   else if (k === "addgrade") {
     const g = (window.prompt("추가할 등급 이름 (예: VIP, R, OP)") || "").trim().toUpperCase();
     if (!g) return;
@@ -1503,7 +1533,7 @@ function gpBuild() {
 }
 function gpRenderGrid() {
   let h = '<table class="gp-grid"><thead><tr><th></th>';
-  for (let c = 0; c < gpCols; c++) h += '<th data-col="' + c + '">' + (c + 1) + "</th>";
+  for (let c = 0; c < gpCols; c++) h += '<th data-col="' + c + '">' + gpDefaultNum(c) + "</th>";
   h += "</tr></thead><tbody>";
   for (let r = 0; r < gpRows.length; r++) {
     const hasHwy = gpHighways.indexOf(r) > -1;
@@ -1644,7 +1674,7 @@ function gpRenumber(r, c) {
   const st = gpCells[r][c];
   const cur = gpSeatNumAt(r, c);
   const raw = window.prompt(
-    gpRows[r] + "열 " + (c + 1) + "번째 칸의 실제 좌석번호\n(장애인석 등 이어진 번호일 때만 — 비우면 원래 번호 " + (c + 1) + "로 되돌림)",
+    gpRows[r] + "열 " + (c + 1) + "번째 칸의 실제 좌석번호\n(장애인석 등 이어진 번호일 때만 — 비우면 원래 번호 " + gpDefaultNum(c) + "로 되돌림)",
     String(cur));
   if (raw == null) return;
   const trimmed = raw.trim();
@@ -1739,7 +1769,11 @@ function gpGradeSegs(r) {
     const st = gpCells[r][c];
     const num = gpSeatNumAt(r, c);
     const g = (!st.off && st.grade) ? st.grade : null;
-    if (cur && st.num == null && g === cur.grade && num === cur.to + 1) { cur.to = num; continue; }
+    // 이웃 칸이 이어진 번호면 한 구간으로 접는다 — 역순이면 열을 따라 번호가 줄어드니 from 쪽으로도 확장.
+    if (cur && st.num == null && g === cur.grade) {
+      if (num === cur.to + 1) { cur.to = num; continue; }
+      if (num === cur.from - 1) { cur.from = num; continue; }
+    }
     if (cur) out.push(cur);
     cur = g ? { grade: g, from: num, to: num } : null;
   }
@@ -1749,7 +1783,7 @@ function gpGradeSegs(r) {
 function gpNums(r, pick) {
   const out = [];
   for (let c = 0; c < gpCols; c++) { const st = gpCells[r][c]; if (!st.off && pick(st)) out.push(gpSeatNumAt(r, c)); }
-  return out;
+  return out.sort((a, b) => a - b);   // 역순이면 열 순서가 내림차순이라 다시 오름차순으로
 }
 function gpFillTables() {
   if (!gpRows.length) { setMsg($("gpMsg"), "먼저 격자를 만드세요.", "err"); return; }
@@ -1780,9 +1814,12 @@ function gpFillTables() {
     let mid = 0;
     runs.forEach((run, i) => {
       const isFirst = i === 0, isLast = i === runs.length - 1;
-      const side = isFirst ? "left" : isLast ? "right" : "center";
+      const side = isFirst ? "left" : isLast ? "right" : "center";   // 위치는 물리 기준 — 역순이어도 왼쪽은 "좌"
       const name = isFirst ? "좌" : isLast ? "우" : (++mid > 1 ? "중" + mid : "중");
-      blocks.push({ floor: f, name, side, seat_min: run[0], seat_max: run[1], row_from: rf, row_to: rt });
+      // seat_min/max 는 상담 때 손님이 말한 좌석번호와 맞춰야 하니 역순이면 뒤집힌 번호로 낸다.
+      const smin = gpReverse ? gpCols - run[1] + 1 : run[0];
+      const smax = gpReverse ? gpCols - run[0] + 1 : run[1];
+      blocks.push({ floor: f, name, side, seat_min: smin, seat_max: smax, row_from: rf, row_to: rt });
     });
   });
   const highways = gpHighways.slice().sort((a, b) => a - b).map((r) => ({ floor: f, after_row: gpRows[r] }));
@@ -1800,6 +1837,7 @@ function gpFillTables() {
     f + "층 → 등급 " + grades.length + " · 통로 " + aisles.length +
     " · 장애인석 " + wheel.length + " · 극싸/사이드(수동) " + sides.length + " · 블록 " + blocks.length + " · 고속도로 " + highways.length +
     " 줄 (아래 표 확인 후 저장)" +
+    (gpReverse ? "\n역순 번호로 계산했어요 — 왼쪽 끝 " + gpCols + "번, 오른쪽 끝 1번. 표의 좌석번호가 실제 티켓과 맞는지 확인하세요." : "") +
     (single ? "\n통로가 표시되지 않은 열 묶음 " + single + "개는 블록(좌/중/우)을 만들지 않았어요." : "") +
     (renum ? "\n번호 재지정(트리플클릭) " + renum + "칸 반영 — 나중에 \"아래 표 → 격자\"로 이 층을 다시 불러오면" +
       " 그 특수 번호는 원래 칸이 아니라 그 번호의 칸으로 표시되니, 필요하면 다시 트리플클릭으로 지정하세요." : ""), "ok");
@@ -1860,19 +1898,19 @@ function gpLoadFromTables() {
     cover.forEach((bs, r) => {
       if (!bs) return;
       for (let c = 0; c < gpCols; c++) {
-        const n = c + 1;
+        const n = gpSeatNumAt(r, c);   // 역순이면 물리 열의 실제 좌석번호
         if (!bs.some((b) => n >= b.seat_min && n <= b.seat_max)) gpCells[r][c].off = true;
       }
     });
   }
   const paintNums = (list, set) => list.forEach((z) => gpRowsOf(z).forEach((r) => {
-    (z.numbers || []).forEach((n) => { if (n >= 1 && n <= gpCols) set(gpCells[r][n - 1], z); });
+    (z.numbers || []).forEach((n) => { if (n >= 1 && n <= gpCols) set(gpCells[r][gpColOfNum(n)], z); });
   }));
   const gz = mine(readGradeRows());
   gz.forEach((z) => { if (z.grade && gpGrades.indexOf(z.grade) < 0) gpGrades.push(z.grade); });
   gz.forEach((z) => gpRowsOf(z).forEach((r) => {
     const a = z.from_seat || 1, b = z.to_seat || gpCols;
-    for (let n = a; n <= Math.min(b, gpCols); n++) gpCells[r][n - 1].grade = z.grade;
+    for (let n = a; n <= Math.min(b, gpCols); n++) if (n >= 1) gpCells[r][gpColOfNum(n)].grade = z.grade;
   }));
   paintNums(mine(readNumRows($("saisles"))), (st) => { st.aisle = true; });
   paintNums(mine(readNumRows($("swheel"))), (st) => { st.wheel = true; });
@@ -1988,7 +2026,7 @@ $("ssaveBtn").onclick = async () => {
     const venueId = (!typedVenue && cs && cs.venue_id) ? cs.venue_id : await resolveVenueId($("seatVenueInput"));
     const season_id = await resolveSeasonId($("seatSeason"), venueId);
     const payload = { season_id, venue_id: venueId, grade_zones, aisle_seats, wheelchair_zones, side_seats, cross_aisles };
-    if (Object.keys(floors).length) payload.floors = floors;
+    if (Object.keys(floors).length) { payload.floors = floors; payload.reverse_numbering = gpReverse; }
     const res = await api("save-seatmap", payload);
     setMsg($("ssaveMsg"),
       "저장 완료 — 등급 " + (res.seat_grades || 0) + " · 통로 " + (res.aisle_seats || 0) + " · 장애인석 " + (res.wheelchair || 0) + " · 극싸/사이드 " + (res.side_seats || 0) + " · 고속도로 " + (res.cross_aisles || 0) + ". 상담 앱 새로고침하면 반영.", "ok");

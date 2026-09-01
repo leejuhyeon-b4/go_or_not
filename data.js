@@ -159,7 +159,10 @@ window.GON_DB = (function(){
   function classifySide(venue, season, seat){
     // determined = 이 좌석의 사이드 구간을 확정했는가 (null=일반 도 확정에 포함).
     // sideish && !determined 이면 "사이드 같은데 못 정함" → ⚠️
-    const out = { zone:null, block_label:null, source:null, estimate:false,
+    // block_side: 'left'|'center'|'right'|null (물리 위치, 좌/우 우열 판단 아님 — §5.2)
+    // lean: 0(중앙 통로 쪽 끝)~1(벽 쪽 끝). "얼마나 치우쳤나"의 연속 척도.
+    //       EDGE/SIDE 는 이 척도의 강한 끝을 강제 감점으로 못박은 것이고, lean 은 그 사이 구간까지 잰다.
+    const out = { zone:null, block_label:null, block_side:null, lean:null, source:null, estimate:false,
                   sideish:false, determined:false };
     if(!seat || seat.floor == null) return out;
 
@@ -217,9 +220,12 @@ window.GON_DB = (function(){
     }
 
     out.block_label = blk.name || null;
+    out.block_side  = (blk.side === 'left' || blk.side === 'right' || blk.side === 'center')
+      ? blk.side
+      : (blk.wall_end == null ? 'center' : null);
 
-    // ③ 중앙 블럭 → 감점 대상 아님 (확정)
-    if(blk.wall_end == null){ out.determined = true; return out; }
+    // ③ 중앙 블럭 → 감점 대상 아님 (확정). 정면이라 lean 0.
+    if(blk.wall_end == null){ out.lean = 0; out.determined = true; return out; }
     out.sideish = true;
 
     // ④ 사이드 블럭 — 좌석번호가 있어야 구간을 잰다
@@ -233,6 +239,12 @@ window.GON_DB = (function(){
                  : blk.aisle_end === 'max' ? (blk.seat_max - seat.number + 1)
                                            : null;
     out.zone = sideZoneFor(width, dWall, dAisle);
+    // 통로(중앙) 쪽 끝 = 0, 벽 쪽 끝 = 1. 못 재면 zone 으로 대략치.
+    if(dAisle != null && width > 1){
+      out.lean = Math.round(Math.min(1, Math.max(0, (dAisle - 1) / (width - 1))) * 100) / 100;
+    } else {
+      out.lean = out.zone === 'EDGE' ? 1 : out.zone === 'SIDE' ? 0.6 : 0.3;
+    }
     out.determined = true;
     return out;
   }
@@ -267,6 +279,8 @@ window.GON_DB = (function(){
       zone: null,
       side_zone: null,          // 'EDGE' | 'SIDE' | null (PRD §5.2)
       side_block: null,
+      side_block_side: null,    // 'left' | 'center' | 'right' | null — 물리 위치 (좌/우 우열 아님)
+      side_lean: null,          // 0(중앙쪽)~1(벽쪽) — 치우침 정도 (§5.2)
       side_source: null,        // 'season' | 'venue' | null
       side_estimate: false,
       cross_aisle: null,        // 'before' | 'after' | null — 이 열 바로 앞/뒤 가로통로("고속도로")
@@ -341,6 +355,10 @@ window.GON_DB = (function(){
     //   그 층에 명단이 있으면 그걸 신뢰(명단에 없는 좌석은 일반). 없으면 블럭 기하로 추정.
     const sc = classifySide(venue, season, seat);
     out.side_block = sc.block_label;
+    // 물리 위치(좌/중/우)와 치우침 정도 — 강제 감점(EDGE/SIDE) 여부와 무관하게 항상 넘긴다.
+    // 시야 에이전트가 "중앙에서 얼마나 벗어났나" 를 완만하게 반영하는 데 쓴다 (§5.2).
+    out.side_block_side = sc.block_side || null;
+    out.side_lean = (sc.lean != null) ? sc.lean : null;
 
     const sideList = (season && Array.isArray(season.side_seats)) ? season.side_seats : null;
     const floorHasSideList = sideList && sideList.some(function(z){ return z.floor === seat.floor; });

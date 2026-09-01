@@ -213,6 +213,16 @@ ok(rEdge.unknown.some(u => u.indexOf('사이드 구간') > -1), 'OL EDGE — 추
 const rC = DB.resolveSeat(haemong, { floor: 1, row: 'B', number: 12, block: '중앙' });
 ok(!rC.unknown.some(u => u.indexOf('사이드 구간') > -1), '중앙석 — 사이드 노트 없음');
 
+// block_side / lean — 강제 감점(EDGE/SIDE) 여부와 무관하게 위치·치우침을 넘긴다 (§5.2)
+const bs = s => DB.resolveSeat(haemong, s).side_block_side;
+const ln = s => DB.resolveSeat(haemong, s).side_lean;
+eq(bs({ floor: 1, row: 'B', number: 1, block: 'OL' }), 'left', 'OL — block_side left');
+eq(bs({ floor: 1, row: 'B', number: 24, block: 'OR' }), 'right', 'OR — block_side right');
+eq(bs({ floor: 1, row: 'B', number: 12, block: '중앙' }), 'center', 'C — block_side center');
+eq(ln({ floor: 1, row: 'B', number: 1, block: 'OL' }), 1, 'OL n1 벽쪽 끝 → lean 1');
+eq(ln({ floor: 1, row: 'B', number: 4, block: 'OL' }), 0, 'OL n4 통로쪽 끝 → lean 0');
+eq(ln({ floor: 1, row: 'B', number: 12, block: '중앙' }), 0, 'C 중앙 → lean 0');
+
 /* ============================================================
    3. engine.runConsult — 결론 · 축 점수 스냅샷
    ============================================================ */
@@ -271,6 +281,13 @@ const BUNDLES = {
     seat: { side_zone: 'EDGE', side_block: 'OL', side_source: 'venue', side_estimate: true },
     seat_preference: { first: 'CENTER', second: null, actor_path_side: null },
   }),
+
+  // 극싸/사이드로 못박히진 않았지만 사이드 블럭 안쪽 — 위치에 비례한 완만한 감점 (§5.2 연속)
+  side_inner_graded: bundle({
+    seat: { side_zone: null, side_block: 'OL', side_block_side: 'left', side_lean: 0.5,
+            side_source: 'venue', side_estimate: false },
+    seat_preference: { first: 'CENTER', second: null, actor_path_side: null },
+  }),
 };
 
 // 스냅샷 기대값 — "지금 동작" 고정 (의도한 변경이면 갱신)
@@ -278,6 +295,7 @@ const EXPECT = {
   demo_case1:        { verdict: 'GO',    DEOKSIM: 2, SIYA: 2, COST: 2, EVENT: 0, CONDITION: 'muted' },
   veto_condition:    { verdict: 'NO_GO', DEOKSIM: 2, SIYA: 2, COST: 2, EVENT: 2, CONDITION: -2 },
   side_edge_no_pref: { verdict: 'GO',    DEOKSIM: 2, SIYA: 1, COST: 2, EVENT: 0, CONDITION: 'muted' },
+  side_inner_graded: { verdict: 'GO',    DEOKSIM: 2, SIYA: 1.7, COST: 2, EVENT: 0, CONDITION: 'muted' },
 };
 
 const results = {};

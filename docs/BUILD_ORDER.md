@@ -120,16 +120,20 @@ alter table seasons
   add column if not exists wheelchair_seats jsonb default '[]'::jsonb;
 -- open_date / close_date / running_time / has_intermission / prices 는 CREATE 에 이미 있음
 ```
-> 현재 라이브(`ewemqbatkrmvzevmlteo`): Edge Function `admin` **v22**, 위 컬럼 전부 적용됨, pg_cron 등록됨.
+> 현재 라이브(`ewemqbatkrmvzevmlteo`): Edge Function `admin` **v23** (2026-09-01 — 예매처 무시 프롬프트 + 역순 번호 `blockDefaults`), 위 컬럼 전부 적용됨, pg_cron 등록됨.
 
 ---
 
 ## 다음 작업
 
-1. **에이전트 Claude API 연결** (PRD §14 Phase 1 "최우선", 아직 0%) —
+1. **에이전트 LLM API 연결** (PRD §14 Phase 1 "최우선", 아직 0%) —
    지금 `engine.js` 가 축 점수 + 문구를 전부 하드코딩. 설계는 *코드가 밴드·가드레일 확정 → LLM 이 종합·결론·서술*.
-   - Claude API 키(유료 티어 필수 — 상담 데이터라 무료 티어 금지, PRD B-4·§12.1)
+   - **에이전트별 모델 분리 [2026-09-01 결정]:** 기본은 Claude, **시야 에이전트는 더 싼 API(그록 등, `grok-3-mini` 말고 상위 모델)**.
+     에이전트마다 `provider`/`model` 을 지정 가능하게 (Edge Function 라우팅).
+   - API 키(유료 티어 필수 — 상담 데이터라 무료 티어 금지, PRD B-4·§12.1). Claude + 그록 둘 다 시크릿에.
    - Edge Function (`admin` 처럼, 키 서버 보관) — 번들 받아 5 에이전트 + 팀장 호출
+   - **월 비용 한도**: `llm_usage` 테이블에 월별 누적, `LLM_MONTHLY_CAP_USD` 초과 시 그록/클로드 호출 스킵하고 `engine.js` 결과만 반환
+   - **결과 캐시**: 같은 입력 번들(회차+좌석+답변 전부) 해시로 `consult_cache` 조회 → 히트면 저장된 결과 그대로, API 미호출
    - 프롬프트 6개 작성 (`test_cases.md` 6건이 회귀 기준, PRD §13.6 출력 스키마)
    - `consult.html` 연결 — `engine.js` 는 가드레일·밴드 계산 + **API 실패 시 폴백**으로 유지
 2. **호스팅** — GitHub Pages / Netlify 등에 정적 배포. 배포 후 그 도메인을 `ADMIN_ALLOWED_ORIGINS` 시크릿에 추가
