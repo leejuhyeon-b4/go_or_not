@@ -1807,18 +1807,25 @@ function gpFillTables() {
       sides.push({ floor: f, row_parity: null, row_from: rf, row_to: rt, numbers: nums, zone });
     });
   });
-  // 블록: 덩어리가 하나뿐이면 좌/중/우를 알 수 없으니 만들지 않는다 (극장 기본 기하를 그대로 둔다)
+  // 블록: 통로로 갈린 덩어리가 2개 이상이면 좌/중/우. 1개면 "통로 없이 이어진 열"이라
+  // 통짜 중앙 블록 하나로 낸다 — 상담 때 "블럭 미수집"이 아니라 "좌우 구분 없는 열"로 읽히게.
+  // seat_min/max 는 상담 때 손님이 말한 좌석번호와 맞춰야 하니 역순이면 뒤집힌 번호로 낸다.
+  const runToNums = (a, b) => gpReverse ? [gpCols - b + 1, gpCols - a + 1] : [a, b];
   let single = 0;
   gpFoldRows(gpRows.map((_, r) => gpRuns(r)), (runs, rf, rt) => {
-    if (runs.length < 2) { single++; return; }
+    if (!runs.length) return;
+    if (runs.length === 1) {
+      const [smin, smax] = runToNums(runs[0][0], runs[0][1]);
+      blocks.push({ floor: f, name: "중", side: "center", seat_min: smin, seat_max: smax, row_from: rf, row_to: rt });
+      single++;
+      return;
+    }
     let mid = 0;
     runs.forEach((run, i) => {
       const isFirst = i === 0, isLast = i === runs.length - 1;
       const side = isFirst ? "left" : isLast ? "right" : "center";   // 위치는 물리 기준 — 역순이어도 왼쪽은 "좌"
       const name = isFirst ? "좌" : isLast ? "우" : (++mid > 1 ? "중" + mid : "중");
-      // seat_min/max 는 상담 때 손님이 말한 좌석번호와 맞춰야 하니 역순이면 뒤집힌 번호로 낸다.
-      const smin = gpReverse ? gpCols - run[1] + 1 : run[0];
-      const smax = gpReverse ? gpCols - run[0] + 1 : run[1];
+      const [smin, smax] = runToNums(run[0], run[1]);
       blocks.push({ floor: f, name, side, seat_min: smin, seat_max: smax, row_from: rf, row_to: rt });
     });
   });
@@ -1838,7 +1845,7 @@ function gpFillTables() {
     " · 장애인석 " + wheel.length + " · 극싸/사이드(수동) " + sides.length + " · 블록 " + blocks.length + " · 고속도로 " + highways.length +
     " 줄 (아래 표 확인 후 저장)" +
     (gpReverse ? "\n역순 번호로 계산했어요 — 왼쪽 끝 " + gpCols + "번, 오른쪽 끝 1번. 표의 좌석번호가 실제 티켓과 맞는지 확인하세요." : "") +
-    (single ? "\n통로가 표시되지 않은 열 묶음 " + single + "개는 블록(좌/중/우)을 만들지 않았어요." : "") +
+    (single ? "\n통로 없이 이어진 열 묶음 " + single + "개는 좌우 구분 없는 통짜 블록으로 넣었어요." : "") +
     (renum ? "\n번호 재지정(트리플클릭) " + renum + "칸 반영 — 나중에 \"아래 표 → 격자\"로 이 층을 다시 불러오면" +
       " 그 특수 번호는 원래 칸이 아니라 그 번호의 칸으로 표시되니, 필요하면 다시 트리플클릭으로 지정하세요." : ""), "ok");
 }
